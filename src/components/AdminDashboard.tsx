@@ -1098,7 +1098,7 @@ export const AdminDashboard: React.FC = () => {
       {/* Modal: Editar Cliente */}
       {editingClient && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-[#0f111a] border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+          <div className="w-full max-w-2xl bg-[#0f111a] border border-slate-800 rounded-3xl p-6 md:p-7 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Edit2 className="w-4 h-4 text-indigo-400" />
@@ -1107,6 +1107,137 @@ export const AdminDashboard: React.FC = () => {
               <button onClick={() => setEditingClient(null)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* SEÇÃO: PLANO ATUAL & OPÇÕES DE UPGRADE */}
+            <div className="p-4 rounded-2xl bg-[#151824] border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-400 block">Plano Atual do Cliente:</span>
+                  <span className="text-sm font-black text-purple-300">
+                    {editPlanName || editingClient.planName || 'Plano Personalizado'}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] text-slate-400 block">Valor Mensal:</span>
+                  <span className="text-sm font-mono font-bold text-emerald-400">
+                    R$ {Number(editMRR).toFixed(2)}/mês
+                  </span>
+                </div>
+              </div>
+
+              {/* Cards de Opção de Upgrade de Plano */}
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Selecione para mudar ou fazer Upgrade de Plano:</span>
+                </label>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Plano 1: Plano Dinder (97/mês) */}
+                  <div
+                    onClick={() => {
+                      setEditPlanId('p_dinder');
+                      setEditPlanName('Plano Dinder');
+                      setEditMRR(97.00);
+                      setEditInstancesLimit(1);
+                    }}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                      editPlanName === 'Plano Dinder' || editPlanId === 'p_dinder'
+                        ? 'bg-purple-600/15 border-purple-500 shadow-md shadow-purple-600/20'
+                        : 'bg-[#10121d] border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-black text-white">Plano Dinder</span>
+                      <span className="text-xs font-mono font-black text-emerald-400">R$ 97/mês</span>
+                    </div>
+                    <span className="text-[10px] text-purple-400 font-semibold block mb-2">Sem fidelidade</span>
+
+                    <ul className="text-[11px] text-slate-300 space-y-1">
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>1 conexão WhatsApp incluída</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>Sistema CRM completo</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>Integração com WhatsApp + Botzap</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>Use sua IA: GPT, Gemini ou Claude com a sua API</span>
+                      </li>
+                    </ul>
+
+                    {(editPlanName === 'Plano Dinder' || editPlanId === 'p_dinder') && (
+                      <div className="mt-2.5 pt-2 border-t border-purple-500/30 text-[10px] text-purple-300 font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-purple-400" /> Selecionado para este cliente
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Plano 2: Plano Pro com IA (147/mês) */}
+                  <div
+                    onClick={() => {
+                      setEditPlanId('p_pro_ia');
+                      setEditPlanName('Plano Pro com IA');
+                      setEditMRR(147.00);
+                      setEditInstancesLimit(1);
+                    }}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                      editPlanName === 'Plano Pro com IA' || editPlanId === 'p_pro_ia'
+                        ? 'bg-indigo-600/20 border-indigo-500 shadow-md shadow-indigo-600/30'
+                        : 'bg-[#10121d] border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black text-white">Plano Pro com IA</span>
+                        <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.2 rounded font-bold">UPGRADE</span>
+                      </div>
+                      <span className="text-xs font-mono font-black text-emerald-400">R$ 147/mês</span>
+                    </div>
+                    <span className="text-[10px] text-indigo-400 font-semibold block mb-2">Sem fidelidade • IA Ilimitada</span>
+
+                    <ul className="text-[11px] text-slate-300 space-y-1">
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>Tudo do plano Dinder + IA ilimitada incluída</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>1 conexão WhatsApp incluída</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>CRM completo + IA integrada</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>Mensagens com IA ilimitadas</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>Respostas automáticas inteligentes</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>Suporte prioritário 24/7</span>
+                      </li>
+                    </ul>
+
+                    {(editPlanName === 'Plano Pro com IA' || editPlanId === 'p_pro_ia') && (
+                      <div className="mt-2.5 pt-2 border-t border-indigo-500/30 text-[10px] text-indigo-300 font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-indigo-400" /> Selecionado para este cliente
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <form onSubmit={handleSaveEditClient} className="space-y-4">
@@ -1175,30 +1306,62 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </div>
 
+                {/* Data de Validade com Seletor de Calendário Nativo e Atalhos */}
                 <div className="md:col-span-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">Data de Validade (AAAA-MM-DD)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Data de Validade (Clique para abrir o calendário)</span>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const d = new Date();
+                          d.setDate(d.getDate() + 30);
+                          setEditValidUntil(d.toISOString().split('T')[0]);
+                        }}
+                        className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition-colors"
+                      >
+                        +30 Dias
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const d = new Date();
+                          d.setDate(d.getDate() + 365);
+                          setEditValidUntil(d.toISOString().split('T')[0]);
+                        }}
+                        className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded transition-colors"
+                      >
+                        +1 Ano
+                      </button>
+                    </div>
+                  </div>
                   <input
-                    type="text"
+                    type="date"
+                    required
                     value={editValidUntil}
                     onChange={e => setEditValidUntil(e.target.value)}
-                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer focus:border-purple-500 focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800/80">
                 <button
                   type="button"
                   onClick={() => setEditingClient(null)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold"
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold hover:bg-slate-700 transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5"
                 >
-                  Salvar Alterações
+                  <Check className="w-4 h-4" />
+                  <span>Salvar Alterações</span>
                 </button>
               </div>
             </form>
