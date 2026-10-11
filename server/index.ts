@@ -1016,7 +1016,32 @@ function normalizeText(str: string): string {
     .trim();
 }
 
-// Function to execute visual flow nodes for a contact
+// Helper to format time in America/Sao_Paulo (Horário Oficial de Brasília)
+function getBrazilTimeString(date: Date = new Date()): string {
+  return date.toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+}
+
+// Function to simulate natural typing state (Composing) on WhatsApp
+async function simulateTyping(sock: any, remoteJid: string, durationMs: number = 2000) {
+  try {
+    if (sock && sock.sendPresenceUpdate) {
+      await sock.sendPresenceUpdate('composing', remoteJid);
+      await new Promise(r => setTimeout(r, durationMs));
+      await sock.sendPresenceUpdate('paused', remoteJid);
+    } else {
+      await new Promise(r => setTimeout(r, durationMs));
+    }
+  } catch (e) {
+    await new Promise(r => setTimeout(r, durationMs));
+  }
+}
+
+// Function to execute visual flow nodes for a contact (Multi-step chain execution)
 async function executeFlowForMessage(
   sock: any, 
   remoteJid: string, 
@@ -1066,17 +1091,31 @@ async function executeFlowForMessage(
 
   console.log(`[Flow Engine] Gatilho ativado pelo card '${triggerNode.title}' para ${remoteJid}!`);
 
-  // Traverse edges from trigger
-  let currentTargetEdges = activeFlow.edges.filter(e => e.from === triggerNode.id);
-  if (currentTargetEdges.length === 0) {
-    return true;
-  }
+  // Traverse the graph starting from trigger node (BFS / sequential step-by-step)
+  const visitedNodes = new Set<string>();
+  let queue: string[] = [];
 
-  for (const edge of currentTargetEdges) {
-    const nextNode = activeFlow.nodes.find(n => n.id === edge.to);
-    if (!nextNode) continue;
+  const initialEdges = activeFlow.edges.filter(e => e.from === triggerNode.id);
+  initialEdges.forEach(e => queue.push(e.to));
 
-    await executeNodeAction(sock, remoteJid, nextNode, senderName, incomingText);
+  while (queue.length > 0) {
+    const currentNodeId = queue.shift()!;
+    if (visitedNodes.has(currentNodeId)) continue;
+    visitedNodes.add(currentNodeId);
+
+    const currentNode = activeFlow.nodes.find(n => n.id === currentNodeId);
+    if (!currentNode) continue;
+
+    // Execute the action with natural typing simulation
+    await executeNodeAction(sock, remoteJid, currentNode, senderName, incomingText);
+
+    // Queue subsequent connected nodes
+    const outgoingEdges = activeFlow.edges.filter(e => e.from === currentNodeId);
+    outgoingEdges.forEach(e => {
+      if (!visitedNodes.has(e.to)) {
+        queue.push(e.to);
+      }
+    });
   }
 
   return true;
@@ -1092,7 +1131,7 @@ async function executeNodeAction(
 ) {
   const replaceVariables = (str: string) => {
     const firstName = (senderName || 'Amigo').split(' ')[0];
-    const hour = new Date().getHours();
+    const hour = parseInt(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }).format(new Date()));
     const saudacao = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
     return (str || '')
       .replace(/{nome}/gi, firstName)
@@ -1105,45 +1144,66 @@ async function executeNodeAction(
     if (node.type === 'sms' || node.type === 'whatsapp' || node.type === 'mensagem') {
       const rawText = node.data?.message || 'Olá, como posso te ajudar?';
       const finalText = replaceVariables(rawText);
+
+      // Natural delay + "digitando..." status before sending text
+      await simulateTyping(sock, remoteJid, 2500);
+
       await sock.sendMessage(remoteJid, { text: finalText });
       recordFlowMessageInChat(remoteJid, finalText);
     } else if (node.type === 'audio') {
-      if (node.data?.audioUrl) {
-        const fullAudioUrl = node.data.audioUrl.startsWith('http') 
-          ? node.data.audioUrl 
-          : path.join(process.cwd(), node.data.audioUrl.replace(/^\//, ''));
+      const audioPath = node.data?.fileUrl || node.data?.audioUrl;
+      if (audioPath) {
+        const fullAudioUrl = audioPath.startsWith('http') 
+          ? audioPath 
+          : path.join(process.cwd(), audioPath.replace(/^\//, ''));
 
         if (fs.existsSync(fullAudioUrl)) {
+          // Simulate "gravando áudio..."
+          try {
+            await sock.sendPresenceUpdate('recording', remoteJid);
+            await new Promise(r => setTimeout(r, (node.data?.delaySeconds || 3) * 1000));
+            await sock.sendPresenceUpdate('paused', remoteJid);
+          } catch (e) {}
+
           await sock.sendMessage(remoteJid, {
             audio: fs.readFileSync(fullAudioUrl),
             mimetype: 'audio/mp4',
             ptt: true // Sent as voice note (áudio gravado na hora)
           });
-          recordFlowMessageInChat(remoteJid, '🎵 [Áudio enviado]');
+          recordFlowMessageInChat(remoteJid, '🎵 [Áudio gravado enviado]');
         }
       }
     } else if (node.type === 'imagem') {
-      if (node.data?.imageUrl) {
-        const fullImgPath = node.data.imageUrl.startsWith('http')
-          ? node.data.imageUrl
-          : path.join(process.cwd(), node.data.imageUrl.replace(/^\//, ''));
+      const imgPath = node.data?.fileUrl || node.data?.imageUrl;
+      if (imgPath) {
+        const fullImgPath = imgPath.startsWith('http')
+          ? imgPath
+          : path.join(process.cwd(), imgPath.replace(/^\//, ''));
 
         if (fs.existsSync(fullImgPath)) {
+          // Natural typing delay for photo dispatch
+          await simulateTyping(sock, remoteJid, 2000);
+
           const caption = replaceVariables(node.data?.caption || '');
           await sock.sendMessage(remoteJid, {
             image: fs.readFileSync(fullImgPath),
             caption
           });
           recordFlowMessageInChat(remoteJid, `🖼️ [Imagem enviada: ${caption || 'Sem legenda'}]`);
+        } else {
+          console.error(`[Flow Engine] Arquivo de imagem não encontrado no disco: ${fullImgPath}`);
         }
       }
     } else if (node.type === 'video') {
-      if (node.data?.videoUrl) {
-        const fullVideoPath = node.data.videoUrl.startsWith('http')
-          ? node.data.videoUrl
-          : path.join(process.cwd(), node.data.videoUrl.replace(/^\//, ''));
+      const vidPath = node.data?.fileUrl || node.data?.videoUrl;
+      if (vidPath) {
+        const fullVideoPath = vidPath.startsWith('http')
+          ? vidPath
+          : path.join(process.cwd(), vidPath.replace(/^\//, ''));
 
         if (fs.existsSync(fullVideoPath)) {
+          await simulateTyping(sock, remoteJid, 2500);
+
           const caption = replaceVariables(node.data?.caption || '');
           await sock.sendMessage(remoteJid, {
             video: fs.readFileSync(fullVideoPath),
@@ -1153,12 +1213,15 @@ async function executeNodeAction(
         }
       }
     } else if (node.type === 'pdf') {
-      if (node.data?.pdfUrl) {
-        const fullPdfPath = node.data.pdfUrl.startsWith('http')
-          ? node.data.pdfUrl
-          : path.join(process.cwd(), node.data.pdfUrl.replace(/^\//, ''));
+      const docPath = node.data?.fileUrl || node.data?.pdfUrl;
+      if (docPath) {
+        const fullPdfPath = docPath.startsWith('http')
+          ? docPath
+          : path.join(process.cwd(), docPath.replace(/^\//, ''));
 
         if (fs.existsSync(fullPdfPath)) {
+          await simulateTyping(sock, remoteJid, 2000);
+
           await sock.sendMessage(remoteJid, {
             document: fs.readFileSync(fullPdfPath),
             mimetype: 'application/pdf',
@@ -1171,8 +1234,10 @@ async function executeNodeAction(
       const delayAmount = node.data?.delay || 5;
       const unit = node.data?.unit || 'segundos';
       const ms = unit === 'segundos' ? delayAmount * 1000 : unit === 'minutos' ? delayAmount * 60000 : 5000;
-      await new Promise(r => setTimeout(r, Math.min(ms, 30000))); // Max 30s safety inline
+      await new Promise(r => setTimeout(r, Math.min(ms, 60000))); // Wait configured timer
     } else if (node.type === 'ia' || node.type === 'ia_audio') {
+      await simulateTyping(sock, remoteJid, 3000);
+
       const customPrompt = node.data?.prompt 
         ? `${node.data.prompt}\n\nMensagem do cliente: ${incomingText}`
         : incomingText;
@@ -1187,7 +1252,7 @@ async function executeNodeAction(
 
 // Record bot sent messages into liveChats & broadcast to UI in real-time
 function recordFlowMessageInChat(remoteJid: string, text: string, isAi = false) {
-  const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timeStr = getBrazilTimeString();
   let chat = liveChats.get(remoteJid);
   if (chat) {
     const botMsg: ChatMessage = {
@@ -1298,7 +1363,7 @@ async function startWhatsAppSession(sessionId: string) {
       const fromMe = Boolean(msg.key.fromMe);
       const pushName = msg.pushName || 'Contato WhatsApp';
       const cleanPhone = remoteJid.replace('@s.whatsapp.net', '');
-      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const timeStr = getBrazilTimeString();
       const msgId = msg.key.id || `msg-${Date.now()}`;
 
       let chat = liveChats.get(remoteJid);
@@ -1496,7 +1561,7 @@ app.post('/api/chats/:id/message', async (req, res) => {
       id: `out-${Date.now()}`,
       fromMe: true,
       text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: getBrazilTimeString(),
       isAiGenerated: false
     };
     chat.messages.push(newMsg);
