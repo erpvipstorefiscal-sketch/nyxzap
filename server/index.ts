@@ -1764,6 +1764,95 @@ app.post('/api/flow', async (req, res) => {
   }
 });
 
+// Endpoint para Testar o Funil disparando diretamente para um WhatsApp informado
+app.post('/api/flow/test', async (req, res) => {
+  const { phone, flowId, nodes, edges } = req.body;
+
+  if (!phone || typeof phone !== 'string') {
+    return res.status(400).json({ error: 'Número de telefone é obrigatório.' });
+  }
+
+  const trimmedPhone = phone.trim();
+  if (!trimmedPhone.startsWith('+')) {
+    return res.status(400).json({ 
+      error: 'É obrigatório incluir o símbolo + e o código do país (ex: +5511999999999).' 
+    });
+  }
+
+  const cleanNumber = trimmedPhone.replace(/\D/g, '');
+  if (cleanNumber.length < 8) {
+    return res.status(400).json({ error: 'Número de telefone inválido.' });
+  }
+
+  // Find a connected WhatsApp session
+  let connectedSession: SessionData | undefined;
+  for (const s of sessions.values()) {
+    if (s.status === 'connected' && s.sock) {
+      connectedSession = s;
+      break;
+    }
+  }
+
+  if (!connectedSession || !connectedSession.sock) {
+    return res.status(400).json({
+      error: 'Nenhuma conexão de WhatsApp ativa no momento. Conecte um número no menu Conexões para testar o funil.'
+    });
+  }
+
+  const testNodes: FlowNodeServer[] = Array.isArray(nodes) && nodes.length > 0 ? nodes : activeFlow.nodes;
+  const testEdges: FlowEdgeServer[] = Array.isArray(edges) ? edges : activeFlow.edges;
+
+  if (testNodes.length === 0) {
+    return res.status(400).json({ error: 'O fluxo não possui nenhum card para executar.' });
+  }
+
+  // Determine starting node:
+  const triggerNode = testNodes.find(n => n.type === 'inicio' || n.type === 'webhook');
+  let startNodeId: string | null = null;
+
+  if (triggerNode) {
+    const outgoing = testEdges.filter(e => e.from === triggerNode.id);
+    if (outgoing.length > 0) {
+      startNodeId = outgoing[0].to;
+    } else {
+      const firstAction = testNodes.find(n => n.type !== 'inicio' && n.type !== 'webhook');
+      startNodeId = firstAction ? firstAction.id : triggerNode.id;
+    }
+  } else {
+    startNodeId = testNodes[0].id;
+  }
+
+  if (!startNodeId) {
+    return res.status(400).json({ error: 'Não foi possível identificar o card inicial do funil.' });
+  }
+
+  const remoteJid = `${cleanNumber}@s.whatsapp.net`;
+  console.log(`[Flow Test Engine] Disparando teste do fluxo '${flowId || activeFlow.id}' para ${remoteJid} a partir do card '${startNodeId}'`);
+
+  try {
+    // Sync activeFlow in memory
+    activeFlow.nodes = testNodes;
+    activeFlow.edges = testEdges;
+
+    // Increment execution count in DB
+    const targetFlowId = flowId || activeFlow.id || 'default';
+    activeFlow.execution_count = (activeFlow.execution_count || 0) + 1;
+    await pool.query('UPDATE flow_definitions SET execution_count = COALESCE(execution_count, 0) + 1 WHERE id = $1', [targetFlowId]);
+
+    // Execute flow chain
+    resumeFlowChain(connectedSession.sock, remoteJid, startNodeId, 'Lead Teste', 'Teste de Funil', connectedSession.id)
+      .catch(err => console.error('[Flow Test Error]', err));
+
+    res.json({
+      success: true,
+      message: `Funil disparado com sucesso para ${trimmedPhone}!`
+    });
+  } catch (err: any) {
+    console.error('[Flow Test Error]', err);
+    res.status(500).json({ error: 'Erro ao disparar teste: ' + err.message });
+  }
+});
+
 // REST API Endpoints
 app.get('/api/chats', (req, res) => {
   res.json(Array.from(liveChats.values()));

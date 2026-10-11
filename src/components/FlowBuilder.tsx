@@ -46,7 +46,10 @@ import {
   Play,
   Pause,
   Search,
-  Workflow
+  Workflow,
+  Send,
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import { FlowNode, FlowEdge } from '../types';
 
@@ -206,6 +209,12 @@ export const FlowBuilder: React.FC = () => {
   const [editingFlow, setEditingFlow] = useState<FlowSummary | null>(null);
   const [editNameInput, setEditNameInput] = useState('');
   const [editDescInput, setEditDescInput] = useState('');
+
+  // Test flow state
+  const [showTestModal, setShowTestModal] = useState(false);
+  const [testPhoneInput, setTestPhoneInput] = useState('+55');
+  const [isSendingTest, setIsSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoadingFlows, setIsLoadingFlows] = useState(false);
@@ -671,6 +680,63 @@ export const FlowBuilder: React.FC = () => {
       setEditingFlow(null);
     } catch (err) {
       console.error('Erro ao atualizar informações do fluxo:', err);
+    }
+  };
+
+  // Disparar teste do fluxo para o WhatsApp
+  const handleSendTestFlow = async () => {
+    setTestResult(null);
+    const phone = testPhoneInput.trim();
+
+    if (!phone.startsWith('+')) {
+      setTestResult({
+        success: false,
+        message: 'O número deve obrigatoriamente iniciar com o símbolo + e o código do país. Exemplo: +5511999999999'
+      });
+      return;
+    }
+
+    const clean = phone.replace(/\D/g, '');
+    if (clean.length < 8) {
+      setTestResult({
+        success: false,
+        message: 'Por favor, informe um número de WhatsApp válido com código de país e DDD.'
+      });
+      return;
+    }
+
+    setIsSendingTest(true);
+    try {
+      const res = await fetch('/api/flow/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          flowId: activeFlowId || 'default',
+          nodes,
+          edges
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setTestResult({
+          success: false,
+          message: data.error || 'Erro ao disparar teste do funil.'
+        });
+      } else {
+        setTestResult({
+          success: true,
+          message: data.message || `Funil disparado com sucesso para ${phone}!`
+        });
+        fetchFlows();
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: 'Erro de comunicação ao disparar teste: ' + err.message
+      });
+    } finally {
+      setIsSendingTest(false);
     }
   };
 
@@ -1290,13 +1356,17 @@ export const FlowBuilder: React.FC = () => {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2.5">
-          {/* Button to open Full Cards Gallery */}
+          {/* Botão Testar Funil */}
           <button
-            onClick={() => setShowPaletteModal(true)}
-            className="px-3.5 py-1.5 rounded-xl bg-[#1a1b29] hover:bg-slate-800 border border-purple-500/30 text-purple-300 hover:text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md"
+            onClick={() => {
+              setTestResult(null);
+              setShowTestModal(true);
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/40 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-emerald-900/30 active:scale-95"
+            title="Disparar este funil como teste diretamente para um número de WhatsApp"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ Adicionar Card</span>
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Testar Funil</span>
           </button>
 
           {/* Status Toggle */}
@@ -2801,6 +2871,122 @@ export const FlowBuilder: React.FC = () => {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Testar Funil */}
+      {showTestModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#11131f] border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-scaleUp">
+            {/* Header do Modal */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                  <Play className="w-5 h-5 fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Testar Funil de Automação</h3>
+                  <p className="text-[11px] text-slate-400">Envie o fluxo imediatamente para seu WhatsApp</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowTestModal(false);
+                  setTestResult(null);
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Aviso Explicativo */}
+            <div className="bg-[#181a28] p-3.5 rounded-xl border border-slate-800/80 mb-4 text-xs text-slate-300 leading-relaxed">
+              <p>
+                O robô iniciará a execução deste funil <strong>({currentFlowName})</strong> para o número informado abaixo, disparando os textos, mídias e lógicas configuradas.
+              </p>
+            </div>
+
+            {/* Formulário do Telefone */}
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-200 block mb-1.5 flex items-center justify-between">
+                  <span>Número de Telefone</span>
+                  <span className="text-[10px] text-amber-400 font-normal">Obrigatório o + do país</span>
+                </label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={testPhoneInput}
+                    onChange={e => {
+                      let val = e.target.value;
+                      // Se o usuário apagar o +, reaplica o +
+                      if (!val.startsWith('+')) {
+                        val = '+' + val.replace(/\+/g, '');
+                      }
+                      setTestPhoneInput(val);
+                      setTestResult(null);
+                    }}
+                    placeholder="+5511999999999"
+                    className="w-full bg-[#181a28] border border-slate-800 focus:border-emerald-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 font-mono focus:outline-none transition-colors"
+                    autoFocus
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  Exemplos: <strong>+5511999999999</strong> (Brasil), <strong>+351912345678</strong> (Portugal).
+                </p>
+              </div>
+
+              {/* Mensagem de Feedback (Sucesso / Erro) */}
+              {testResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 animate-fadeIn ${
+                    testResult.success
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}
+                >
+                  {testResult.success ? (
+                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                  )}
+                  <span>{testResult.message}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Ações do Rodapé */}
+            <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  setShowTestModal(false);
+                  setTestResult(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={handleSendTestFlow}
+                disabled={isSendingTest || !testPhoneInput.trim() || testPhoneInput.trim() === '+'}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-emerald-600/30 flex items-center gap-2"
+              >
+                {isSendingTest ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Disparando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    <span>Disparar Teste</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
