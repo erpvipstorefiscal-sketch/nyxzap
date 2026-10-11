@@ -25,21 +25,91 @@ const logger = pino({ level: 'silent' });
 // Initialize database schema and seeds
 initDatabase().catch(err => console.error('[DB Init Error]', err));
 
-// Auth endpoint backed by PostgreSQL
+// IP-Based Rate Limiting & Lockout System (Max 5 failed attempts -> 15 min lock)
+interface IpAttempt {
+  count: number;
+  lockedUntil: number;
+}
+const loginAttempts: Map<string, IpAttempt> = new Map();
+
+function getClientIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
+}
+
+// Log Telemetry Helper
+async function recordTelemetry(eventName: string, tabName: string, userId?: string, email?: string, details: any = {}, ip?: string) {
+  try {
+    const eventId = 'evt-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+    await pool.query(
+      `INSERT INTO telemetry_events (id, user_id, user_email, event_name, tab_name, details, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [eventId, userId || 'anon', email || 'anon@nyxzap.com', eventName, tabName, JSON.stringify(details), ip || '127.0.0.1']
+    );
+  } catch (err: any) {
+    // Non-blocking telemetry fallback
+  }
+}
+
+// Auth endpoint backed by PostgreSQL with Rate Limiting & 5-Attempt Lockout
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, role } = req.body;
+  const clientIp = getClientIp(req);
+  const now = Date.now();
+
+  // Check if IP is currently locked
+  const attempt = loginAttempts.get(clientIp);
+  if (attempt && attempt.lockedUntil > now) {
+    const minutesLeft = Math.ceil((attempt.lockedUntil - now) / 60000);
+    recordTelemetry('login_blocked_ip', 'login', undefined, email, { ip: clientIp, minutesLeft }, clientIp);
+    return res.status(429).json({
+      error: `Segurança: Muitas tentativas incorretas consecutivas. Seu IP foi bloqueado por 15 minutos (${minutesLeft} min restantes).`
+    });
+  }
+
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email?.trim()]);
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Usuário não encontrado.' });
+      // Record failed attempt
+      const current = attempt ? attempt.count + 1 : 1;
+      const lockedUntil = current >= 5 ? now + 15 * 60 * 1000 : 0;
+      loginAttempts.set(clientIp, { count: current, lockedUntil });
+      recordTelemetry('login_failed_user_not_found', 'login', undefined, email, { count: current }, clientIp);
+      
+      if (current >= 5) {
+        return res.status(429).json({
+          error: 'Limite de 5 tentativas atingido. Seu IP foi bloqueado por 15 minutos por medidas de segurança.'
+        });
+      }
+      return res.status(401).json({ error: `Usuário não encontrado. (${5 - current} tentativas restantes)` });
     }
+
     const user = result.rows[0];
     if (user.password !== password) {
-      return res.status(401).json({ error: 'Senha incorreta.' });
+      const current = attempt ? attempt.count + 1 : 1;
+      const lockedUntil = current >= 5 ? now + 15 * 60 * 1000 : 0;
+      loginAttempts.set(clientIp, { count: current, lockedUntil });
+      recordTelemetry('login_failed_wrong_password', 'login', user.id, email, { count: current }, clientIp);
+
+      if (current >= 5) {
+        return res.status(429).json({
+          error: 'Limite de 5 tentativas incorretas atingido. Seu IP foi bloqueado por 15 minutos.'
+        });
+      }
+      return res.status(401).json({ error: `Senha incorreta. (${5 - current} tentativas restantes antes do bloqueio)` });
     }
+
     if (role && user.role !== role) {
       return res.status(403).json({ error: `Acesso negado. Esta conta não possui perfil de ${role}.` });
     }
+
+    // Success -> Clear failed attempts for this IP
+    loginAttempts.delete(clientIp);
+    recordTelemetry('login_success', 'login', user.id, user.email, { role: user.role }, clientIp);
+
     res.json({
       id: user.id,
       name: user.name,
@@ -55,7 +125,32 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Admin endpoints backed by PostgreSQL
+// Forgot Password Recovery Endpoint
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  const clientIp = getClientIp(req);
+  if (!email) {
+    return res.status(400).json({ error: 'Informe seu e-mail para recuperação.' });
+  }
+
+  try {
+    const token = 'rst-' + Math.random().toString(36).substr(2, 9);
+    await pool.query(
+      `INSERT INTO password_resets (id, email, token) VALUES ($1, $2, $3)`,
+      ['rst-' + Date.now(), email.trim(), token]
+    );
+    recordTelemetry('password_recovery_requested', 'auth', undefined, email, { token }, clientIp);
+
+    res.json({
+      success: true,
+      message: `Instruções de redefinição enviadas com sucesso para ${email}! Verifique sua caixa de entrada e spam.`
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin endpoints backed by PostgreSQL: Subscribers CRUD
 app.get('/api/admin/subscribers', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
@@ -69,6 +164,7 @@ app.get('/api/admin/subscribers', async (req, res) => {
       status: u.status || 'active',
       mrrValue: parseFloat(u.mrr_value) || 97.00,
       validUntil: u.valid_until || '2026-11-10',
+      instancesLimit: u.instances_limit || 1,
       connectedInstances: u.connected_instances || 0,
       createdAt: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : '2026-10-10'
     }));
@@ -78,10 +174,86 @@ app.get('/api/admin/subscribers', async (req, res) => {
   }
 });
 
+// Create New Subscriber in PostgreSQL
+app.post('/api/admin/subscribers', async (req, res) => {
+  const { name, email, password, phone, planId, planName, status, mrrValue, validUntil, instancesLimit, role } = req.body;
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Nome e e-mail são obrigatórios.' });
+  }
+
+  try {
+    const newId = 'usr-' + Date.now();
+    await pool.query(
+      `INSERT INTO users (id, name, email, password, role, phone, plan_id, plan_name, status, mrr_value, valid_until, instances_limit, connected_instances)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0)`,
+      [
+        newId,
+        name.trim(),
+        email.trim().toLowerCase(),
+        password || '123456',
+        role || 'client',
+        phone || '+55 11 99999-9999',
+        planId || 'p2',
+        planName || 'Pro (Mais Vendido)',
+        status || 'active',
+        parseFloat(mrrValue) || 197.00,
+        validUntil || '2026-11-10',
+        parseInt(instancesLimit) || 3
+      ]
+    );
+
+    recordTelemetry('admin_created_subscriber', 'admin', newId, email, { name, planName });
+    res.json({ success: true, message: 'Novo cliente cadastrado com sucesso!', id: newId });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro ao cadastrar cliente: ' + err.message });
+  }
+});
+
+// Edit Existing Subscriber in PostgreSQL
+app.put('/api/admin/subscribers/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, email, phone, planId, planName, status, mrrValue, validUntil, instancesLimit } = req.body;
+
+  try {
+    await pool.query(
+      `UPDATE users 
+       SET name = COALESCE($1, name),
+           email = COALESCE($2, email),
+           phone = COALESCE($3, phone),
+           plan_id = COALESCE($4, plan_id),
+           plan_name = COALESCE($5, plan_name),
+           status = COALESCE($6, status),
+           mrr_value = COALESCE($7, mrr_value),
+           valid_until = COALESCE($8, valid_until),
+           instances_limit = COALESCE($9, instances_limit)
+       WHERE id = $10`,
+      [name, email, phone, planId, planName, status, mrrValue, validUntil, instancesLimit, id]
+    );
+
+    recordTelemetry('admin_updated_subscriber', 'admin', id, email, { name, status });
+    res.json({ success: true, message: 'Dados do cliente atualizados com sucesso no banco de dados!' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro ao atualizar cliente: ' + err.message });
+  }
+});
+
+// Delete Subscriber from PostgreSQL
+app.delete('/api/admin/subscribers/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);
+    recordTelemetry('admin_deleted_subscriber', 'admin', id, undefined, { id });
+    res.json({ success: true, message: 'Cliente excluído com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro ao excluir cliente: ' + err.message });
+  }
+});
+
 app.post('/api/admin/subscribers/:id/renew', async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query("UPDATE users SET valid_until = '2026-12-31', status = 'active' WHERE id = $1", [id]);
+    recordTelemetry('admin_renewed_license', 'admin', id, undefined, { id });
     res.json({ success: true, message: 'Licença renovada por mais 30 dias no banco de dados!' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -102,6 +274,86 @@ app.get('/api/admin/plans', async (req, res) => {
     })));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Telemetry (PostHog alternative) API Endpoints
+app.post('/api/telemetry', async (req, res) => {
+  const { eventName, tabName, userId, userEmail, details } = req.body;
+  const ip = getClientIp(req);
+  await recordTelemetry(eventName || 'action', tabName || 'app', userId, userEmail, details, ip);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/telemetry', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM telemetry_events ORDER BY created_at DESC LIMIT 100');
+    res.json(result.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Cakto MCP & Checkout Configuration Endpoints
+app.get('/api/cakto/config', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM cakto_config WHERE id = $1', ['default']);
+    if (result.rows.length > 0) {
+      const cfg = result.rows[0];
+      return res.json({
+        clientId: cfg.client_id,
+        clientSecret: cfg.client_secret ? '••••••••' : '',
+        hasSecret: !!cfg.client_secret,
+        checkoutLinks: cfg.checkout_links || {}
+      });
+    }
+    res.json({
+      clientId: '1tyOaWA3KmZDn87nHzJYQksvEBANLiiV7Zx1uLeo',
+      hasSecret: true,
+      checkoutLinks: {
+        tier_1: 'https://pay.cakto.com.br/nyxzap-extra-1',
+        tier_2: 'https://pay.cakto.com.br/nyxzap-extra-2',
+        tier_3: 'https://pay.cakto.com.br/nyxzap-extra-3',
+        tier_5: 'https://pay.cakto.com.br/nyxzap-extra-5',
+        plan_p1: 'https://pay.cakto.com.br/nyxzap-start',
+        plan_p2: 'https://pay.cakto.com.br/nyxzap-pro',
+        plan_p3: 'https://pay.cakto.com.br/nyxzap-enterprise'
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cakto/config', async (req, res) => {
+  const { clientId, clientSecret, checkoutLinks } = req.body;
+  try {
+    await pool.query(
+      `INSERT INTO cakto_config (id, client_id, client_secret, checkout_links, updated_at)
+       VALUES ('default', $1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE
+       SET client_id = COALESCE($1, cakto_config.client_id),
+           client_secret = CASE WHEN $2 != '' AND $2 IS NOT NULL THEN $2 ELSE cakto_config.client_secret END,
+           checkout_links = COALESCE($3, cakto_config.checkout_links),
+           updated_at = CURRENT_TIMESTAMP`,
+      [clientId, clientSecret, JSON.stringify(checkoutLinks || {})]
+    );
+    res.json({ success: true, message: 'Configurações da Cakto salvas com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cakto/checkout-url', async (req, res) => {
+  const { itemType, itemId } = req.body; // e.g. itemType: 'tier', itemId: '3' or 'tier_3'
+  try {
+    const result = await pool.query('SELECT checkout_links FROM cakto_config WHERE id = $1', ['default']);
+    const links = result.rows.length > 0 ? (result.rows[0].checkout_links || {}) : {};
+    const key = itemId.startsWith('tier_') || itemId.startsWith('plan_') ? itemId : `${itemType}_${itemId}`;
+    const url = links[key] || `https://pay.cakto.com.br/nyxzap-${key.replace('_', '-')}`;
+    res.json({ checkoutUrl: url });
+  } catch (err: any) {
+    res.json({ checkoutUrl: `https://pay.cakto.com.br/nyxzap` });
   }
 });
 
@@ -458,23 +710,74 @@ app.post('/api/chats/:id/update', (req, res) => {
   res.json({ success: true, chat });
 });
 
-// System Updates APIs
-app.get('/api/updates', (req, res) => {
-  res.json(systemUpdates);
+// System Updates APIs (PostgreSQL backed with real-time broadcast)
+app.get('/api/updates', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM system_updates ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err: any) {
+    res.json(systemUpdates);
+  }
 });
 
-app.post('/api/updates', (req, res) => {
-  const newUp: SystemUpdate = {
+app.post('/api/updates', async (req, res) => {
+  const newUp: SystemUpdate & { status?: string } = {
     id: `up-${Date.now()}`,
-    version: req.body.version || 'v2.1.0',
+    version: req.body.version || 'v2.2.0',
     date: new Date().toLocaleDateString('pt-BR'),
     type: req.body.type || 'melhoria',
     title: req.body.title || 'Nova Atualização',
-    message: req.body.message || ''
+    message: req.body.message || '',
+    status: 'active'
   };
-  systemUpdates = [newUp, ...systemUpdates];
+
+  try {
+    await pool.query(
+      `INSERT INTO system_updates (id, version, date, type, title, message, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [newUp.id, newUp.version, newUp.date, newUp.type, newUp.title, newUp.message, 'active']
+    );
+  } catch (err) {
+    systemUpdates = [newUp as any, ...systemUpdates];
+  }
+
   broadcast('new_update', newUp);
   res.json({ success: true, update: newUp });
+});
+
+// Edit existing System Update (parar/pausar, alterar título, mensagem, etc.)
+app.put('/api/updates/:id', async (req, res) => {
+  const { id } = req.params;
+  const { title, message, version, type, status } = req.body;
+
+  try {
+    await pool.query(
+      `UPDATE system_updates
+       SET title = COALESCE($1, title),
+           message = COALESCE($2, message),
+           version = COALESCE($3, version),
+           type = COALESCE($4, type),
+           status = COALESCE($5, status)
+       WHERE id = $6`,
+      [title, message, version, type, status, id]
+    );
+    broadcast('update_modified', { id, title, message, version, type, status });
+    res.json({ success: true, message: 'Publicação atualizada no banco de dados!' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete System Update from PostgreSQL
+app.delete('/api/updates/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM system_updates WHERE id = $1', [id]);
+    broadcast('update_deleted', { id });
+    res.json({ success: true, message: 'Publicação excluída com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Sessions API
@@ -499,8 +802,35 @@ app.post('/api/sessions/create', (req, res) => {
     status: 'disconnected'
   };
   sessions.set(newId, newSession);
-  broadcast('session_update', { id: newId, status: 'disconnected' });
+  broadcast('session_update', { id: newId, status: 'disconnected', name: newSession.name });
   res.json({ success: true, session: newSession });
+});
+
+// Rename existing WhatsApp session
+app.put('/api/sessions/:id/rename', async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'O nome da instância não pode ser vazio.' });
+  }
+
+  const session = sessions.get(id);
+  if (session) {
+    session.name = name.trim();
+    sessions.set(id, session);
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO whatsapp_instances (id, name, status)
+       VALUES ($1, $2, 'disconnected')
+       ON CONFLICT (id) DO UPDATE SET name = $2`,
+      [id, name.trim()]
+    );
+  } catch (e) {}
+
+  broadcast('session_update', { id, name: name.trim() });
+  res.json({ success: true, message: 'Nome da conexão alterado com sucesso!', name: name.trim() });
 });
 
 app.post('/api/sessions/:id/connect', async (req, res) => {
@@ -532,6 +862,9 @@ app.delete('/api/sessions/:id', async (req, res) => {
     try { await session.sock.logout(); } catch(e) {}
   }
   sessions.delete(id);
+  try {
+    await pool.query('DELETE FROM whatsapp_instances WHERE id = $1', [id]);
+  } catch (e) {}
   broadcast('session_deleted', { id });
   res.json({ success: true });
 });

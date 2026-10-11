@@ -55,6 +55,57 @@ export async function initDatabase() {
         type VARCHAR(30) NOT NULL, -- 'correcao', 'implementacao', 'melhoria'
         title VARCHAR(200) NOT NULL,
         message TEXT NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'active', -- 'active' ou 'paused'
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      ALTER TABLE system_updates ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+    `);
+
+    // 3.1 Tabela de Telemetria / Auditoria de Usuários (PostHog / Analytics)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS telemetry_events (
+        id VARCHAR(100) PRIMARY KEY,
+        user_id VARCHAR(100),
+        user_email VARCHAR(150),
+        event_name VARCHAR(100) NOT NULL,
+        tab_name VARCHAR(50),
+        details JSONB DEFAULT '{}',
+        ip_address VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 3.2 Tabela de Recuperação de Senha
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id VARCHAR(100) PRIMARY KEY,
+        email VARCHAR(150) NOT NULL,
+        token VARCHAR(100) NOT NULL,
+        status VARCHAR(20) DEFAULT 'completed',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 3.3 Tabela de Configuração e Links de Checkout Cakto
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cakto_config (
+        id VARCHAR(50) PRIMARY KEY,
+        client_id VARCHAR(200),
+        client_secret VARCHAR(255),
+        webhook_secret VARCHAR(255),
+        checkout_links JSONB DEFAULT '{}',
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 3.4 Tabela de Instâncias de WhatsApp (Persistência e Nomes Customizados)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_instances (
+        id VARCHAR(100) PRIMARY KEY,
+        user_id VARCHAR(100),
+        name VARCHAR(150) NOT NULL,
+        phone VARCHAR(50),
+        status VARCHAR(30) DEFAULT 'disconnected',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -144,6 +195,18 @@ export async function initDatabase() {
       `);
       console.log('[PostgreSQL] Histórico de atualizações do sistema inserido!');
     }
+
+    // Inserir Configuração Padrão da Cakto
+    await client.query(`
+      INSERT INTO cakto_config (id, client_id, client_secret, checkout_links)
+      VALUES (
+        'default',
+        '1tyOaWA3KmZDn87nHzJYQksvEBANLiiV7Zx1uLeo',
+        'CJU1PK2UhYmSTH22zpjjAWPMfutDK8l1Kd3S7JroivqB2neNz1YbVM2CEg6Mmdd7kLYqYWy318gkEraehacl8W8ys2ww4R6tedBQp0ZDHXLEG3fPf0cUhQXiI8ZKFqk0',
+        '{"tier_1": "https://pay.cakto.com.br/nyxzap-extra-1", "tier_2": "https://pay.cakto.com.br/nyxzap-extra-2", "tier_3": "https://pay.cakto.com.br/nyxzap-extra-3", "tier_5": "https://pay.cakto.com.br/nyxzap-extra-5", "plan_p1": "https://pay.cakto.com.br/nyxzap-start", "plan_p2": "https://pay.cakto.com.br/nyxzap-pro", "plan_p3": "https://pay.cakto.com.br/nyxzap-enterprise"}'::jsonb
+      )
+      ON CONFLICT (id) DO NOTHING;
+    `);
 
     client.release();
   } catch (err: any) {

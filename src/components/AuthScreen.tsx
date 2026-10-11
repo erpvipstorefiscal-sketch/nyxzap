@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Users, Lock, Mail, ArrowRight, Globe, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2, KeyRound, ArrowLeft, Shield } from 'lucide-react';
 import { UserAuth } from '../types';
+import { identifyUser, trackEvent } from '../lib/telemetry';
 
 interface AuthScreenProps {
   onLogin: (user: UserAuth) => void;
@@ -19,6 +20,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Forgot password modal state
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState('');
+  const [forgotError, setForgotError] = useState('');
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -29,6 +37,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     }
 
     setLoading(true);
+    trackEvent('login_attempt', 'login_page', { email: email.trim(), role: isPainelAdmin ? 'admin' : 'client' });
+
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -45,11 +55,47 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
         throw new Error(data.error || 'Credenciais inválidas.');
       }
 
+      identifyUser(data.id, data.email);
+      trackEvent('login_success', 'login_page', { role: data.role });
       onLogin(data);
     } catch (err: any) {
       setError(err.message || 'Erro ao realizar login.');
+      trackEvent('login_failed', 'login_page', { error: err.message });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotSuccess('');
+
+    if (!forgotEmail) {
+      setForgotError('Informe o e-mail da sua conta.');
+      return;
+    }
+
+    setForgotLoading(true);
+    trackEvent('forgot_password_submit', 'forgot_password_modal', { email: forgotEmail });
+
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim() })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao processar recuperação.');
+      }
+
+      setForgotSuccess(data.message || 'Instruções de redefinição enviadas para o seu e-mail!');
+    } catch (err: any) {
+      setForgotError(err.message || 'Erro ao solicitar recuperação.');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -72,27 +118,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
             {isPainelAdmin ? '🛡️' : '⚡'}
           </div>
           
-          <div className="flex items-center justify-center gap-2">
-            <h1 className="text-2xl font-black text-white tracking-tight">NyxZap</h1>
-            <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border uppercase ${
-              isPainelAdmin
-                ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
-                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
-            }`}>
-              {isPainelAdmin ? 'Painel SuperAdmin' : 'Portal do Cliente'}
-            </span>
-          </div>
+          <h1 className="text-2xl font-black text-white tracking-tight">NyxZap</h1>
 
           <p className="text-xs text-slate-400">
             {isPainelAdmin 
-              ? 'Gestão de Licenças, Assinantes, MRR e Planos' 
-              : 'Acesse seu ambiente de automações WhatsApp, Agentes IA e CRM'}
+              ? 'Painel Administrativo' 
+              : 'Plataforma de Automação & IA'}
           </p>
-
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#151824] border border-slate-800 text-[11px] font-mono text-slate-400 mt-1">
-            <Globe className="w-3 h-3 text-emerald-400" />
-            <span>{isPainelAdmin ? 'painel.nyxzap.com.br' : 'zap.nyxzap.com.br'}</span>
-          </div>
         </div>
 
         {error && (
@@ -102,29 +134,43 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           </div>
         )}
 
-        {/* Form */}
+        {/* Login Form */}
         <form onSubmit={handleLoginSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-              E-mail de Acesso
+              E-mail
             </label>
             <div className="relative">
               <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="email"
                 required
-                placeholder={isPainelAdmin ? 'admin@nyxzap.com' : 'seuemail@empresa.com'}
+                placeholder="seuemail@empresa.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[#151824] border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
+                className="w-full bg-[#151824] border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-purple-500 font-medium transition-colors"
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-              Senha
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                Senha
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotEmail(email);
+                  setForgotError('');
+                  setForgotSuccess('');
+                  setShowForgotModal(true);
+                }}
+                className="text-[11px] font-semibold text-purple-400 hover:text-purple-300 transition-colors"
+              >
+                Esqueci minha senha
+              </button>
+            </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -133,7 +179,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#151824] border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
+                className="w-full bg-[#151824] border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-purple-500 font-medium transition-colors"
               />
             </div>
           </div>
@@ -147,48 +193,97 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 : 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/30'
             }`}
           >
-            <span>
-              {loading 
-                ? 'Verificando no Banco de Dados...' 
-                : (isPainelAdmin ? 'Acessar Painel SuperAdmin' : 'Entrar no NyxZap')}
-            </span>
+            <span>{loading ? 'Acessando...' : 'Entrar'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
 
-        {/* Demo Fast Fill Buttons for Convenient Testing */}
-        <div className="pt-2 border-t border-slate-800/80 text-center space-y-2">
-          <span className="text-[10px] text-slate-500 uppercase tracking-wider block">
-            Credenciais Padrão do Banco de Dados PostgreSQL
+        <div className="pt-2 text-center">
+          <span className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-slate-500" />
+            Conexão Criptografada & Proteção contra Tentativas
           </span>
-          {isPainelAdmin ? (
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('admin@nyxzap.com');
-                setPassword('admin123');
-              }}
-              className="w-full py-2 bg-[#151824] hover:bg-slate-800 text-indigo-300 border border-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Preencher Admin (admin@nyxzap.com / admin123)</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('cliente@empresa.com');
-                setPassword('123456');
-              }}
-              className="w-full py-2 bg-[#151824] hover:bg-slate-800 text-purple-300 border border-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>Preencher Cliente (cliente@empresa.com / 123456)</span>
-            </button>
-          )}
         </div>
       </div>
+
+      {/* Esqueci Minha Senha Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-[#0f111a] border border-slate-800 rounded-3xl p-7 shadow-2xl space-y-5 relative">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Recuperar Senha</h3>
+                <p className="text-xs text-slate-400">Insira seu e-mail para receber as instruções</p>
+              </div>
+            </div>
+
+            {forgotError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{forgotError}</span>
+              </div>
+            )}
+
+            {forgotSuccess ? (
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs space-y-2">
+                <div className="flex items-center gap-2 font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>E-mail Enviado!</span>
+                </div>
+                <p>{forgotSuccess}</p>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="w-full mt-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors"
+                >
+                  Voltar ao Login
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                    Seu E-mail Cadastrado
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      required
+                      placeholder="seuemail@empresa.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="w-full bg-[#151824] border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="flex-1 py-3 bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={forgotLoading}
+                    className="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {forgotLoading ? 'Enviando...' : 'Recuperar Senha'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-

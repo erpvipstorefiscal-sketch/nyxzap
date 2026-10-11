@@ -13,9 +13,12 @@ import {
   Layers, 
   Check, 
   CreditCard,
-  X
+  X,
+  Edit2,
+  ExternalLink
 } from 'lucide-react';
 import { WhatsAppSession, UserAuth } from '../types';
+import { trackEvent } from '../lib/telemetry';
 
 interface WhatsAppManagerProps {
   user?: UserAuth;
@@ -30,6 +33,10 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
   const [newSessionName, setNewSessionName] = useState('');
   const [selectedTier, setSelectedTier] = useState<number | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Instance rename states
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const currentLimit = user?.instancesLimit || 1;
 
@@ -152,15 +159,48 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
     }
   };
 
-  const handleBuyTier = (connections: number) => {
+  const handleSaveRename = async (id: string) => {
+    if (!renameValue.trim()) return;
+    try {
+      const res = await fetch(`/api/sessions/${id}/rename`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: renameValue.trim() })
+      });
+      if (res.ok) {
+        setRenamingId(null);
+        await fetchSessions();
+        trackEvent('whatsapp_instance_renamed', 'whatsapp_manager', { id, newName: renameValue.trim() });
+      }
+    } catch (err) {
+      console.error('Erro ao renomear sessão:', err);
+    }
+  };
+
+  const handleBuyTier = async (connections: number) => {
+    trackEvent('cakto_checkout_requested', 'whatsapp_manager', { connections });
+    try {
+      const res = await fetch('/api/cakto/checkout-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemType: 'tier', itemId: String(connections) })
+      });
+      const data = await res.json();
+      if (data.checkoutUrl) {
+        window.open(data.checkoutUrl, '_blank');
+      }
+    } catch (err) {
+      console.error('Erro ao buscar link Cakto:', err);
+    }
+
     if (onUpdateUser) {
       onUpdateUser({ instancesLimit: currentLimit + connections });
     }
-    setSuccessMsg(`+${connections} conexões adicionadas com sucesso ao seu plano!`);
+    setSuccessMsg(`Redirecionando para o Checkout Seguro Cakto (+${connections} conexões adicionadas)!`);
     setTimeout(() => {
       setSuccessMsg('');
       setShowBuyModal(false);
-    }, 2000);
+    }, 2500);
   };
 
   return (
@@ -170,7 +210,7 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
         <div>
           <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
             <Smartphone className="w-6 h-6 text-emerald-400" />
-            <span>Conexões de WhatsApp (Baileys WebSockets)</span>
+            <span>Conexões de WhatsApp</span>
           </h2>
           <p className="text-sm text-slate-400 mt-1">
             Conecte seus números para rodar Agentes de IA simultâneos e fluxos visuais automáticos.
@@ -217,8 +257,48 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
         {sessions.map(session => (
           <div key={session.id} className="p-6 rounded-2xl bg-nyx-900 border border-slate-800 shadow-xl space-y-5 relative">
             <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
-              <div>
-                <h3 className="font-bold text-white text-base">{session.name}</h3>
+              <div className="flex-1 mr-2">
+                {renamingId === session.id ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      placeholder="Nome da instância"
+                      className="bg-[#151824] border border-purple-500 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none font-semibold w-full max-w-[180px]"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSaveRename(session.id)}
+                      className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-colors"
+                    >
+                      Salvar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRenamingId(null)}
+                      className="text-xs text-slate-400 hover:text-white"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white text-base">{session.name}</h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenamingId(session.id);
+                        setRenameValue(session.name);
+                      }}
+                      className="p-1 rounded-md text-slate-400 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                      title="Mudar nome da conexão"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
                 <span className="text-xs text-slate-400 font-mono">ID: {session.id}</span>
               </div>
 

@@ -14,24 +14,83 @@ import {
   CheckCircle2, 
   Tag,
   Sparkles,
-  Layers
+  Layers,
+  Edit2,
+  Trash2,
+  Pause,
+  Play,
+  Activity,
+  CreditCard,
+  ExternalLink,
+  Search,
+  Check,
+  X,
+  Lock,
+  Globe
 } from 'lucide-react';
+import { trackEvent } from '../lib/telemetry';
 
 export const AdminDashboard: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'subscribers' | 'updates' | 'telemetry' | 'cakto'>('subscribers');
+
   // Subscribers and Plans from PostgreSQL
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(false);
 
+  // New Client Modal
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientEmail, setNewClientEmail] = useState('');
+  const [newClientPassword, setNewClientPassword] = useState('123456');
+  const [newClientPhone, setNewClientPhone] = useState('+55 11 99999-9999');
+  const [newClientPlan, setNewClientPlan] = useState('p2');
+  const [newClientInstances, setNewClientInstances] = useState(3);
+  const [newClientMRR, setNewClientMRR] = useState('197.00');
+  const [newClientValidUntil, setNewClientValidUntil] = useState('2026-11-10');
+  const [clientModalError, setClientModalError] = useState('');
+
+  // Edit Client Modal
+  const [editingClient, setEditingClient] = useState<Subscriber | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPlanId, setEditPlanId] = useState('');
+  const [editPlanName, setEditPlanName] = useState('');
+  const [editStatus, setEditStatus] = useState<'active' | 'expired'>('active');
+  const [editMRR, setEditMRR] = useState(0);
+  const [editValidUntil, setEditValidUntil] = useState('');
+  const [editInstancesLimit, setEditInstancesLimit] = useState(1);
 
   // System updates state
-  const [updates, setUpdates] = useState<SystemUpdate[]>([]);
+  const [updates, setUpdates] = useState<any[]>([]);
   const [newVersion, setNewVersion] = useState('v2.2.0');
   const [newType, setNewType] = useState<'correcao' | 'implementacao' | 'melhoria'>('implementacao');
   const [newTitle, setNewTitle] = useState('');
   const [newMessage, setNewMessage] = useState('');
   const [newDate, setNewDate] = useState(new Date().toLocaleDateString('pt-BR'));
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Edit Update Modal
+  const [editingUpdate, setEditingUpdate] = useState<any | null>(null);
+
+  // Telemetry events (PostHog)
+  const [telemetryEvents, setTelemetryEvents] = useState<any[]>([]);
+  const [loadingTelemetry, setLoadingTelemetry] = useState(false);
+
+  // Cakto Configuration
+  const [caktoClientId, setCaktoClientId] = useState('1tyOaWA3KmZDn87nHzJYQksvEBANLiiV7Zx1uLeo');
+  const [caktoClientSecret, setCaktoClientSecret] = useState('');
+  const [caktoLinks, setCaktoLinks] = useState({
+    tier_1: 'https://pay.cakto.com.br/nyxzap-extra-1',
+    tier_2: 'https://pay.cakto.com.br/nyxzap-extra-2',
+    tier_3: 'https://pay.cakto.com.br/nyxzap-extra-3',
+    tier_5: 'https://pay.cakto.com.br/nyxzap-extra-5',
+    plan_p1: 'https://pay.cakto.com.br/nyxzap-start',
+    plan_p2: 'https://pay.cakto.com.br/nyxzap-pro',
+    plan_p3: 'https://pay.cakto.com.br/nyxzap-enterprise'
+  });
+  const [caktoSaved, setCaktoSaved] = useState(false);
 
   const fetchSubscribers = async () => {
     setLoadingSubs(true);
@@ -70,11 +129,139 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const fetchTelemetry = async () => {
+    setLoadingTelemetry(true);
+    try {
+      const res = await fetch('/api/admin/telemetry');
+      if (res.ok) {
+        const data = await res.json();
+        setTelemetryEvents(data);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar telemetria:', err);
+    } finally {
+      setLoadingTelemetry(false);
+    }
+  };
+
+  const fetchCaktoConfig = async () => {
+    try {
+      const res = await fetch('/api/cakto/config');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.clientId) setCaktoClientId(data.clientId);
+        if (data.checkoutLinks) setCaktoLinks(data.checkoutLinks);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar config Cakto:', err);
+    }
+  };
+
   useEffect(() => {
     fetchSubscribers();
     fetchPlans();
     fetchUpdates();
+    fetchTelemetry();
+    fetchCaktoConfig();
   }, []);
+
+  // CRUD Subscribers
+  const handleCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setClientModalError('');
+    if (!newClientName || !newClientEmail) {
+      setClientModalError('Preencha o nome e o e-mail do cliente.');
+      return;
+    }
+
+    try {
+      const selectedPlanObj = plans.find(p => p.id === newClientPlan);
+      const res = await fetch('/api/admin/subscribers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newClientName,
+          email: newClientEmail,
+          password: newClientPassword,
+          phone: newClientPhone,
+          planId: newClientPlan,
+          planName: selectedPlanObj?.name || 'Pro',
+          instancesLimit: newClientInstances,
+          mrrValue: parseFloat(newClientMRR) || 197.00,
+          validUntil: newClientValidUntil,
+          status: 'active'
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Erro ao cadastrar cliente.');
+      }
+
+      setShowNewClientModal(false);
+      setNewClientName('');
+      setNewClientEmail('');
+      await fetchSubscribers();
+    } catch (err: any) {
+      setClientModalError(err.message);
+    }
+  };
+
+  const handleOpenEditClient = (sub: Subscriber) => {
+    setEditingClient(sub);
+    setEditName(sub.name);
+    setEditEmail(sub.email);
+    setEditPhone(sub.phone || '');
+    setEditPlanId(sub.planId);
+    setEditPlanName(sub.planName);
+    setEditStatus(sub.status);
+    setEditMRR(sub.mrrValue);
+    setEditValidUntil(sub.validUntil);
+    setEditInstancesLimit(sub.instancesLimit || 1);
+  };
+
+  const handleSaveEditClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClient) return;
+
+    try {
+      const res = await fetch(`/api/admin/subscribers/${editingClient.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName,
+          email: editEmail,
+          phone: editPhone,
+          planId: editPlanId,
+          planName: editPlanName,
+          status: editStatus,
+          mrrValue: editMRR,
+          validUntil: editValidUntil,
+          instancesLimit: editInstancesLimit
+        })
+      });
+
+      if (res.ok) {
+        setEditingClient(null);
+        await fetchSubscribers();
+      }
+    } catch (err) {
+      console.error('Erro ao editar cliente:', err);
+    }
+  };
+
+  const handleDeleteClient = async (id: string, name: string) => {
+    if (!confirm(`Tem certeza que deseja apagar o cliente "${name}" permanentemente do banco de dados?`)) return;
+
+    try {
+      const res = await fetch(`/api/admin/subscribers/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        await fetchSubscribers();
+      }
+    } catch (err) {
+      console.error('Erro ao excluir cliente:', err);
+    }
+  };
 
   const handleRenewSubscriber = async (id: string) => {
     try {
@@ -87,7 +274,7 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-
+  // CRUD Updates
   const handleCreateUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newVersion || !newTitle || !newMessage) return;
@@ -117,6 +304,68 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleTogglePauseUpdate = async (up: any) => {
+    const newStatus = up.status === 'paused' ? 'active' : 'paused';
+    try {
+      await fetch(`/api/updates/${up.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      await fetchUpdates();
+    } catch (err) {
+      console.error('Erro ao alterar status:', err);
+    }
+  };
+
+  const handleDeleteUpdate = async (id: string) => {
+    if (!confirm('Deseja realmente excluir esta publicação do histórico?')) return;
+    try {
+      await fetch(`/api/updates/${id}`, { method: 'DELETE' });
+      await fetchUpdates();
+    } catch (err) {
+      console.error('Erro ao excluir novidade:', err);
+    }
+  };
+
+  const handleSaveEditUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUpdate) return;
+    try {
+      await fetch(`/api/updates/${editingUpdate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingUpdate)
+      });
+      setEditingUpdate(null);
+      await fetchUpdates();
+    } catch (err) {
+      console.error('Erro ao atualizar novidade:', err);
+    }
+  };
+
+  // Save Cakto Config
+  const handleSaveCakto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/cakto/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: caktoClientId,
+          clientSecret: caktoClientSecret,
+          checkoutLinks: caktoLinks
+        })
+      });
+      if (res.ok) {
+        setCaktoSaved(true);
+        setTimeout(() => setCaktoSaved(false), 3000);
+      }
+    } catch (err) {
+      console.error('Erro ao salvar config Cakto:', err);
+    }
+  };
+
   const totalMRR = subscribers
     .filter(s => s.status === 'active')
     .reduce((acc, curr) => acc + curr.mrrValue, 0);
@@ -126,21 +375,74 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Top Header */}
-      <div>
-        <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-          <ShieldCheck className="w-6 h-6 text-purple-400" />
-          <span>Painel Administrativo do Sistema</span>
-        </h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Controle central de faturamento, MRR, planos de assinatura, validade de clientes e comunicados de novidades.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
+            <ShieldCheck className="w-6 h-6 text-purple-400" />
+            <span>Painel SuperAdmin</span>
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Gestão de Clientes, Assinaturas, MRR, Telemetria & Integração Cakto.
+          </p>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 bg-[#151824] p-1.5 rounded-2xl border border-slate-800">
+          <button
+            onClick={() => { setActiveTab('subscribers'); trackEvent('admin_tab_subscribers', 'admin'); }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'subscribers'
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Clientes & MRR</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('updates'); trackEvent('admin_tab_updates', 'admin'); }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'updates'
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Bell className="w-4 h-4" />
+            <span>Publicações</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('telemetry'); fetchTelemetry(); trackEvent('admin_tab_telemetry', 'admin'); }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'telemetry'
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            <span>Telemetria (PostHog)</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('cakto'); trackEvent('admin_tab_cakto', 'admin'); }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'cakto'
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Cakto MCP & Links</span>
+          </button>
+        </div>
       </div>
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="p-5 rounded-2xl bg-nyx-900 border border-slate-800 shadow-xl space-y-2">
           <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-            <span>MRR (Receita Recorrente)</span>
+            <span>MRR Recorrente</span>
             <DollarSign className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-extrabold text-white">
@@ -160,239 +462,804 @@ export const AdminDashboard: React.FC = () => {
             {activeSubscribers}
           </div>
           <div className="text-xs text-slate-400">
-            {subscribers.length} cadastrados no total
+            {subscribers.length} cadastrados no PostgreSQL
           </div>
         </div>
 
         <div className="p-5 rounded-2xl bg-nyx-900 border border-slate-800 shadow-xl space-y-2">
           <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-            <span>Planos Cadastrados</span>
-            <Calendar className="w-4 h-4 text-cyan-400" />
+            <span>Eventos Rastreados</span>
+            <Activity className="w-4 h-4 text-cyan-400" />
           </div>
           <div className="text-2xl font-extrabold text-white">
-            {plans.length}
+            {telemetryEvents.length}
           </div>
           <div className="text-xs text-slate-400">
-            Start, Pro e Enterprise
+            Auditoria PostHog ativa
           </div>
         </div>
 
         <div className="p-5 rounded-2xl bg-nyx-900 border border-slate-800 shadow-xl space-y-2">
           <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-            <span>Status da Operação</span>
-            <AlertCircle className="w-4 h-4 text-amber-400" />
+            <span>Integração Cakto</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-extrabold text-emerald-400 flex items-center gap-2">
             <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
-            100% Online
+            MCP Conectado
           </div>
           <div className="text-xs text-slate-400">
-            VPS HostMF • Canadá
+            mcp.cakto.com.br
           </div>
         </div>
       </div>
 
-      {/* Cadastrar Novidades e Atualizações do Sistema */}
-      <div className="bg-nyx-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-        <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
-          <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Bell className="w-5 h-5 text-indigo-400" />
-              <span>Cadastrar Novidades & Atualizações do Sistema</span>
-            </h3>
-            <p className="text-xs text-slate-400">
-              Publique correções, novas funcionalidades e versões para todos os usuários do sistema visualizarem.
-            </p>
-          </div>
-          <span className="text-xs font-mono bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full border border-indigo-500/20 font-bold">
-            {updates.length} Registradas
-          </span>
-        </div>
-
-        {saveSuccess && (
-          <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-bold flex items-center gap-2 animate-fadeIn">
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Atualização publicada com sucesso! Ela já está visível para os clientes no botão "Novidades".</span>
-          </div>
-        )}
-
-        <form onSubmit={handleCreateUpdate} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* TAB 1: CLIENTES & ASSINANTES */}
+      {activeTab === 'subscribers' && (
+        <div className="bg-nyx-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between">
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">Versão do Sistema Atual</label>
-              <input
-                type="text"
-                placeholder="Ex: v2.2.0"
-                value={newVersion}
-                onChange={e => setNewVersion(e.target.value)}
-                required
-                className="w-full bg-[#151824] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
-              />
+              <h3 className="text-base font-bold text-white">Gestão de Clientes & Assinaturas</h3>
+              <p className="text-xs text-slate-400">Adicione novos clientes, edite planos, altere limites e remova usuários.</p>
             </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">Data da Atualização</label>
-              <input
-                type="text"
-                value={newDate}
-                onChange={e => setNewDate(e.target.value)}
-                required
-                className="w-full bg-[#151824] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">Tipo de Atualização</label>
-              <select
-                value={newType}
-                onChange={e => setNewType(e.target.value as any)}
-                className="w-full bg-[#151824] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-              >
-                <option value="implementacao">✨ Implementação / Nova Função</option>
-                <option value="correcao">🐛 Correção de Bug</option>
-                <option value="melhoria">⚡ Otimização & Melhoria</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1">Título do Comunicado</label>
-            <input
-              type="text"
-              placeholder="Ex: Lançamento de Conexões Múltiplas e Chat ao Vivo Dedicado"
-              value={newTitle}
-              onChange={e => setNewTitle(e.target.value)}
-              required
-              className="w-full bg-[#151824] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1">Mensagem Detalhada da Atualização</label>
-            <textarea
-              rows={3}
-              placeholder="Descreva detalhadamente o que foi corrigido ou implementado nesta versão..."
-              value={newMessage}
-              onChange={e => setNewMessage(e.target.value)}
-              required
-              className="w-full bg-[#151824] border border-slate-800 rounded-xl p-3.5 text-xs text-white focus:outline-none focus:border-indigo-500 leading-relaxed"
-            />
-          </div>
-
-          <div className="flex justify-end">
             <button
-              type="submit"
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-2"
+              onClick={() => {
+                setClientModalError('');
+                setShowNewClientModal(true);
+              }}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-purple-600/30 flex items-center gap-1.5"
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>Publicar Novidade para Clientes</span>
+              <Plus className="w-3.5 h-3.5" /> Novo Cliente
             </button>
           </div>
-        </form>
 
-        {/* Existing Updates List */}
-        <div className="border-t border-slate-800/80 pt-4 space-y-3">
-          <span className="text-xs font-semibold text-slate-400 block uppercase tracking-wider">Histórico de Publicações Recentes</span>
-          <div className="space-y-2">
-            {updates.map(up => (
-              <div key={up.id} className="p-4 rounded-xl bg-[#151824] border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded">
-                      {up.version}
-                    </span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      up.type === 'correcao'
-                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                        : up.type === 'implementacao'
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
-                    }`}>
-                      {up.type === 'correcao' ? 'Correção' : up.type === 'implementacao' ? 'Implementação' : 'Melhoria'}
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-mono">{up.date}</span>
-                    <span className="text-xs font-bold text-white">{up.title}</span>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-nyx-850 text-slate-400 uppercase font-semibold text-[10px] border-b border-slate-800">
+                <tr>
+                  <th className="p-3">Cliente</th>
+                  <th className="p-3">Plano</th>
+                  <th className="p-3">Valor / Mês</th>
+                  <th className="p-3">Validade</th>
+                  <th className="p-3">WhatsApp Conexões</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-medium">
+                {subscribers.map(sub => (
+                  <tr key={sub.id} className="hover:bg-nyx-850/50 transition-colors">
+                    <td className="p-3">
+                      <div className="font-bold text-white">{sub.name}</div>
+                      <div className="text-[11px] text-slate-500">{sub.email}</div>
+                    </td>
+                    <td className="p-3 font-semibold text-purple-300">{sub.planName}</td>
+                    <td className="p-3 font-mono font-bold text-emerald-400">
+                      R$ {sub.mrrValue.toFixed(2)}
+                    </td>
+                    <td className="p-3 font-mono">
+                      <span className={sub.status === 'expired' ? 'text-rose-400 font-bold' : 'text-slate-300'}>
+                        {sub.validUntil}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[11px]">
+                        {sub.connectedInstances} / {sub.instancesLimit || 1}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                        sub.status === 'active' 
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                      }`}>
+                        {sub.status === 'active' ? 'Ativo' : 'Expirado'}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right space-x-1.5">
+                      <button 
+                        onClick={() => handleRenewSubscriber(sub.id)}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-semibold transition-colors"
+                        title="Renovar por mais 30 dias"
+                      >
+                        +30 Dias
+                      </button>
+                      <button
+                        onClick={() => handleOpenEditClient(sub)}
+                        className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg transition-colors"
+                        title="Editar cliente"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteClient(sub.id, sub.name)}
+                        className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"
+                        title="Excluir cliente"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: PUBLICAÇÕES & NOVIDADES */}
+      {activeTab === 'updates' && (
+        <div className="bg-nyx-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Bell className="w-5 h-5 text-indigo-400" />
+                <span>Publicações de Novidades & Atualizações</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Publique comunicados de sistema. Você pode parar, editar ou apagar qualquer publicação a qualquer momento.
+              </p>
+            </div>
+            <span className="text-xs font-mono bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full border border-indigo-500/20 font-bold">
+              {updates.length} Registradas
+            </span>
+          </div>
+
+          {saveSuccess && (
+            <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-bold flex items-center gap-2 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Publicação realizada com sucesso no banco de dados!</span>
+            </div>
+          )}
+
+          <form onSubmit={handleCreateUpdate} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Versão do Sistema</label>
+                <input
+                  type="text"
+                  placeholder="Ex: v2.2.0"
+                  value={newVersion}
+                  onChange={e => setNewVersion(e.target.value)}
+                  required
+                  className="w-full bg-[#151824] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Data</label>
+                <input
+                  type="text"
+                  value={newDate}
+                  onChange={e => setNewDate(e.target.value)}
+                  required
+                  className="w-full bg-[#151824] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Tipo</label>
+                <select
+                  value={newType}
+                  onChange={e => setNewType(e.target.value as any)}
+                  className="w-full bg-[#151824] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="implementacao">✨ Implementação / Nova Função</option>
+                  <option value="correcao">🐛 Correção de Bug</option>
+                  <option value="melhoria">⚡ Otimização & Melhoria</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Título</label>
+              <input
+                type="text"
+                placeholder="Ex: Nova integração com Cakto e Conexões WhatsApp Dinâmicas"
+                value={newTitle}
+                onChange={e => setNewTitle(e.target.value)}
+                required
+                className="w-full bg-[#151824] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Mensagem</label>
+              <textarea
+                rows={3}
+                placeholder="Descreva o que foi implementado ou ajustado..."
+                value={newMessage}
+                onChange={e => setNewMessage(e.target.value)}
+                required
+                className="w-full bg-[#151824] border border-slate-800 rounded-xl p-3.5 text-xs text-white focus:outline-none focus:border-indigo-500 leading-relaxed"
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-2"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Publicar Comunicado</span>
+              </button>
+            </div>
+          </form>
+
+          {/* Existing Updates List with Edit, Pause and Delete Actions */}
+          <div className="border-t border-slate-800/80 pt-4 space-y-3">
+            <span className="text-xs font-semibold text-slate-400 block uppercase tracking-wider">Histórico de Publicações Recentes</span>
+            <div className="space-y-2">
+              {updates.map(up => (
+                <div key={up.id} className="p-4 rounded-xl bg-[#151824] border border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="space-y-1 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs font-bold text-white bg-slate-800 px-2 py-0.5 rounded">
+                        {up.version}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        up.type === 'correcao'
+                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          : up.type === 'implementacao'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                      }`}>
+                        {up.type === 'correcao' ? 'Correção' : up.type === 'implementacao' ? 'Implementação' : 'Melhoria'}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        up.status === 'paused'
+                          ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      }`}>
+                        {up.status === 'paused' ? 'Pausado (Invisível)' : 'Ativo'}
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono">{up.date}</span>
+                      <span className="text-xs font-bold text-white">{up.title}</span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed pl-1">
+                      {up.message}
+                    </p>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed pl-1">
-                    {up.message}
-                  </p>
+
+                  {/* Actions for Update: Pause, Edit, Delete */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleTogglePauseUpdate(up)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                        up.status === 'paused'
+                          ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20'
+                      }`}
+                      title={up.status === 'paused' ? 'Retomar visualização' : 'Pausar (parar mensagem)'}
+                    >
+                      {up.status === 'paused' ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                      <span>{up.status === 'paused' ? 'Retomar' : 'Parar'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => setEditingUpdate(up)}
+                      className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg transition-colors"
+                      title="Editar mensagem"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteUpdate(up.id)}
+                      className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"
+                      title="Excluir mensagem"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: TELEMETRIA & ANALYTICS (POSTHOG) */}
+      {activeTab === 'telemetry' && (
+        <div className="bg-nyx-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Activity className="w-5 h-5 text-cyan-400" />
+                <span>Auditoria & Telemetria em Tempo Real (Estilo PostHog)</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Acompanhe o passo a passo de tudo que seus clientes e leads clicam, navegam e executam no NyxZap.
+              </p>
+            </div>
+            <button
+              onClick={fetchTelemetry}
+              disabled={loadingTelemetry}
+              className="px-3.5 py-1.5 bg-[#151824] hover:bg-slate-800 text-cyan-400 border border-cyan-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingTelemetry ? 'animate-spin' : ''}`} />
+              <span>Atualizar Eventos</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-nyx-850 text-slate-400 uppercase font-semibold text-[10px] border-b border-slate-800">
+                <tr>
+                  <th className="p-3">Horário</th>
+                  <th className="p-3">Ação / Evento</th>
+                  <th className="p-3">Usuário / E-mail</th>
+                  <th className="p-3">Tela / Aba</th>
+                  <th className="p-3">IP de Origem</th>
+                  <th className="p-3">Detalhes do Evento</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-medium">
+                {telemetryEvents.map(evt => (
+                  <tr key={evt.id} className="hover:bg-nyx-850/50 transition-colors">
+                    <td className="p-3 font-mono text-slate-400 text-[11px] whitespace-nowrap">
+                      {new Date(evt.created_at).toLocaleTimeString()} - {new Date(evt.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="p-3">
+                      <span className="font-bold text-white bg-slate-800 px-2 py-0.5 rounded font-mono text-[11px]">
+                        {evt.event_name}
+                      </span>
+                    </td>
+                    <td className="p-3 text-purple-300">
+                      {evt.user_email || 'Visitante Anônimo'}
+                    </td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[10px] font-bold uppercase">
+                        {evt.tab_name || 'Geral'}
+                      </span>
+                    </td>
+                    <td className="p-3 font-mono text-slate-400 text-[11px]">
+                      {evt.ip_address}
+                    </td>
+                    <td className="p-3 font-mono text-[11px] text-slate-400 max-w-xs truncate">
+                      {typeof evt.details === 'object' ? JSON.stringify(evt.details) : evt.details}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: INTEGRAÇÃO CAKTO MCP */}
+      {activeTab === 'cakto' && (
+        <div className="bg-nyx-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-emerald-400" />
+                <span>Integração de Pagamentos Cakto MCP & Checkouts</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Conectado ao servidor MCP oficial da Cakto (https://mcp.cakto.com.br) para processamento de assinaturas e pacotes adicionais.
+              </p>
+            </div>
+            <a
+              href="https://docs.cakto.com.br/mcp/visao-geral"
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            >
+              <span>Documentação MCP Cakto</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+
+          {caktoSaved && (
+            <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-bold flex items-center gap-2 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Configurações da Cakto salvas e ativadas com sucesso!</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveCakto} className="space-y-6">
+            <div className="p-4 rounded-xl bg-[#151824] border border-slate-800 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-2">
+                <Lock className="w-3.5 h-3.5" />
+                Credenciais da Chave de API Cakto
+              </h4>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Client ID</label>
+                  <input
+                    type="text"
+                    value={caktoClientId}
+                    onChange={e => setCaktoClientId(e.target.value)}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Client Secret</label>
+                  <input
+                    type="password"
+                    placeholder="Cole a Secret se quiser atualizar"
+                    value={caktoClientSecret}
+                    onChange={e => setCaktoClientSecret(e.target.value)}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+                  />
                 </div>
               </div>
-            ))}
+            </div>
+
+            <div className="p-4 rounded-xl bg-[#151824] border border-slate-800 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+                <Globe className="w-3.5 h-3.5" />
+                Links Diretos de Checkout para Conexões Extras de WhatsApp
+              </h4>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">+1 Conexão (R$ 39,90/mês)</label>
+                  <input
+                    type="text"
+                    value={caktoLinks.tier_1}
+                    onChange={e => setCaktoLinks({ ...caktoLinks, tier_1: e.target.value })}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">+2 Conexões (R$ 69,80/mês)</label>
+                  <input
+                    type="text"
+                    value={caktoLinks.tier_2}
+                    onChange={e => setCaktoLinks({ ...caktoLinks, tier_2: e.target.value })}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">+3 Conexões (R$ 89,70/mês - Mais Recomendado)</label>
+                  <input
+                    type="text"
+                    value={caktoLinks.tier_3}
+                    onChange={e => setCaktoLinks({ ...caktoLinks, tier_3: e.target.value })}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">+5 Conexões (R$ 99,50/mês - Super Oferta)</label>
+                  <input
+                    type="text"
+                    value={caktoLinks.tier_5}
+                    onChange={e => setCaktoLinks({ ...caktoLinks, tier_5: e.target.value })}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/30 flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                <span>Salvar Configurações da Cakto</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Novo Cliente */}
+      {showNewClientModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-[#0f111a] border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Plus className="w-4 h-4 text-purple-400" />
+                <span>Cadastrar Novo Cliente</span>
+              </h3>
+              <button onClick={() => setShowNewClientModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {clientModalError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl text-xs">
+                {clientModalError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateClient} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Nome Completo / Empresa</label>
+                  <input
+                    type="text"
+                    required
+                    value={newClientName}
+                    onChange={e => setNewClientName(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">E-mail</label>
+                  <input
+                    type="email"
+                    required
+                    value={newClientEmail}
+                    onChange={e => setNewClientEmail(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Senha Provisória</label>
+                  <input
+                    type="password"
+                    required
+                    value={newClientPassword}
+                    onChange={e => setNewClientPassword(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Telefone</label>
+                  <input
+                    type="text"
+                    value={newClientPhone}
+                    onChange={e => setNewClientPhone(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Plano Inicial</label>
+                  <select
+                    value={newClientPlan}
+                    onChange={e => {
+                      setNewClientPlan(e.target.value);
+                      if (e.target.value === 'p1') {
+                        setNewClientInstances(1);
+                        setNewClientMRR('97.00');
+                      } else if (e.target.value === 'p2') {
+                        setNewClientInstances(3);
+                        setNewClientMRR('197.00');
+                      } else {
+                        setNewClientInstances(10);
+                        setNewClientMRR('1490.00');
+                      }
+                    }}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  >
+                    <option value="p1">Plano Start (1 Conexão - R$ 97/mês)</option>
+                    <option value="p2">Plano Pro (3 Conexões - R$ 197/mês)</option>
+                    <option value="p3">Plano Enterprise (10 Conexões - R$ 1490/ano)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Limite Conexões WhatsApp</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={newClientInstances}
+                    onChange={e => setNewClientInstances(parseInt(e.target.value) || 1)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Valor MRR (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newClientMRR}
+                    onChange={e => setNewClientMRR(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Data de Validade</label>
+                  <input
+                    type="date"
+                    value={newClientValidUntil}
+                    onChange={e => setNewClientValidUntil(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNewClientModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-purple-600/30"
+                >
+                  Criar Cliente
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Subscribers Table */}
-      <div className="bg-nyx-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-white">Clientes & Validades de Acesso</h3>
-            <p className="text-xs text-slate-400">Gerencie vencimentos e bloqueio automático de inadimplentes.</p>
+      {/* Modal: Editar Cliente */}
+      {editingClient && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-[#0f111a] border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-indigo-400" />
+                <span>Editar Cliente: {editingClient.name}</span>
+              </h3>
+              <button onClick={() => setEditingClient(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditClient} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Nome</label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">E-mail</label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={e => setEditEmail(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Telefone</label>
+                  <input
+                    type="text"
+                    value={editPhone}
+                    onChange={e => setEditPhone(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={e => setEditStatus(e.target.value as any)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  >
+                    <option value="active">Ativo (Acesso Liberado)</option>
+                    <option value="expired">Expirado (Bloqueado)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Limite Conexões</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editInstancesLimit}
+                    onChange={e => setEditInstancesLimit(parseInt(e.target.value) || 1)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Valor MRR (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editMRR}
+                    onChange={e => setEditMRR(parseFloat(e.target.value) || 0)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Data de Validade (AAAA-MM-DD)</label>
+                  <input
+                    type="text"
+                    value={editValidUntil}
+                    onChange={e => setEditValidUntil(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingClient(null)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
           </div>
-          <button className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-purple-600/30 flex items-center gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Novo Cliente
-          </button>
         </div>
+      )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-nyx-850 text-slate-400 uppercase font-semibold text-[10px] border-b border-slate-800">
-              <tr>
-                <th className="p-3">Cliente</th>
-                <th className="p-3">Plano</th>
-                <th className="p-3">Valor / Mês</th>
-                <th className="p-3">Validade</th>
-                <th className="p-3">WhatsApp Ativos</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 font-medium">
-              {subscribers.map(sub => (
-                <tr key={sub.id} className="hover:bg-nyx-850/50 transition-colors">
-                  <td className="p-3">
-                    <div className="font-bold text-white">{sub.name}</div>
-                    <div className="text-[11px] text-slate-500">{sub.email}</div>
-                  </td>
-                  <td className="p-3 font-semibold text-purple-300">{sub.planName}</td>
-                  <td className="p-3 font-mono font-bold text-emerald-400">
-                    R$ {sub.mrrValue.toFixed(2)}
-                  </td>
-                  <td className="p-3 font-mono">
-                    <span className={sub.status === 'expired' ? 'text-rose-400 font-bold' : 'text-slate-300'}>
-                      {sub.validUntil}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[11px]">
-                      {sub.connectedInstances} conexões
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                      sub.status === 'active' 
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                        : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                    }`}>
-                      {sub.status === 'active' ? 'Ativo' : 'Expirado'}
-                    </span>
-                  </td>
-                  <td className="p-3 text-right space-x-2">
-                    <button 
-                      onClick={() => handleRenewSubscriber(sub.id)}
-                      className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-semibold transition-colors"
-                    >
-                      +30 Dias
-                    </button>
-                  </td>
-                </tr>
+      {/* Modal: Editar Publicação */}
+      {editingUpdate && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-[#0f111a] border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-indigo-400" />
+                <span>Editar Publicação: {editingUpdate.title}</span>
+              </h3>
+              <button onClick={() => setEditingUpdate(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-              ))}
-            </tbody>
-          </table>
+            <form onSubmit={handleSaveEditUpdate} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Título</label>
+                <input
+                  type="text"
+                  value={editingUpdate.title}
+                  onChange={e => setEditingUpdate({ ...editingUpdate, title: e.target.value })}
+                  className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Mensagem</label>
+                <textarea
+                  rows={4}
+                  value={editingUpdate.message}
+                  onChange={e => setEditingUpdate({ ...editingUpdate, message: e.target.value })}
+                  className="w-full bg-[#151824] border border-slate-700 rounded-xl p-3 text-xs text-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingUpdate(null)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
