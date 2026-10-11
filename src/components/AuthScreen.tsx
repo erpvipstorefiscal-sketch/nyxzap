@@ -521,7 +521,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                     Não possui o NyxZap ainda?
                   </span>
                   <a
-                    href="https://pay.cakto.com.br/nyxzap-pro"
+                    href="https://pay.cakto.com.br/87jcu5r_1192138"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors underline"

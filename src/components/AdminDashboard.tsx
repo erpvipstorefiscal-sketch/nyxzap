@@ -44,9 +44,9 @@ export const AdminDashboard: React.FC = () => {
   const [newClientEmail, setNewClientEmail] = useState('');
   const [newClientPassword, setNewClientPassword] = useState('123456');
   const [newClientPhone, setNewClientPhone] = useState('+55 11 99999-9999');
-  const [newClientPlan, setNewClientPlan] = useState('p2');
-  const [newClientInstances, setNewClientInstances] = useState(3);
-  const [newClientMRR, setNewClientMRR] = useState('197.00');
+  const [newClientPlan, setNewClientPlan] = useState('p_dinder');
+  const [newClientInstances, setNewClientInstances] = useState(1);
+  const [newClientMRR, setNewClientMRR] = useState('97.00');
   const [newClientValidUntil, setNewClientValidUntil] = useState('2026-11-10');
   const [clientModalError, setClientModalError] = useState('');
 
@@ -1058,22 +1058,18 @@ export const AdminDashboard: React.FC = () => {
                     value={newClientPlan}
                     onChange={e => {
                       setNewClientPlan(e.target.value);
-                      if (e.target.value === 'p1') {
+                      if (e.target.value === 'p_dinder') {
                         setNewClientInstances(1);
                         setNewClientMRR('97.00');
-                      } else if (e.target.value === 'p2') {
-                        setNewClientInstances(3);
-                        setNewClientMRR('197.00');
                       } else {
-                        setNewClientInstances(10);
-                        setNewClientMRR('1490.00');
+                        setNewClientInstances(1);
+                        setNewClientMRR('147.00');
                       }
                     }}
                     className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
                   >
-                    <option value="p1">Plano Start (1 Conexão - R$ 97/mês)</option>
-                    <option value="p2">Plano Pro (3 Conexões - R$ 197/mês)</option>
-                    <option value="p3">Plano Enterprise (10 Conexões - R$ 1490/ano)</option>
+                    <option value="p_dinder">Plano Dinder (1 Conexão - R$ 97/mês)</option>
+                    <option value="p_pro_ia">Plano Pro + IA ilimitada (1 Conexão - R$ 147/mês)</option>
                   </select>
                 </div>
 
