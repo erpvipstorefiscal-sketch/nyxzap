@@ -126,6 +126,124 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Register Endpoint with 1-day Free Trial
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password } = req.body;
+  const clientIp = getClientIp(req);
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Nome, e-mail e senha são obrigatórios.' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Validate strong password: at least 8 chars, 1 letter, 1 number, 1 special character
+  const hasLetter = /[a-zA-Z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(password);
+  if (password.length < 8 || !hasLetter || !hasNumber || !hasSpecial) {
+    return res.status(400).json({
+      error: 'A senha deve ter no mínimo 8 caracteres, incluindo letras, números e caracteres especiais.'
+    });
+  }
+
+  try {
+    const existing = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [normalizedEmail]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'Este e-mail já está cadastrado. Faça login ou recupere sua senha.' });
+    }
+
+    const newId = 'usr-' + Date.now();
+    // 1-day free trial: tomorrow's date
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const validUntilStr = tomorrow.toISOString().split('T')[0];
+
+    await pool.query(
+      `INSERT INTO users (id, name, email, password, role, phone, plan_id, plan_name, status, mrr_value, valid_until, instances_limit, connected_instances)
+       VALUES ($1, $2, $3, $4, 'client', '', 'p1', 'Teste Grátis (1 Dia)', 'active', 0.00, $5, 1, 0)`,
+      [newId, name.trim(), normalizedEmail, password, validUntilStr]
+    );
+
+    recordTelemetry('user_registered_trial', 'register', newId, normalizedEmail, { trialDays: 1 }, clientIp);
+
+    res.json({
+      id: newId,
+      name: name.trim(),
+      email: normalizedEmail,
+      role: 'client',
+      planName: 'Teste Grátis (1 Dia)',
+      validUntil: validUntilStr,
+      instancesLimit: 1,
+      token: 'jwt-token-' + newId,
+      message: 'Conta criada com sucesso! Você ganhou 1 dia de teste grátis.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro ao criar conta: ' + err.message });
+  }
+});
+
+// Google Authentication Endpoint (Login or Register with 1-day trial)
+app.post('/api/auth/google', async (req, res) => {
+  const { email, name, googleId } = req.body;
+  const clientIp = getClientIp(req);
+
+  if (!email) {
+    return res.status(400).json({ error: 'E-mail do Google não informado.' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1', [normalizedEmail]);
+    
+    if (result.rows.length > 0) {
+      const user = result.rows[0];
+      loginAttempts.delete(clientIp);
+      recordTelemetry('google_login_success', 'login', user.id, user.email, { provider: 'google' }, clientIp);
+
+      return res.json({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        planName: user.plan_name,
+        validUntil: user.valid_until,
+        instancesLimit: user.instances_limit,
+        token: 'jwt-token-' + user.id
+      });
+    }
+
+    // New Google User: Create with 1-day Free Trial
+    const newId = 'usr-g-' + Date.now();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const validUntilStr = tomorrow.toISOString().split('T')[0];
+
+    await pool.query(
+      `INSERT INTO users (id, name, email, password, role, phone, plan_id, plan_name, status, mrr_value, valid_until, instances_limit, connected_instances)
+       VALUES ($1, $2, $3, $4, 'client', '', 'p1', 'Teste Grátis (1 Dia)', 'active', 0.00, $5, 1, 0)`,
+      [newId, name || 'Usuário Google', normalizedEmail, 'google-oauth-' + (googleId || Date.now()), validUntilStr]
+    );
+
+    recordTelemetry('google_register_trial', 'register', newId, normalizedEmail, { trialDays: 1, provider: 'google' }, clientIp);
+
+    res.json({
+      id: newId,
+      name: name || 'Usuário Google',
+      email: normalizedEmail,
+      role: 'client',
+      planName: 'Teste Grátis (1 Dia)',
+      validUntil: validUntilStr,
+      instancesLimit: 1,
+      token: 'jwt-token-' + newId,
+      message: 'Conta criada com sucesso via Google! Você ganhou 1 dia de teste grátis.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro na autenticação com Google: ' + err.message });
+  }
+});
+
 // Forgot Password Recovery Endpoint with Database Existence Protection & Hostinger Professional Mailer
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { email } = req.body;
