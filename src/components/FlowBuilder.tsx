@@ -8,7 +8,6 @@ import {
   Power, 
   Check, 
   X, 
-  Plus, 
   Smartphone,
   Mic,
   Image as ImageIcon,
@@ -22,9 +21,47 @@ import {
   Maximize2,
   CheckCircle2,
   Link as LinkIcon,
-  HelpCircle
+  HelpCircle,
+  Activity
 } from 'lucide-react';
 import { FlowNode, FlowEdge } from '../types';
+
+// Standard dimensions for calculating port positions precisely
+const getNodeDimensions = (type: FlowNode['type']) => {
+  switch (type) {
+    case 'inicio':
+      return { width: 260, height: 260 };
+    case 'ia':
+      return { width: 260, height: 250 };
+    case 'condicao':
+      return { width: 250, height: 210 };
+    case 'sms':
+    case 'whatsapp':
+      return { width: 260, height: 200 };
+    case 'audio':
+      return { width: 250, height: 180 };
+    case 'imagem':
+      return { width: 250, height: 200 };
+    case 'video':
+      return { width: 250, height: 200 };
+    case 'timer':
+      return { width: 250, height: 160 };
+    case 'cakto':
+      return { width: 230, height: 240 };
+    default:
+      return { width: 260, height: 200 };
+  }
+};
+
+const getNodeOutputPos = (node: FlowNode) => {
+  const { width, height } = getNodeDimensions(node.type);
+  return { x: node.x + width, y: node.y + height / 2 };
+};
+
+const getNodeInputPos = (node: FlowNode) => {
+  const { height } = getNodeDimensions(node.type);
+  return { x: node.x, y: node.y + height / 2 };
+};
 
 const INITIAL_NODES: FlowNode[] = [
   {
@@ -35,8 +72,8 @@ const INITIAL_NODES: FlowNode[] = [
     y: 80,
     data: { 
       trigger: 'palavra_chave', 
-      keywords: ['preço', 'comprar', 'orçamento'], 
-      instance: 'Todas' 
+      keywords: ['quero saber sobre o curso', 'preço', 'comprar'], 
+      instance: 'Inst. 1' 
     }
   },
   {
@@ -67,11 +104,11 @@ const INITIAL_NODES: FlowNode[] = [
   {
     id: 'node-4',
     type: 'sms',
-    title: 'Mensagem WhatsApp',
+    title: 'Mensagem',
     x: 940,
     y: 70,
     data: { 
-      message: 'Olá {nome}, tudo bem? Seu atendimento VIP foi iniciado pela nossa IA!' 
+      message: 'Olá {nome}, como posso te ajudar hoje?' 
     }
   },
   {
@@ -114,7 +151,7 @@ export const FlowBuilder: React.FC = () => {
     }
   });
 
-  const [zoom, setZoom] = useState<number>(1);
+  const [zoom, setZoom] = useState<number>(1.16);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -123,9 +160,14 @@ export const FlowBuilder: React.FC = () => {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Connection mode state
-  const [connectingNodeId, setConnectingNodeId] = useState<string | null>(null);
-  const [connectingHandleType, setConnectingHandleType] = useState<string>('out');
+  // Dynamic connection line state
+  const [connectingFrom, setConnectingFrom] = useState<{
+    nodeId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [hoveredTargetPortId, setHoveredTargetPortId] = useState<string | null>(null);
 
   // Input states for cards
   const [newKeywordInput, setNewKeywordInput] = useState<{ [nodeId: string]: string }>({});
@@ -133,6 +175,18 @@ export const FlowBuilder: React.FC = () => {
   const [flowActive, setFlowActive] = useState(true);
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Cancel connection on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && connectingFrom) {
+        setConnectingFrom(null);
+        setHoveredTargetPortId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [connectingFrom]);
 
   // Wheel zoom handler
   const handleWheel = (e: React.WheelEvent) => {
@@ -146,7 +200,6 @@ export const FlowBuilder: React.FC = () => {
 
   // Node Drag handlers
   const handleNodeMouseDown = (id: string, e: React.MouseEvent) => {
-    // Only drag with left click and if not clicking inside form elements
     if (e.button !== 0) return;
     e.stopPropagation();
     
@@ -166,20 +219,31 @@ export const FlowBuilder: React.FC = () => {
     });
   };
 
-  // Canvas Pan handlers
+  // Canvas Pan & Mouse handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0 && !draggingId) {
+      if (connectingFrom) {
+        // Clicking on canvas while connecting cancels connection
+        setConnectingFrom(null);
+        setHoveredTargetPortId(null);
+        return;
+      }
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (draggingId && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const mouseCanvasX = (e.clientX - rect.left - pan.x) / zoom;
-      const mouseCanvasY = (e.clientY - rect.top - pan.y) / zoom;
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseCanvasX = (e.clientX - rect.left - pan.x) / zoom;
+    const mouseCanvasY = (e.clientY - rect.top - pan.y) / zoom;
 
+    if (connectingFrom) {
+      setCursorPos({ x: mouseCanvasX, y: mouseCanvasY });
+    }
+
+    if (draggingId) {
       setNodes(prev => prev.map(n => 
         n.id === draggingId 
           ? { 
@@ -202,6 +266,46 @@ export const FlowBuilder: React.FC = () => {
     setIsPanning(false);
   };
 
+  // Start Connection from Output Port
+  const handleOutputPortMouseDown = (nodeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!containerRef.current) return;
+
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    const startPos = getNodeOutputPos(node);
+    setConnectingFrom({ nodeId, x: startPos.x, y: startPos.y });
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseCanvasX = (e.clientX - rect.left - pan.x) / zoom;
+    const mouseCanvasY = (e.clientY - rect.top - pan.y) / zoom;
+    setCursorPos({ x: mouseCanvasX, y: mouseCanvasY });
+  };
+
+  // Complete Connection at Input Port
+  const handleInputPortMouseUp = (targetNodeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (connectingFrom && connectingFrom.nodeId !== targetNodeId) {
+      // Avoid duplicate edges
+      const exists = edges.some(ed => ed.from === connectingFrom.nodeId && ed.to === targetNodeId);
+      if (!exists) {
+        const newEdge: FlowEdge = {
+          id: `e-${connectingFrom.nodeId}-${targetNodeId}-${Date.now()}`,
+          from: connectingFrom.nodeId,
+          to: targetNodeId,
+          label: 'Disparo'
+        };
+        setEdges(prev => [...prev, newEdge]);
+      }
+    }
+    setConnectingFrom(null);
+    setHoveredTargetPortId(null);
+  };
+
   // Save Flow
   const handleSaveFlow = () => {
     try {
@@ -216,11 +320,12 @@ export const FlowBuilder: React.FC = () => {
 
   // Reset to default
   const handleResetFlow = () => {
-    if (confirm('Deseja resetar o fluxo para a configuração inicial padrão?')) {
+    if (confirm('Deseja restaurar o fluxo para a configuração inicial padrão?')) {
       setNodes(INITIAL_NODES);
       setEdges(INITIAL_EDGES);
-      setZoom(1);
+      setZoom(1.16);
       setPan({ x: 0, y: 0 });
+      setConnectingFrom(null);
       localStorage.removeItem('nyxzap_flow_builder_nodes');
       localStorage.removeItem('nyxzap_flow_builder_edges');
     }
@@ -232,6 +337,7 @@ export const FlowBuilder: React.FC = () => {
     setNodes(prev => prev.filter(n => n.id !== id));
     setEdges(prev => prev.filter(edge => edge.from !== id && edge.to !== id));
     if (selectedId === id) setSelectedId(null);
+    if (connectingFrom?.nodeId === id) setConnectingFrom(null);
   };
 
   // Duplicate node
@@ -296,9 +402,8 @@ export const FlowBuilder: React.FC = () => {
       defaultData.activeEvents = ['Aprovada'];
     }
 
-    // Spawn centered in visible area
-    const spawnX = Math.round((-pan.x + 300) / zoom + (nodes.length % 5) * 30);
-    const spawnY = Math.round((-pan.y + 150) / zoom + (nodes.length % 5) * 30);
+    const spawnX = Math.round((-pan.x + 320) / zoom + (nodes.length % 5) * 35);
+    const spawnY = Math.round((-pan.y + 160) / zoom + (nodes.length % 5) * 35);
 
     const newNode: FlowNode = {
       id: `node-${Date.now()}`,
@@ -311,30 +416,6 @@ export const FlowBuilder: React.FC = () => {
 
     setNodes(prev => [...prev, newNode]);
     setSelectedId(newNode.id);
-  };
-
-  // Handle port connection
-  const handlePortClick = (nodeId: string, portType: 'in' | 'out', e: React.MouseEvent) => {
-    e.stopPropagation();
-
-    if (!connectingNodeId) {
-      if (portType === 'out') {
-        setConnectingNodeId(nodeId);
-        setConnectingHandleType(portType);
-      }
-    } else {
-      if (portType === 'in' && connectingNodeId !== nodeId) {
-        // Create edge
-        const newEdge: FlowEdge = {
-          id: `e-${connectingNodeId}-${nodeId}-${Date.now()}`,
-          from: connectingNodeId,
-          to: nodeId,
-          label: 'Conexão'
-        };
-        setEdges(prev => [...prev, newEdge]);
-      }
-      setConnectingNodeId(null);
-    }
   };
 
   // Delete edge
@@ -419,7 +500,7 @@ export const FlowBuilder: React.FC = () => {
           {/* Zoom Controls */}
           <div className="flex items-center bg-[#131622] border border-slate-800 rounded-xl p-1 gap-1">
             <button 
-              onClick={() => setZoom(z => Math.max(0.4, Number((z - 0.1).toFixed(1))))}
+              onClick={() => setZoom(z => Math.max(0.4, Number((z - 0.1).toFixed(2))))}
               title="Diminuir Zoom"
               className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition-colors"
             >
@@ -429,7 +510,7 @@ export const FlowBuilder: React.FC = () => {
               {Math.round(zoom * 100)}%
             </span>
             <button 
-              onClick={() => setZoom(z => Math.min(2.0, Number((z + 0.1).toFixed(1))))}
+              onClick={() => setZoom(z => Math.min(2.0, Number((z + 0.1).toFixed(2))))}
               title="Aumentar Zoom"
               className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition-colors"
             >
@@ -468,18 +549,21 @@ export const FlowBuilder: React.FC = () => {
         </div>
       </div>
 
-      {/* Connecting banner indicator */}
-      {connectingNodeId && (
-        <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-1.5 rounded-xl text-xs flex items-center justify-between animate-fadeIn">
-          <div className="flex items-center gap-2">
-            <LinkIcon className="w-3.5 h-3.5 animate-pulse" />
-            <span>Modo de ligação ativo: <strong>Clique no ponto esquerdo (Entrada)</strong> do card destino para conectar.</span>
+      {/* Dynamic Connecting Banner Notice */}
+      {connectingFrom && (
+        <div className="bg-gradient-to-r from-purple-900/60 via-indigo-900/60 to-purple-900/60 border border-purple-500/50 text-purple-200 px-4 py-2 rounded-xl text-xs flex items-center justify-between shadow-lg shadow-purple-900/20 animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span>
+            <LinkIcon className="w-4 h-4 text-cyan-400" />
+            <span>
+              <strong>Conectando linha:</strong> Solte ou clique no <strong>ponto circular à esquerda</strong> do card desejado para conectar.
+            </span>
           </div>
           <button 
-            onClick={() => setConnectingNodeId(null)}
-            className="text-amber-400 hover:text-white text-[11px] underline font-semibold"
+            onClick={() => setConnectingFrom(null)}
+            className="px-2.5 py-0.5 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 text-[11px] font-bold transition-colors"
           >
-            Cancelar
+            Cancelar (Esc)
           </button>
         </div>
       )}
@@ -491,7 +575,6 @@ export const FlowBuilder: React.FC = () => {
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
         className="flex-1 bg-[#090a0f] border border-slate-800/80 rounded-2xl relative overflow-hidden select-none cursor-grab active:cursor-grabbing"
         style={{
           backgroundImage: 'radial-gradient(circle, #1a1e2e 1.2px, transparent 1.2px)',
@@ -500,12 +583,12 @@ export const FlowBuilder: React.FC = () => {
         }}
       >
         {/* Helper Badge in Canvas */}
-        <div className="absolute top-3 left-3 z-30 pointer-events-none flex items-center gap-1.5 bg-[#131622]/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-800/80 text-[10px] text-slate-400">
-          <HelpCircle className="w-3 h-3 text-purple-400" />
-          <span>Roda do mouse = Zoom ({Math.round(zoom * 100)}%) • Arraste o fundo para mover</span>
+        <div className="absolute top-3 left-3 z-30 pointer-events-none flex items-center gap-2 bg-[#131622]/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800/80 text-[11px] text-slate-300 shadow-md">
+          <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
+          <span>Arraste o ponto direito de um card para ligar a outro • Roda do mouse = Zoom ({Math.round(zoom * 100)}%)</span>
         </div>
 
-        {/* Zoom Transform Wrapper */}
+        {/* Zoom & Pan Transform Container */}
         <div 
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
@@ -520,86 +603,217 @@ export const FlowBuilder: React.FC = () => {
           {/* SVG Connections Layer */}
           <svg className="absolute inset-0 w-full h-full pointer-events-auto z-0 overflow-visible">
             <defs>
-              <linearGradient id="flowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#8b5cf6" />
-                <stop offset="100%" stopColor="#3b82f6" />
+              {/* CSS Animation Keyframes for glowing flowing edges */}
+              <style>{`
+                @keyframes flowLineDash {
+                  from { stroke-dashoffset: 24; }
+                  to { stroke-dashoffset: 0; }
+                }
+                @keyframes connectBeamPulse {
+                  0%, 100% { opacity: 0.9; stroke-width: 3.5; }
+                  50% { opacity: 1; stroke-width: 4.5; }
+                }
+                .flowing-edge {
+                  animation: flowLineDash 0.8s linear infinite;
+                }
+                .connecting-line-anim {
+                  animation: flowLineDash 0.5s linear infinite, connectBeamPulse 1.5s ease-in-out infinite;
+                }
+              `}</style>
+
+              {/* Gradients */}
+              <linearGradient id="flowGradActive" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#a855f7" />
+                <stop offset="50%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#38bdf8" />
               </linearGradient>
-              <linearGradient id="caktoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#10b981" />
-                <stop offset="100%" stopColor="#8b5cf6" />
+
+              <linearGradient id="connectingGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#38bdf8" />
+                <stop offset="50%" stopColor="#818cf8" />
+                <stop offset="100%" stopColor="#ec4899" />
               </linearGradient>
+
+              <filter id="glowEffect" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="3.5" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             </defs>
 
+            {/* 1. Render All Existing Edges with Animated Flowing Effect */}
             {edges.map(edge => {
               const src = nodes.find(n => n.id === edge.from);
               const tgt = nodes.find(n => n.id === edge.to);
               if (!src || !tgt) return null;
 
-              // Node dimensions approx
-              const srcWidth = src.type === 'cakto' ? 180 : src.type === 'condicao' ? 240 : 270;
-              const srcHeight = src.type === 'cakto' ? 80 : 120;
-              const tgtHeight = tgt.type === 'cakto' ? 80 : 120;
+              const p1 = getNodeOutputPos(src);
+              const p2 = getNodeInputPos(tgt);
 
-              const x1 = src.x + srcWidth;
-              const y1 = src.y + 45;
-              const x2 = tgt.x;
-              const y2 = tgt.y + 45;
-              const dx = Math.max(40, Math.abs(x2 - x1) / 2);
+              const x1 = p1.x;
+              const y1 = p1.y;
+              const x2 = p2.x;
+              const y2 = p2.y;
+              const dx = Math.max(50, Math.abs(x2 - x1) / 2);
 
-              const isCakto = src.type === 'cakto';
+              const pathD = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
               const midX = (x1 + x2) / 2;
               const midY = (y1 + y2) / 2;
 
               return (
-                <g key={edge.id} className="group">
+                <g key={edge.id} className="group cursor-pointer">
+                  {/* Outer Background Glow */}
                   <path
-                    d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
+                    d={pathD}
                     fill="none"
-                    stroke={isCakto ? 'url(#caktoGrad)' : 'url(#flowGrad)'}
-                    strokeWidth="3"
-                    strokeDasharray={isCakto ? '6 4' : 'none'}
-                    className="transition-all hover:stroke-purple-400 cursor-pointer"
+                    stroke="#8b5cf6"
+                    strokeWidth="7"
+                    strokeOpacity="0.25"
+                    strokeLinecap="round"
+                    filter="url(#glowEffect)"
                   />
-                  {/* Mid label & delete icon */}
+
+                  {/* Base Line */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="#3b82f6"
+                    strokeWidth="2.5"
+                    strokeOpacity="0.7"
+                  />
+
+                  {/* Animated Flowing Particles / Dashes */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="url(#flowGradActive)"
+                    strokeWidth="3"
+                    strokeDasharray="6 6"
+                    className="flowing-edge"
+                  />
+
+                  {/* Moving Particle Dot traversing the path */}
+                  <circle r="3.5" fill="#38bdf8" filter="url(#glowEffect)">
+                    <animateMotion
+                      path={pathD}
+                      dur="2.5s"
+                      repeatCount="indefinite"
+                      rotate="auto"
+                    />
+                  </circle>
+
+                  {/* Mid label badge with Click to Delete */}
                   <g 
                     transform={`translate(${midX}, ${midY})`} 
-                    className="cursor-pointer"
                     onClick={(e) => deleteEdge(edge.id, e)}
                   >
                     <rect 
-                      x="-38" 
+                      x="-36" 
                       y="-11" 
-                      width="76" 
+                      width="72" 
                       height="22" 
                       rx="11" 
-                      fill="#131622" 
-                      stroke="#334155" 
+                      fill="#13141f" 
+                      stroke="#475569" 
                       strokeWidth="1.5"
-                      className="group-hover:stroke-rose-500 transition-colors"
+                      className="group-hover:stroke-rose-500 group-hover:fill-rose-950/80 transition-colors shadow-lg"
                     />
                     <text
                       x="0"
                       y="4"
-                      fill="#cbd5e1"
+                      fill="#e2e8f0"
                       fontSize="9"
                       fontWeight="bold"
                       fontFamily="sans-serif"
                       textAnchor="middle"
-                      className="select-none group-hover:fill-rose-400"
+                      className="select-none group-hover:fill-rose-300 transition-colors"
                     >
-                      {edge.label || 'Ligar'} ×
+                      {edge.label || 'Ligado'} ×
                     </text>
                   </g>
                 </g>
               );
             })}
+
+            {/* 2. Render Real-time Connecting Line Following the Cursor */}
+            {connectingFrom && (() => {
+              const x1 = connectingFrom.x;
+              const y1 = connectingFrom.y;
+              
+              // If hovering over a target port, snap line to it!
+              let x2 = cursorPos.x;
+              let y2 = cursorPos.y;
+              if (hoveredTargetPortId) {
+                const targetNode = nodes.find(n => n.id === hoveredTargetPortId);
+                if (targetNode) {
+                  const targetPos = getNodeInputPos(targetNode);
+                  x2 = targetPos.x;
+                  y2 = targetPos.y;
+                }
+              }
+
+              const dx = Math.max(60, Math.abs(x2 - x1) / 2);
+              const connectPathD = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+              return (
+                <g className="pointer-events-none">
+                  {/* Thick Glow Behind Connecting Line */}
+                  <path
+                    d={connectPathD}
+                    fill="none"
+                    stroke="#ec4899"
+                    strokeWidth="8"
+                    strokeOpacity="0.3"
+                    filter="url(#glowEffect)"
+                  />
+
+                  {/* Animated High-tech Glowing Connecting Line */}
+                  <path
+                    d={connectPathD}
+                    fill="none"
+                    stroke="url(#connectingGrad)"
+                    strokeWidth="3.5"
+                    strokeDasharray="8 6"
+                    strokeLinecap="round"
+                    className="connecting-line-anim"
+                  />
+
+                  {/* Origin Pulse Ring */}
+                  <circle cx={x1} cy={y1} r="6" fill="#38bdf8" />
+                  <circle cx={x1} cy={y1} r="12" fill="none" stroke="#38bdf8" strokeWidth="2" opacity="0.6">
+                    <animate attributeName="r" values="6;16;6" dur="1.2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.8;0;0.8" dur="1.2s" repeatCount="indefinite" />
+                  </circle>
+
+                  {/* Target Endpoint Cursor Pulse */}
+                  <circle cx={x2} cy={y2} r="5" fill="#ec4899" filter="url(#glowEffect)" />
+                  <circle cx={x2} cy={y2} r="14" fill="none" stroke="#ec4899" strokeWidth="2" opacity="0.7">
+                    <animate attributeName="r" values="5;18;5" dur="1s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.9;0;0.9" dur="1s" repeatCount="indefinite" />
+                  </circle>
+
+                  {/* Helper Floating Tooltip on Cursor */}
+                  <g transform={`translate(${x2 + 14}, ${y2 - 12})`}>
+                    <rect x="0" y="0" width="108" height="24" rx="8" fill="#181824" stroke="#8b5cf6" strokeWidth="1.5" />
+                    <text x="54" y="15" fill="#f1f5f9" fontSize="10" fontWeight="bold" textAnchor="middle">
+                      {hoveredTargetPortId ? 'Solte para Ligar ⚡' : 'Ligue ao card →'}
+                    </text>
+                  </g>
+                </g>
+              );
+            })()}
           </svg>
 
           {/* Nodes Layer */}
           <div className="relative z-10 w-full h-full pointer-events-none">
             {nodes.map(node => {
               const isSelected = selectedId === node.id;
-              const isConnectingSource = connectingNodeId === node.id;
+              const isConnectingSource = connectingFrom?.nodeId === node.id;
+              const canBeTarget = connectingFrom !== null && connectingFrom.nodeId !== node.id && node.type !== 'inicio';
+              const isHoveredTarget = hoveredTargetPortId === node.id;
+              const { width } = getNodeDimensions(node.type);
 
               return (
                 <div
@@ -608,17 +822,20 @@ export const FlowBuilder: React.FC = () => {
                   style={{
                     position: 'absolute',
                     left: `${node.x}px`,
-                    top: `${node.y}px`
+                    top: `${node.y}px`,
+                    width: `${width}px`
                   }}
-                  className={`pointer-events-auto rounded-2xl bg-[#13141c] border transition-shadow shadow-2xl relative ${
+                  className={`pointer-events-auto rounded-2xl bg-[#13141c] border transition-all shadow-2xl relative select-none ${
                     isSelected 
                       ? 'ring-2 ring-purple-500 border-purple-500/80 shadow-purple-500/20' 
                       : 'border-[#262838] hover:border-slate-600'
-                  } ${isConnectingSource ? 'ring-2 ring-amber-400 border-amber-400' : ''}`}
+                  } ${isConnectingSource ? 'ring-2 ring-cyan-400 border-cyan-400 shadow-cyan-500/30' : ''} ${
+                    isHoveredTarget ? 'ring-2 ring-emerald-400 border-emerald-400 shadow-emerald-500/30' : ''
+                  }`}
                 >
                   {/* Top Bar Header of each Card */}
                   <div 
-                    className={`px-3.5 py-2.5 rounded-t-2xl flex items-center justify-between text-xs font-bold text-white ${
+                    className={`px-3.5 py-2.5 rounded-t-2xl flex items-center justify-between text-xs font-bold text-white cursor-move ${
                       node.type === 'inicio' ? 'bg-gradient-to-r from-amber-600 to-amber-700' :
                       node.type === 'ia' ? 'bg-gradient-to-r from-purple-600 to-indigo-700' :
                       node.type === 'condicao' ? 'bg-gradient-to-r from-orange-600 to-amber-700' :
@@ -631,8 +848,8 @@ export const FlowBuilder: React.FC = () => {
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      {node.type === 'inicio' && <Zap className="w-3.5 h-3.5 fill-current" />}
-                      {node.type === 'ia' && <Sparkles className="w-3.5 h-3.5 fill-current" />}
+                      {node.type === 'inicio' && <Zap className="w-3.5 h-3.5 fill-current text-white" />}
+                      {node.type === 'ia' && <Sparkles className="w-3.5 h-3.5 fill-current text-white" />}
                       {node.type === 'condicao' && <Scissors className="w-3.5 h-3.5" />}
                       {node.type === 'cakto' && <span className="text-xs">🌵</span>}
                       {node.type === 'timer' && <Clock className="w-3.5 h-3.5" />}
@@ -648,7 +865,7 @@ export const FlowBuilder: React.FC = () => {
                       <button
                         onClick={(e) => duplicateNode(node.id, e)}
                         title="Duplicar Card"
-                        className="p-1 hover:bg-black/20 rounded-md transition-colors"
+                        className="p-1 hover:bg-black/25 rounded-md transition-colors"
                       >
                         <Copy className="w-3 h-3 text-white/80 hover:text-white" />
                       </button>
@@ -666,7 +883,7 @@ export const FlowBuilder: React.FC = () => {
                   <div className="p-3.5 space-y-3 cursor-default" onMouseDown={(e) => e.stopPropagation()}>
                     {/* 1. INÍCIO CARD */}
                     {node.type === 'inicio' && (
-                      <div className="w-64 space-y-3">
+                      <div className="space-y-3">
                         {/* Trigger Type Toggle */}
                         <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#1c1d29] border border-slate-800">
                           <button
@@ -761,7 +978,7 @@ export const FlowBuilder: React.FC = () => {
 
                     {/* 2. ASSISTENTE IA CARD */}
                     {node.type === 'ia' && (
-                      <div className="w-64 space-y-2.5">
+                      <div className="space-y-2.5">
                         {/* Power toggle */}
                         <div className="flex items-center justify-between bg-[#1c1d29] border border-slate-800 px-3 py-1.5 rounded-xl">
                           <span className="text-[11px] font-medium text-slate-300">Status IA:</span>
@@ -831,7 +1048,7 @@ export const FlowBuilder: React.FC = () => {
 
                     {/* 3. CONDIÇÃO CARD */}
                     {node.type === 'condicao' && (
-                      <div className="w-60 space-y-2.5">
+                      <div className="space-y-2.5">
                         <div className="space-y-1">
                           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                             Regra / Variável:
@@ -888,9 +1105,9 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 4. SMS / MENSAGEM WHATSAPP */}
+                    {/* 4. MENSAGEM / WHATSAPP CARD */}
                     {(node.type === 'sms' || node.type === 'whatsapp') && (
-                      <div className="w-64 space-y-2">
+                      <div className="space-y-2">
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                           Texto da Mensagem:
                         </label>
@@ -918,7 +1135,7 @@ export const FlowBuilder: React.FC = () => {
 
                     {/* 5. ÁUDIO CARD */}
                     {node.type === 'audio' && (
-                      <div className="w-60 space-y-2.5">
+                      <div className="space-y-2.5">
                         <div className="space-y-1">
                           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                             Simular Gravação (Delay):
@@ -932,13 +1149,13 @@ export const FlowBuilder: React.FC = () => {
                               onChange={(e) => updateNodeData(node.id, { delaySeconds: Number(e.target.value) })}
                               className="w-20 bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
                             />
-                            <span className="text-xs text-slate-400">segundos (gravando...)</span>
+                            <span className="text-xs text-slate-400">segundos gravando...</span>
                           </div>
                         </div>
 
                         <div className="space-y-1">
                           <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                            URL do Arquivo de Áudio (.mp3 / .ogg):
+                            URL do Arquivo de Áudio:
                           </label>
                           <input
                             type="text"
@@ -953,7 +1170,7 @@ export const FlowBuilder: React.FC = () => {
 
                     {/* 6. IMAGEM CARD */}
                     {node.type === 'imagem' && (
-                      <div className="w-60 space-y-2">
+                      <div className="space-y-2">
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                           URL da Imagem:
                         </label>
@@ -979,7 +1196,7 @@ export const FlowBuilder: React.FC = () => {
 
                     {/* 7. VÍDEO CARD */}
                     {node.type === 'video' && (
-                      <div className="w-60 space-y-2">
+                      <div className="space-y-2">
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                           URL do Vídeo (.mp4):
                         </label>
@@ -1002,7 +1219,7 @@ export const FlowBuilder: React.FC = () => {
 
                     {/* 8. TIMER CARD */}
                     {node.type === 'timer' && (
-                      <div className="w-60 space-y-2.5">
+                      <div className="space-y-2.5">
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                           Aguardar antes do próximo passo:
                         </label>
@@ -1030,7 +1247,7 @@ export const FlowBuilder: React.FC = () => {
 
                     {/* 9. CAKTO CARD */}
                     {node.type === 'cakto' && (
-                      <div className="w-56 space-y-2">
+                      <div className="space-y-2">
                         <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
                           <span className="text-xl">🌵</span>
                           <div>
@@ -1065,27 +1282,35 @@ export const FlowBuilder: React.FC = () => {
                   {/* Ports / Handles */}
                   {/* Left Port (Input) - Except for Início and Cakto */}
                   {node.type !== 'inicio' && (
-                    <button
-                      onClick={(e) => handlePortClick(node.id, 'in', e)}
-                      title="Entrada (Conectar aqui)"
-                      className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2.5 w-5 h-5 rounded-full bg-slate-900 border-2 border-purple-500 hover:scale-125 hover:bg-purple-600 transition-all flex items-center justify-center cursor-pointer z-20 group"
+                    <div
+                      onMouseEnter={() => canBeTarget && setHoveredTargetPortId(node.id)}
+                      onMouseLeave={() => setHoveredTargetPortId(null)}
+                      onMouseUp={(e) => handleInputPortMouseUp(node.id, e)}
+                      title="Entrada (Solte ou clique aqui para conectar)"
+                      className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-pointer z-20 group ${
+                        isHoveredTarget 
+                          ? 'scale-150 border-emerald-400 bg-emerald-500 shadow-lg shadow-emerald-500/50' 
+                          : canBeTarget 
+                          ? 'scale-125 border-cyan-400 bg-cyan-950 animate-pulse' 
+                          : 'border-purple-500 hover:scale-125 hover:bg-purple-600'
+                      }`}
                     >
-                      <div className="w-1.5 h-1.5 rounded-full bg-white group-hover:scale-110"></div>
-                    </button>
+                      <div className={`w-2 h-2 rounded-full ${isHoveredTarget ? 'bg-white' : 'bg-purple-300 group-hover:bg-white'}`}></div>
+                    </div>
                   )}
 
-                  {/* Right Port (Output) */}
-                  <button
-                    onClick={(e) => handlePortClick(node.id, 'out', e)}
-                    title="Saída (Clique para ligar a outro card)"
-                    className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-2.5 w-5 h-5 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-pointer z-20 group hover:scale-125 ${
+                  {/* Right Port (Output) - Starts Connection */}
+                  <div
+                    onMouseDown={(e) => handleOutputPortMouseDown(node.id, e)}
+                    title="Saída (Clique e arraste para ligar a outro card)"
+                    className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-crosshair z-20 group hover:scale-135 ${
                       isConnectingSource 
-                        ? 'border-amber-400 bg-amber-500 animate-ping' 
-                        : 'border-blue-400 hover:bg-blue-500'
+                        ? 'border-cyan-400 bg-cyan-500 shadow-lg shadow-cyan-500/50 scale-125' 
+                        : 'border-blue-400 hover:border-cyan-400 hover:bg-blue-600'
                     }`}
                   >
-                    <div className="w-1.5 h-1.5 rounded-full bg-white group-hover:scale-110"></div>
-                  </button>
+                    <div className="w-2 h-2 rounded-full bg-white group-hover:scale-110"></div>
+                  </div>
                 </div>
               );
             })}
