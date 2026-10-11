@@ -572,16 +572,196 @@ app.post('/api/cakto/config', async (req, res) => {
   }
 });
 
-app.post('/api/cakto/checkout-url', async (req, res) => {
-  const { itemType, itemId } = req.body; // e.g. itemType: 'tier', itemId: '3' or 'tier_3'
+// Cakto Webhook Handler - Confirmações de Assinaturas, Renovações e Conexões Extras
+app.post('/api/webhook/cakto', async (req, res) => {
+  const payload = req.body || {};
+  console.log('[Cakto Webhook Received]', JSON.stringify(payload));
+
   try {
-    const result = await pool.query('SELECT checkout_links FROM cakto_config WHERE id = $1', ['default']);
-    const links = result.rows.length > 0 ? (result.rows[0].checkout_links || {}) : {};
-    const key = itemId.startsWith('tier_') || itemId.startsWith('plan_') ? itemId : `${itemType}_${itemId}`;
-    const url = links[key] || `https://pay.cakto.com.br/nyxzap-${key.replace('_', '-')}`;
-    res.json({ checkoutUrl: url });
+    // Normalização dos campos principais do webhook da Cakto
+    // Eventos comuns: order.paid, payment.approved, subscription.renewed, invoice.paid, etc.
+    const eventType = payload.event || payload.type || payload.status || 'unknown';
+    
+    // Status do pagamento
+    const paymentStatus = (
+      payload.data?.status || 
+      payload.status || 
+      payload.order?.status || 
+      payload.payment_status || 
+      ''
+    ).toLowerCase();
+
+    // Aceita eventos de pagamento aprovado/pago
+    const isApproved = 
+      paymentStatus === 'paid' || 
+      paymentStatus === 'approved' || 
+      paymentStatus === 'completed' ||
+      eventType.includes('paid') ||
+      eventType.includes('approved') ||
+      eventType.includes('renewed');
+
+    if (!isApproved) {
+      console.log(`[Cakto Webhook] Evento ignorado (status não aprovado: ${paymentStatus || eventType})`);
+      return res.json({ received: true, ignored: true, reason: 'Payment not approved' });
+    }
+
+    // Extrair dados do cliente / pagador
+    const customer = payload.data?.customer || payload.customer || payload.client || payload.order?.customer || {};
+    const email = (customer.email || payload.email || payload.buyer_email || payload.data?.email || '').trim().toLowerCase();
+    const customerName = customer.name || customer.full_name || payload.name || payload.buyer_name || 'Cliente Cakto';
+    const customerPhone = customer.phone || customer.cellphone || payload.phone || '+55 11 99999-9999';
+
+    if (!email) {
+      console.warn('[Cakto Webhook] E-mail do cliente não identificado no payload');
+      return res.status(400).json({ error: 'Customer email missing in webhook payload' });
+    }
+
+    // Extrair dados do produto / oferta / item
+    const items = payload.data?.items || payload.items || payload.products || [];
+    const item = items[0] || payload.product || payload.order?.product || {};
+    const productName = (
+      item.name || 
+      item.title || 
+      payload.product_name || 
+      payload.plan_name || 
+      payload.offer_title || 
+      ''
+    ).toLowerCase();
+
+    const offerId = String(payload.offer_id || payload.checkout_id || payload.link_id || item.id || '');
+    const amount = parseFloat(payload.data?.amount || payload.amount || payload.order?.amount || item.price || 0) / 100 || 97.00;
+
+    console.log(`[Cakto Webhook] Processando compra aprovada para ${email} (Produto: "${productName}", Valor: R$ ${amount})`);
+
+    // 1. Verificar se é compra de Conexão Extra de WhatsApp (+1, +2, +3, +5 conexões)
+    const isExtraConnection = 
+      productName.includes('extra') || 
+      productName.includes('conex') || 
+      productName.includes('adicional') ||
+      offerId.includes('extra');
+
+    if (isExtraConnection) {
+      let extraCount = 1;
+      if (productName.includes('5') || productName.includes('cinco')) extraCount = 5;
+      else if (productName.includes('3') || productName.includes('tres') || productName.includes('três')) extraCount = 3;
+      else if (productName.includes('2') || productName.includes('duas')) extraCount = 2;
+
+      // Buscar usuário existente e incrementar instâncias
+      const userRes = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1', [email]);
+      if (userRes.rows.length > 0) {
+        const u = userRes.rows[0];
+        const newLimit = (u.instances_limit || 1) + extraCount;
+        await pool.query(
+          'UPDATE users SET instances_limit = $1 WHERE id = $2',
+          [newLimit, u.id]
+        );
+        recordTelemetry('cakto_webhook_extra_connections', 'cakto', u.id, email, { extraCount, newLimit, amount });
+        console.log(`[Cakto Webhook] +${extraCount} conexões extras adicionadas ao usuário ${email}. Novo limite: ${newLimit}`);
+        return res.json({ success: true, message: `Adicionadas +${extraCount} conexões extras para ${email}.` });
+      } else {
+        // Se cliente ainda não existe, cria o usuário com o limite extra
+        const newId = 'usr-' + Date.now();
+        const nextMonth = new Date();
+        nextMonth.setDate(nextMonth.getDate() + 30);
+        await pool.query(
+          `INSERT INTO users (id, name, email, password, role, phone, plan_id, plan_name, status, mrr_value, valid_until, instances_limit, connected_instances)
+           VALUES ($1, $2, $3, '123456', 'client', $4, 'p_dinder', 'Plano Dinder', 'active', $5, $6, $7, 0)`,
+          [newId, customerName, email, customerPhone, amount, nextMonth.toISOString().split('T')[0], 1 + extraCount]
+        );
+        recordTelemetry('cakto_webhook_new_client_extra', 'cakto', newId, email, { extraCount, amount });
+        return res.json({ success: true, message: `Cliente ${email} criado com +${extraCount} conexões extras.` });
+      }
+    }
+
+    // 2. Assinatura ou Renovação de Plano (Plano Dinder ou Plano Pro com IA)
+    const isPro = 
+      productName.includes('pro') || 
+      productName.includes('ia') || 
+      offerId.includes('3764ipv') || 
+      offerId.includes('87jcu5r');
+
+    const isAnnual = 
+      productName.includes('anual') || 
+      amount >= 290 || 
+      offerId.includes('693263v') || 
+      offerId.includes('3764ipv');
+
+    const daysToAdd = isAnnual ? 365 : 30;
+    const planId = isPro ? 'p_pro_ia' : 'p_dinder';
+    const planName = isPro ? 'Plano Pro + IA ilimitada (Recomendado)' : 'Plano Dinder';
+
+    const userRes = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1', [email]);
+
+    if (userRes.rows.length > 0) {
+      // Renovação ou Upgrade de usuário existente
+      const existingUser = userRes.rows[0];
+      let baseDate = new Date();
+
+      // Se a assinatura ainda estiver ativa no futuro, prorroga a partir da data de vencimento
+      if (existingUser.valid_until) {
+        const curValid = new Date(existingUser.valid_until);
+        if (curValid > baseDate) {
+          baseDate = curValid;
+        }
+      }
+
+      baseDate.setDate(baseDate.getDate() + daysToAdd);
+      const newValidUntil = baseDate.toISOString().split('T')[0];
+
+      await pool.query(
+        `UPDATE users 
+         SET plan_id = $1,
+             plan_name = $2,
+             status = 'active',
+             mrr_value = $3,
+             valid_until = $4
+         WHERE id = $5`,
+        [planId, planName, amount, newValidUntil, existingUser.id]
+      );
+
+      recordTelemetry('cakto_webhook_renew_or_upgrade', 'cakto', existingUser.id, email, {
+        planName,
+        isAnnual,
+        daysToAdd,
+        newValidUntil,
+        amount
+      });
+
+      console.log(`[Cakto Webhook] Assinatura do cliente ${email} renovada com sucesso até ${newValidUntil}!`);
+      return res.json({
+        success: true,
+        message: `Assinatura de ${email} renovada com sucesso até ${newValidUntil} no ${planName}.`
+      });
+    } else {
+      // Novo Assinante registrado via Cakto
+      const newId = 'usr-' + Date.now();
+      const expirationDate = new Date();
+      expirationDate.setDate(expirationDate.getDate() + daysToAdd);
+      const validUntil = expirationDate.toISOString().split('T')[0];
+
+      await pool.query(
+        `INSERT INTO users (id, name, email, password, role, phone, plan_id, plan_name, status, mrr_value, valid_until, instances_limit, connected_instances)
+         VALUES ($1, $2, $3, '123456', 'client', $4, $5, $6, 'active', $7, $8, 1, 0)`,
+        [newId, customerName, email, customerPhone, planId, planName, amount, validUntil]
+      );
+
+      recordTelemetry('cakto_webhook_new_subscriber', 'cakto', newId, email, {
+        planName,
+        isAnnual,
+        validUntil,
+        amount
+      });
+
+      console.log(`[Cakto Webhook] Novo cliente criado via Cakto: ${email} (${planName}) válido até ${validUntil}`);
+      return res.json({
+        success: true,
+        message: `Novo cliente ${email} cadastrado com sucesso no ${planName} até ${validUntil}.`
+      });
+    }
   } catch (err: any) {
-    res.json({ checkoutUrl: `https://pay.cakto.com.br/nyxzap` });
+    console.error('[Cakto Webhook Error]', err);
+    recordTelemetry('cakto_webhook_error', 'cakto', undefined, undefined, { error: err.message });
+    return res.status(500).json({ error: 'Erro interno ao processar webhook Cakto: ' + err.message });
   }
 });
 

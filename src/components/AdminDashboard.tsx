@@ -894,6 +894,32 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* WEBHOOK URL BANNER */}
+          <div className="p-4 rounded-2xl bg-purple-950/20 border border-purple-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
+                URL Oficial do Webhook Cakto (Copie e cole na Cakto)
+              </span>
+              <code className="text-xs font-mono font-bold text-white bg-black/40 px-3 py-1.5 rounded-lg border border-slate-800 block select-all">
+                https://zap.nyxzap.com.br/api/webhook/cakto
+              </code>
+              <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                Eventos escutados: <strong>Compra Aprovada (order.paid)</strong>, <strong>Assinatura Renovada</strong> e <strong>Conexões Extras</strong>. O NyxZap ativará e renovará o cliente no banco de dados automaticamente.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText('https://zap.nyxzap.com.br/api/webhook/cakto');
+                alert('URL do Webhook copiada para a área de transferência!');
+              }}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shrink-0 flex items-center justify-center gap-1.5"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Copiar URL do Webhook</span>
+            </button>
+          </div>
+
           <form onSubmit={handleSaveCakto} className="space-y-6">
             <div className="p-4 rounded-xl bg-[#151824] border border-slate-800 space-y-4">
               <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-2">
