@@ -183,9 +183,9 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// Google Authentication Endpoint (Login or Register with 1-day trial)
+// Google Authentication Endpoint
 app.post('/api/auth/google', async (req, res) => {
-  const { email, name, googleId } = req.body;
+  const { email, name, googleId, action } = req.body; // action: 'login' | 'register'
   const clientIp = getClientIp(req);
 
   if (!email) {
@@ -197,6 +197,7 @@ app.post('/api/auth/google', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1', [normalizedEmail]);
     
+    // Se a conta já existe, faz login normalmente
     if (result.rows.length > 0) {
       const user = result.rows[0];
       loginAttempts.delete(clientIp);
@@ -214,7 +215,15 @@ app.post('/api/auth/google', async (req, res) => {
       });
     }
 
-    // New Google User: Create with 1-day Free Trial
+    // PROTEÇÃO: Se clicou em "Entrar com o Google" na tela de login e a conta NÃO existe no banco:
+    if (action === 'login') {
+      recordTelemetry('google_login_rejected_not_found', 'login', undefined, normalizedEmail, {}, clientIp);
+      return res.status(404).json({
+        error: 'Nenhuma conta encontrada com este e-mail do Google. Por favor, clique em "Criar conta grátis" para se cadastrar.'
+      });
+    }
+
+    // Se veio da tela de cadastro (action === 'register'): cria a conta com 1 dia grátis
     const newId = 'usr-g-' + Date.now();
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);

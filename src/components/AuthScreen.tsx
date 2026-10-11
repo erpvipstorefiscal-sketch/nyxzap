@@ -240,7 +240,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
           body: JSON.stringify({
             email: googleUser.email.trim().toLowerCase(),
             name: googleUser.name || googleUser.email.split('@')[0],
-            googleId: googleUser.sub
+            googleId: googleUser.sub,
+            action: viewMode // 'login' (apenas se existir no banco) ou 'register' (cria conta com 1 dia teste)
           })
         });
 
