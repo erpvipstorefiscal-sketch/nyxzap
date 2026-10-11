@@ -432,6 +432,16 @@ app.put('/api/admin/subscribers/:id', async (req, res) => {
   const { name, email, phone, planId, planName, status, mrrValue, validUntil, instancesLimit } = req.body;
 
   try {
+    // If planId is passed, verify if plan exists or upsert it
+    if (planId) {
+      await pool.query(
+        `INSERT INTO plans (id, name, price, period, instances_limit, ai_credits_limit, features)
+         VALUES ($1, $2, $3, 'mensal', $4, 5000, '[]'::jsonb)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price`,
+        [planId, planName || 'Plano Personalizado', parseFloat(mrrValue) || 97.00, parseInt(instancesLimit) || 1]
+      );
+    }
+
     await pool.query(
       `UPDATE users 
        SET name = COALESCE($1, name),
@@ -444,12 +454,13 @@ app.put('/api/admin/subscribers/:id', async (req, res) => {
            valid_until = COALESCE($8, valid_until),
            instances_limit = COALESCE($9, instances_limit)
        WHERE id = $10`,
-      [name, email, phone, planId, planName, status, mrrValue, validUntil, instancesLimit, id]
+      [name, email, phone, planId || null, planName, status, parseFloat(mrrValue) || 0, validUntil, parseInt(instancesLimit) || 1, id]
     );
 
     recordTelemetry('admin_updated_subscriber', 'admin', id, email, { name, status });
     res.json({ success: true, message: 'Dados do cliente atualizados com sucesso no banco de dados!' });
   } catch (err: any) {
+    console.error('[Update Subscriber Error]', err);
     res.status(500).json({ error: 'Erro ao atualizar cliente: ' + err.message });
   }
 });

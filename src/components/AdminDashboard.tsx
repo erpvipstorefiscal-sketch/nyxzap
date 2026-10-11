@@ -61,6 +61,9 @@ export const AdminDashboard: React.FC = () => {
   const [editMRR, setEditMRR] = useState(0);
   const [editValidUntil, setEditValidUntil] = useState('');
   const [editInstancesLimit, setEditInstancesLimit] = useState(1);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [editSuccess, setEditSuccess] = useState(false);
 
   // System updates state
   const [updates, setUpdates] = useState<any[]>([]);
@@ -209,44 +212,77 @@ export const AdminDashboard: React.FC = () => {
 
   const handleOpenEditClient = (sub: Subscriber) => {
     setEditingClient(sub);
-    setEditName(sub.name);
-    setEditEmail(sub.email);
+    setEditError('');
+    setEditSuccess(false);
+    setEditName(sub.name || '');
+    setEditEmail(sub.email || '');
     setEditPhone(sub.phone || '');
-    setEditPlanId(sub.planId);
-    setEditPlanName(sub.planName);
-    setEditStatus(sub.status);
-    setEditMRR(sub.mrrValue);
-    setEditValidUntil(sub.validUntil);
+    setEditPlanId(sub.planId || 'p1');
+    setEditPlanName(sub.planName || 'Plano Pro');
+    setEditStatus(sub.status || 'active');
+    setEditMRR(sub.mrrValue || 97.00);
+    
+    // Normalize date to YYYY-MM-DD
+    let formattedDate = sub.validUntil || '2026-11-10';
+    if (formattedDate.includes('/')) {
+      const parts = formattedDate.split('/');
+      if (parts.length === 3) {
+        // DD/MM/YYYY -> YYYY-MM-DD
+        formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    setEditValidUntil(formattedDate);
     setEditInstancesLimit(sub.instancesLimit || 1);
   };
 
   const handleSaveEditClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingClient) return;
+    setEditError('');
+    setEditLoading(true);
 
     try {
+      // Ensure date is valid YYYY-MM-DD
+      let finalDate = editValidUntil;
+      if (finalDate.includes('/')) {
+        const parts = finalDate.split('/');
+        if (parts.length === 3) {
+          finalDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+
       const res = await fetch(`/api/admin/subscribers/${editingClient.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: editName,
-          email: editEmail,
-          phone: editPhone,
+          name: editName.trim(),
+          email: editEmail.trim(),
+          phone: editPhone.trim(),
           planId: editPlanId,
           planName: editPlanName,
           status: editStatus,
-          mrrValue: editMRR,
-          validUntil: editValidUntil,
-          instancesLimit: editInstancesLimit
+          mrrValue: Number(editMRR) || 0,
+          validUntil: finalDate,
+          instancesLimit: Number(editInstancesLimit) || 1
         })
       });
 
-      if (res.ok) {
-        setEditingClient(null);
-        await fetchSubscribers();
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao salvar alterações do cliente.');
       }
-    } catch (err) {
+
+      setEditSuccess(true);
+      await fetchSubscribers();
+      setTimeout(() => {
+        setEditSuccess(false);
+        setEditingClient(null);
+      }, 1200);
+    } catch (err: any) {
       console.error('Erro ao editar cliente:', err);
+      setEditError(err.message || 'Erro de comunicação ao salvar.');
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -1348,20 +1384,45 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {editError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              {editSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Alterações salvas com sucesso no banco de dados!</span>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-800/80">
                 <button
                   type="button"
                   onClick={() => setEditingClient(null)}
+                  disabled={editLoading}
                   className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold hover:bg-slate-700 transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5"
+                  disabled={editLoading}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5"
                 >
-                  <Check className="w-4 h-4" />
-                  <span>Salvar Alterações</span>
+                  {editLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Salvar Alterações</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

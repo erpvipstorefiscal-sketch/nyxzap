@@ -166,16 +166,17 @@ export async function initDatabase() {
     `);
 
     // Inserir Planos Padrão se não existirem
-    const plansCount = await client.query('SELECT COUNT(*) FROM plans');
-    if (parseInt(plansCount.rows[0].count) === 0) {
-      await client.query(`
-        INSERT INTO plans (id, name, price, period, instances_limit, ai_credits_limit, features) VALUES
-        ('p1', 'Start', 97.00, 'mensal', 1, 1000, '["1 Conexão WhatsApp", "Agente IA Básico", "Suporte"]'::jsonb),
-        ('p2', 'Pro (Mais Vendido)', 197.00, 'mensal', 3, 5000, '["3 Conexões WhatsApp", "Gemini 3 Grounding & Raciocínio", "Fluxo Drag-and-Drop"]'::jsonb),
-        ('p3', 'Enterprise Anual', 1490.00, 'anual', 10, 50000, '["10 Conexões WhatsApp", "RAG Ilimitado", "Atendimento Humano Prioritário"]'::jsonb);
-      `);
-      console.log('[PostgreSQL] Planos iniciais inseridos com sucesso!');
-    }
+    await client.query(`
+      INSERT INTO plans (id, name, price, period, instances_limit, ai_credits_limit, features) VALUES
+      ('p1', 'Start', 97.00, 'mensal', 1, 1000, '["1 Conexão WhatsApp", "Agente IA Básico", "Suporte"]'::jsonb),
+      ('p2', 'Pro (Mais Vendido)', 197.00, 'mensal', 3, 5000, '["3 Conexões WhatsApp", "Gemini 3 Grounding & Raciocínio", "Fluxo Drag-and-Drop"]'::jsonb),
+      ('p3', 'Enterprise Anual', 1490.00, 'anual', 10, 50000, '["10 Conexões WhatsApp", "RAG Ilimitado", "Atendimento Humano Prioritário"]'::jsonb),
+      ('p_dinder', 'Plano Dinder', 97.00, 'mensal', 1, 1000, '["1 Conexão WhatsApp", "Sistema CRM completo", "Integração WhatsApp + Botzap", "Use sua IA: GPT, Gemini ou Claude"]'::jsonb),
+      ('p_pro_ia', 'Plano Pro com IA', 147.00, 'mensal', 1, 50000, '["Tudo do Dinder + IA ilimitada", "1 Conexão WhatsApp", "CRM completo + IA", "Respostas automáticas", "Suporte 24/7"]'::jsonb)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        price = EXCLUDED.price;
+    `);
 
     // Inserir Usuário SuperAdmin e Usuário Cliente Padrão se não existirem
     const usersCount = await client.query('SELECT COUNT(*) FROM users');
