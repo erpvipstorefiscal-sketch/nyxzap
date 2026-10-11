@@ -478,6 +478,11 @@ app.post('/api/ai-test', async (req, res) => {
       response,
       citations: aiConfig.knowledgeDocs.map(d => d.name)
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve static frontend files if built (Production mode in Docker/Coolify)
 const distPath = path.join(process.cwd(), 'dist');
 if (fs.existsSync(distPath)) {
@@ -492,4 +497,5 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`[NyxZap Backend] Servidor rodando na porta ${PORT}`);
 });
+
 
