@@ -27,13 +27,7 @@ import {
   GitBranch,
   Users,
   Webhook as WebhookIcon,
-  Radio,
-  FileCode,
-  CheckCircle,
   Upload,
-  Play,
-  Pause,
-  AlertCircle,
   Trash2,
   Copy,
   Save,
@@ -88,20 +82,23 @@ const getNodeDimensions = (type: FlowNode['type'], waitForResponse?: boolean) =>
       return { width: 260, height: 220 };
     case 'cakto':
     case 'webhook':
-      return { width: 240, height: 240 };
+      return { width: 270, height: 280 };
     default:
       return { width: 260, height: 220 + extraHeight };
   }
 };
 
-const getNodeOutputPos = (node: FlowNode, handleType: 'default' | 'response' | 'timeout' | 'yes' | 'no' = 'default') => {
+const getNodeOutputPos = (
+  node: FlowNode, 
+  handleType: 'default' | 'response' | 'timeout' | 'yes' | 'no' = 'default'
+) => {
   const { width, height } = getNodeDimensions(node.type, !!node.data.waitForResponse);
   if (node.data.waitForResponse) {
     if (handleType === 'response') {
-      return { x: node.x + width, y: node.y + (height * 0.42) };
+      return { x: node.x + width, y: node.y + (height * 0.40) };
     }
     if (handleType === 'timeout') {
-      return { x: node.x + width, y: node.y + (height * 0.78) };
+      return { x: node.x + width, y: node.y + (height * 0.76) };
     }
   }
   return { x: node.x + width, y: node.y + (height / 2) };
@@ -142,7 +139,7 @@ const INITIAL_NODES: FlowNode[] = [
     id: 'node-2',
     type: 'ia',
     title: 'Assistente IA',
-    x: 940,
+    x: 960,
     y: 40,
     data: { 
       tone: 'Profissional', 
@@ -152,16 +149,14 @@ const INITIAL_NODES: FlowNode[] = [
     }
   },
   {
-    id: 'node-audio',
-    type: 'audio',
-    title: 'Áudio de Reengajamento',
-    x: 940,
+    id: 'node-webhook',
+    type: 'webhook',
+    title: 'Webhook Integração',
+    x: 960,
     y: 360,
     data: { 
-      delaySeconds: 5,
-      fileName: 'audio_explicativo.mp3',
-      fileSize: '1.8 MB',
-      fileUrl: ''
+      platform: 'cakto',
+      activeEvents: ['Compra Aprovada', 'PIX Gerado']
     }
   }
 ];
@@ -169,7 +164,7 @@ const INITIAL_NODES: FlowNode[] = [
 const INITIAL_EDGES: FlowEdge[] = [
   { id: 'e1-4', from: 'node-1', to: 'node-4', label: 'Disparo', fromHandle: 'default' },
   { id: 'e4-2', from: 'node-4', to: 'node-2', label: 'Se responder', fromHandle: 'response' },
-  { id: 'e4-audio', from: 'node-4', to: 'node-audio', label: 'Não respondeu (45s)', fromHandle: 'timeout' }
+  { id: 'e4-wh', from: 'node-4', to: 'node-webhook', label: 'Não respondeu (45s)', fromHandle: 'timeout' }
 ];
 
 export const FlowBuilder: React.FC = () => {
@@ -192,7 +187,7 @@ export const FlowBuilder: React.FC = () => {
     }
   });
 
-  const [zoom, setZoom] = useState<number>(1.12);
+  const [zoom, setZoom] = useState<number>(1.05);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -216,7 +211,6 @@ export const FlowBuilder: React.FC = () => {
 
   // Uploading state tracking by nodeId
   const [uploadingNodeId, setUploadingNodeId] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Input states for cards
   const [newKeywordInput, setNewKeywordInput] = useState<{ [nodeId: string]: string }>({});
@@ -226,6 +220,21 @@ export const FlowBuilder: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeUploadContext, setActiveUploadContext] = useState<{ nodeId: string; accept: string } | null>(null);
+
+  // GLOBAL POINTER LISTENERS: GUARANTEES CARDS NEVER GET STUCK OR GLUED ON RELEASE!
+  useEffect(() => {
+    const handleGlobalPointerUp = () => {
+      setDraggingId(null);
+      setIsPanning(false);
+    };
+
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('mouseup', handleGlobalPointerUp);
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('mouseup', handleGlobalPointerUp);
+    };
+  }, []);
 
   // Cancel connection on Escape key
   useEffect(() => {
@@ -256,6 +265,13 @@ export const FlowBuilder: React.FC = () => {
   const handleNodeMouseDown = (id: string, e: React.MouseEvent) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+
+    // If currently drawing a connection line, cancel line and do not drag
+    if (connectingFrom) {
+      setConnectingFrom(null);
+      setHoveredTargetPortId(null);
+      return;
+    }
     
     const node = nodes.find(n => n.id === id);
     if (!node || !containerRef.current) return;
@@ -275,12 +291,14 @@ export const FlowBuilder: React.FC = () => {
 
   // Canvas Pan & Mouse handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (connectingFrom) {
+      // Clicking on empty canvas while connecting cancels connection immediately
+      setConnectingFrom(null);
+      setHoveredTargetPortId(null);
+      return;
+    }
+
     if (e.button === 0 && !draggingId) {
-      if (connectingFrom) {
-        setConnectingFrom(null);
-        setHoveredTargetPortId(null);
-        return;
-      }
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
@@ -294,6 +312,7 @@ export const FlowBuilder: React.FC = () => {
 
     if (connectingFrom) {
       setCursorPos({ x: mouseCanvasX, y: mouseCanvasY });
+      return; // Do not drag cards while connecting
     }
 
     if (draggingId) {
@@ -329,6 +348,9 @@ export const FlowBuilder: React.FC = () => {
     e.preventDefault();
     if (!containerRef.current) return;
 
+    // Release any node drag immediately
+    setDraggingId(null);
+
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
 
@@ -342,7 +364,7 @@ export const FlowBuilder: React.FC = () => {
   };
 
   // Complete Connection at Input Port
-  const handleInputPortMouseUp = (targetNodeId: string, e: React.MouseEvent) => {
+  const handleInputPortRelease = (targetNodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
 
@@ -374,8 +396,11 @@ export const FlowBuilder: React.FC = () => {
         setEdges(prev => [...prev, newEdge]);
       }
     }
+
+    // Always release connection cleanly!
     setConnectingFrom(null);
     setHoveredTargetPortId(null);
+    setDraggingId(null);
   };
 
   // Save Flow
@@ -395,7 +420,7 @@ export const FlowBuilder: React.FC = () => {
     if (confirm('Deseja restaurar o fluxo para a configuração inicial padrão?')) {
       setNodes(INITIAL_NODES);
       setEdges(INITIAL_EDGES);
-      setZoom(1.12);
+      setZoom(1.05);
       setPan({ x: 0, y: 0 });
       setConnectingFrom(null);
       localStorage.removeItem('nyxzap_flow_builder_nodes');
@@ -457,18 +482,14 @@ export const FlowBuilder: React.FC = () => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
 
-    setUploadError(null);
-
     // Validation for Video: max 50MB
     if (node.type === 'video' && file.size > 50 * 1024 * 1024) {
-      setUploadError('O vídeo selecionado excede o tamanho máximo de 50MB.');
       alert('Erro: O vídeo excede o tamanho máximo de 50MB.');
       return;
     }
 
     setUploadingNodeId(nodeId);
 
-    // Format file size
     const formatBytes = (bytes: number) => {
       if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -491,7 +512,6 @@ export const FlowBuilder: React.FC = () => {
           fileSize: formatBytes(file.size)
         });
       } else {
-        // Fallback local preview
         const localUrl = URL.createObjectURL(file);
         updateNodeData(nodeId, {
           fileUrl: localUrl,
@@ -500,7 +520,6 @@ export const FlowBuilder: React.FC = () => {
         });
       }
     } catch {
-      // Local fallback if offline
       const localUrl = URL.createObjectURL(file);
       updateNodeData(nodeId, {
         fileUrl: localUrl,
@@ -569,24 +588,9 @@ export const FlowBuilder: React.FC = () => {
     } else if (type === 'timer') {
       defaultData.delay = 5;
       defaultData.unit = 'minutos';
-    } else if (type === 'randomizador') {
-      defaultData.splitPercent = 50;
-    } else if (type === 'botoes') {
-      defaultData.message = 'Selecione uma opção abaixo:';
-      defaultData.buttons = ['Quero Comprar', 'Falar com Atendente', 'Dúvidas Frequentes'];
-      defaultData.waitForResponse = true;
-      defaultData.timeoutSeconds = 30;
-      defaultData.timeoutUnit = 'segundos';
-    } else if (type === 'carrossel') {
-      defaultData.cardsCount = 3;
-      defaultData.waitForResponse = true;
-      defaultData.timeoutSeconds = 40;
-      defaultData.timeoutUnit = 'segundos';
-    } else if (type === 'funil' || type === 'pipeline') {
-      defaultData.stage = 'Qualificação de Lead';
     } else if (type === 'cakto' || type === 'webhook') {
-      defaultData.events = ['Aprovada', 'PIX Gerado', 'Boleto Gerado', 'Reembolsado'];
-      defaultData.activeEvents = ['Aprovada'];
+      defaultData.platform = 'cakto';
+      defaultData.activeEvents = ['Compra Aprovada', 'PIX Gerado'];
     }
 
     const spawnX = Math.round((-pan.x + 320) / zoom + (nodes.length % 5) * 35);
@@ -663,7 +667,7 @@ export const FlowBuilder: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Gatilhos de WhatsApp, IA, Mídias diretas do PC e Fallbacks de Tempo Limite.
+              Gatilhos de WhatsApp, IA, Mídias diretas do PC e Conexões Inteligentes.
             </p>
           </div>
         </div>
@@ -712,7 +716,7 @@ export const FlowBuilder: React.FC = () => {
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
             <button 
-              onClick={() => { setZoom(1.12); setPan({ x: 0, y: 0 }); }}
+              onClick={() => { setZoom(1.05); setPan({ x: 0, y: 0 }); }}
               title="Resetar Zoom"
               className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
             >
@@ -755,7 +759,7 @@ export const FlowBuilder: React.FC = () => {
             </span>
           </div>
           <button 
-            onClick={() => setConnectingFrom(null)}
+            onClick={() => { setConnectingFrom(null); setHoveredTargetPortId(null); }}
             className="px-2.5 py-0.5 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 text-[11px] font-bold transition-colors"
           >
             Cancelar (Esc)
@@ -780,7 +784,7 @@ export const FlowBuilder: React.FC = () => {
         {/* Helper Badge in Canvas */}
         <div className="absolute top-3 left-3 z-30 pointer-events-none flex items-center gap-2 bg-[#131622]/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800/80 text-[11px] text-slate-300 shadow-md">
           <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
-          <span>Arraste os pontos para conectar • 2 saídas se 'Aguardar resposta' estiver ativo</span>
+          <span>Arraste os pontos para conectar • Clique no fundo para soltar</span>
         </div>
 
         {/* Zoom & Pan Transform Container */}
@@ -1035,6 +1039,7 @@ export const FlowBuilder: React.FC = () => {
                       {node.type === 'video' && <Video className="w-3.5 h-3.5 text-white" />}
                       {node.type === 'pdf' && <FileText className="w-3.5 h-3.5 text-white" />}
                       {node.type === 'timer' && <Clock className="w-3.5 h-3.5 text-white" />}
+                      {(node.type === 'cakto' || node.type === 'webhook') && <WebhookIcon className="w-3.5 h-3.5 text-white" />}
                       {(node.type === 'sms' || node.type === 'whatsapp') && <MessageSquare className="w-3.5 h-3.5 text-white" />}
                       <span className="tracking-wide uppercase text-[11px] font-black">{node.title}</span>
                     </div>
@@ -1143,21 +1148,87 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 2. ÁUDIO CARD COM UPLOAD DIRETO DO PC */}
+                    {/* 2. WEBHOOK / INTEGRAÇÃO CARD */}
+                    {(node.type === 'webhook' || node.type === 'cakto') && (
+                      <div className="space-y-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Plataforma de Vendas:
+                          </label>
+                          <select
+                            value={node.data.platform || 'cakto'}
+                            onChange={(e) => updateNodeData(node.id, { platform: e.target.value })}
+                            className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-semibold"
+                          >
+                            <option value="site-proprio">🛍️ Site Próprio / E-commerce</option>
+                            <option value="cakto">🌵 Cakto</option>
+                            <option value="hotmart">🔥 Hotmart</option>
+                            <option value="braip">🅱️ Braip</option>
+                            <option value="kirvano">⬛ Kirvano</option>
+                            <option value="logzz">🟩 Logzz</option>
+                            <option value="payt">🟧 Payt</option>
+                            <option value="appmax">🟪 AppMax</option>
+                            <option value="ticto">⬛ Ticto</option>
+                            <option value="hyppe">📦 Hyppe</option>
+                            <option value="eon-digital">⚡ Eon Digital</option>
+                            <option value="keedpay">💳 KeedPay</option>
+                            <option value="mundpay">🌐 MundPay</option>
+                            <option value="shopee">🛍️ Shopee</option>
+                            <option value="personalizado">🔗 Outro Webhook</option>
+                          </select>
+                        </div>
+
+                        {/* Eventos selecionáveis */}
+                        <div className="space-y-1 pt-1 border-t border-slate-800/80">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Disparar quando receber evento:
+                          </label>
+                          <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
+                            {['Compra Aprovada', 'PIX Gerado', 'Boleto Gerado', 'Carrinho Abandonado', 'Reembolso'].map((ev) => {
+                              const isEventActive = (node.data.activeEvents || ['Compra Aprovada', 'PIX Gerado']).includes(ev);
+                              return (
+                                <button
+                                  key={ev}
+                                  type="button"
+                                  onClick={() => {
+                                    const current = node.data.activeEvents || ['Compra Aprovada', 'PIX Gerado'];
+                                    const next = current.includes(ev) ? current.filter((x: string) => x !== ev) : [...current, ev];
+                                    updateNodeData(node.id, { activeEvents: next });
+                                  }}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center justify-between border transition-all ${
+                                    isEventActive 
+                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                                      : 'bg-[#1c1d29] text-slate-500 border-slate-800 hover:text-slate-300'
+                                  }`}
+                                >
+                                  <span>• {ev}</span>
+                                  {isEventActive && <Check className="w-3 h-3 text-emerald-400" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="text-[9px] text-slate-500 pt-0.5">
+                          URLs configuradas em <strong>Canais & Integrações</strong>.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. ÁUDIO CARD COM UPLOAD DIRETO DO PC */}
                     {node.type === 'audio' && (
                       <div className="space-y-2.5">
                         <div className="bg-[#1c1d29] border border-slate-800/80 rounded-xl p-2.5 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold text-slate-300 flex items-center gap-1.5">
                               <Mic className="w-3.5 h-3.5 text-violet-400" />
-                              Arquivo de Áudio do PC
+                              Áudio do PC
                             </span>
                             <span className="text-[8px] font-mono text-violet-300 bg-violet-500/10 px-1.5 py-0.5 rounded border border-violet-500/20 font-bold">
                               MP3, WAV, OGG, OPUS, AAC
                             </span>
                           </div>
 
-                          {/* Upload / File display */}
                           {node.data.fileName ? (
                             <div className="bg-[#13141f] border border-violet-500/30 rounded-lg p-2 space-y-1.5">
                               <div className="flex items-center justify-between">
@@ -1215,14 +1286,14 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 3. IMAGEM CARD COM UPLOAD DIRETO DO PC */}
+                    {/* 4. IMAGEM CARD COM UPLOAD DIRETO DO PC */}
                     {node.type === 'imagem' && (
                       <div className="space-y-2.5">
                         <div className="bg-[#1c1d29] border border-slate-800/80 rounded-xl p-2.5 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold text-slate-300 flex items-center gap-1.5">
                               <ImageIcon className="w-3.5 h-3.5 text-pink-400" />
-                              Imagem do Computador
+                              Imagem do PC
                             </span>
                             <span className="text-[8px] font-mono text-pink-300 bg-pink-500/10 px-1.5 py-0.5 rounded border border-pink-500/20 font-bold">
                               PNG, JPG, WEBP
@@ -1276,7 +1347,7 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 4. VÍDEO CARD COM UPLOAD DIRETO DO PC (MÁX 50MB) */}
+                    {/* 5. VÍDEO CARD COM UPLOAD DIRETO DO PC (MÁX 50MB) */}
                     {node.type === 'video' && (
                       <div className="space-y-2.5">
                         <div className="bg-[#1c1d29] border border-slate-800/80 rounded-xl p-2.5 space-y-2">
@@ -1337,7 +1408,7 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 5. PDF CARD COM UPLOAD DIRETO DO PC */}
+                    {/* 6. PDF CARD COM UPLOAD DIRETO DO PC */}
                     {node.type === 'pdf' && (
                       <div className="space-y-2.5">
                         <div className="bg-[#1c1d29] border border-slate-800/80 rounded-xl p-2.5 space-y-2">
@@ -1394,7 +1465,7 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 6. WHATSAPP / MENSAGEM / SMS */}
+                    {/* 7. WHATSAPP / MENSAGEM / SMS */}
                     {(node.type === 'sms' || node.type === 'whatsapp' || node.type === 'email' || node.type === 'resposta') && (
                       <div className="space-y-2">
                         <textarea
@@ -1418,7 +1489,7 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 7. ASSISTENTE IA CARD */}
+                    {/* 8. ASSISTENTE IA CARD */}
                     {(node.type === 'ia' || node.type === 'ia_audio') && (
                       <div className="space-y-2.5">
                         <div className="flex items-center justify-between bg-[#1c1d29] border border-slate-800 px-3 py-1.5 rounded-xl">
@@ -1463,7 +1534,7 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
-                    {/* 8. TIMER CARD */}
+                    {/* 9. TIMER CARD */}
                     {node.type === 'timer' && (
                       <div className="space-y-2.5">
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -1495,7 +1566,7 @@ export const FlowBuilder: React.FC = () => {
                     {/* CONFIGURAÇÃO DE TEMPO LIMITE DE RESPOSTA (FALLBACK) */}
                     {/* Disponível para mensagens, mídias e interações */}
                     {/* ======================================================== */}
-                    {node.type !== 'inicio' && node.type !== 'timer' && node.type !== 'condicao' && node.type !== 'cakto' && (
+                    {node.type !== 'inicio' && node.type !== 'timer' && node.type !== 'condicao' && node.type !== 'cakto' && node.type !== 'webhook' && (
                       <div className="pt-2 border-t border-slate-800/80 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-bold text-slate-300 flex items-center gap-1">
@@ -1548,7 +1619,8 @@ export const FlowBuilder: React.FC = () => {
                     <div
                       onMouseEnter={() => canBeTarget && setHoveredTargetPortId(node.id)}
                       onMouseLeave={() => setHoveredTargetPortId(null)}
-                      onMouseUp={(e) => handleInputPortMouseUp(node.id, e)}
+                      onMouseUp={(e) => handleInputPortRelease(node.id, e)}
+                      onClick={(e) => handleInputPortRelease(node.id, e)}
                       title="Entrada (Solte ou clique aqui para conectar)"
                       className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-pointer z-20 group ${
                         isHoveredTarget 
@@ -1569,7 +1641,7 @@ export const FlowBuilder: React.FC = () => {
                       <div
                         onMouseDown={(e) => handleOutputPortMouseDown(node.id, 'response', e)}
                         title="Conexão 1: Se o cliente responder"
-                        style={{ top: '42%' }}
+                        style={{ top: '40%' }}
                         className={`absolute right-0 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 border-emerald-400 hover:bg-emerald-500 hover:scale-135 transition-all flex items-center justify-center cursor-crosshair z-20 group shadow-md ${
                           connectingFrom?.nodeId === node.id && connectingFrom.handleType === 'response'
                             ? 'border-emerald-300 bg-emerald-500 shadow-lg shadow-emerald-500/50 scale-135' 
@@ -1586,7 +1658,7 @@ export const FlowBuilder: React.FC = () => {
                       <div
                         onMouseDown={(e) => handleOutputPortMouseDown(node.id, 'timeout', e)}
                         title={`Conexão 2: Se não responder em ${node.data.timeoutSeconds || 30}s`}
-                        style={{ top: '78%' }}
+                        style={{ top: '76%' }}
                         className={`absolute right-0 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 border-amber-400 hover:bg-amber-500 hover:scale-135 transition-all flex items-center justify-center cursor-crosshair z-20 group shadow-md ${
                           connectingFrom?.nodeId === node.id && connectingFrom.handleType === 'timeout'
                             ? 'border-amber-300 bg-amber-500 shadow-lg shadow-amber-500/50 scale-135' 
@@ -1709,9 +1781,19 @@ export const FlowBuilder: React.FC = () => {
             <span className="text-[9px] font-bold">Agente IA</span>
           </button>
 
+          <button 
+            onClick={() => addNode('webhook', 'Webhook')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Webhook de Vendas / Checkout"
+          >
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+              <WebhookIcon className="w-4 h-4" />
+            </div>
+            <span className="text-[9px] font-bold">Webhook</span>
+          </button>
+
           <div className="h-6 w-px bg-slate-700/60 mx-1"></div>
 
-          {/* Full Palette trigger button */}
           <button 
             onClick={() => setShowPaletteModal(true)} 
             className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-purple-900/30 transition-all group"
@@ -1725,13 +1807,10 @@ export const FlowBuilder: React.FC = () => {
         </div>
       </div>
 
-      {/* ======================================================== */}
-      {/* MODAL / GAVETA DE CARDS COMPLETA (BASEADA NAS IMAGENS) */}
-      {/* ======================================================== */}
+      {/* MODAL / GAVETA DE CARDS COMPLETA */}
       {showPaletteModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-[#12131f] border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
-            {/* Modal Header */}
             <div className="p-4 px-6 border-b border-slate-800 flex items-center justify-between bg-[#161827]">
               <div>
                 <h3 className="text-base font-black text-white flex items-center gap-2">
@@ -1750,9 +1829,8 @@ export const FlowBuilder: React.FC = () => {
               </button>
             </div>
 
-            {/* Modal Body: Categorias organizadas */}
             <div className="p-6 overflow-y-auto space-y-6">
-              {/* 1. DISPAROS */}
+              {/* DISPAROS */}
               <div>
                 <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3">
                   DISPAROS
@@ -1795,7 +1873,7 @@ export const FlowBuilder: React.FC = () => {
                 </div>
               </div>
 
-              {/* 2. MÍDIA */}
+              {/* MÍDIA */}
               <div>
                 <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3">
                   MÍDIA (ARMAZENAMENTO DO SISTEMA E UPLOAD DO PC)
@@ -1835,7 +1913,7 @@ export const FlowBuilder: React.FC = () => {
                 </div>
               </div>
 
-              {/* 3. CONTROLE */}
+              {/* CONTROLE */}
               <div>
                 <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3">
                   CONTROLE
@@ -1855,52 +1933,16 @@ export const FlowBuilder: React.FC = () => {
                     <span className="text-xs font-bold text-white">Condição</span>
                   </button>
 
-                  <button onClick={() => addNode('randomizador', 'Randomizador')} className="p-3 bg-[#181a28] hover:bg-purple-950/40 border border-slate-800 hover:border-purple-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Shuffle className="w-5 h-5" />
+                  <button onClick={() => addNode('webhook', 'Webhook / Integrações')} className="p-3 bg-[#181a28] hover:bg-emerald-950/40 border border-slate-800 hover:border-emerald-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <WebhookIcon className="w-5 h-5" />
                     </div>
-                    <span className="text-xs font-bold text-white">Randomizador (Teste A/B)</span>
+                    <span className="text-xs font-bold text-white">Webhook Vendas</span>
                   </button>
                 </div>
               </div>
 
-              {/* 4. INTERAÇÃO */}
-              <div>
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3">
-                  INTERAÇÃO
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <button onClick={() => addNode('botoes', 'Botões')} className="p-3 bg-[#181a28] hover:bg-indigo-950/40 border border-slate-800 hover:border-indigo-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Compass className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Botões</span>
-                  </button>
-
-                  <button onClick={() => addNode('carrossel', 'Carrossel')} className="p-3 bg-[#181a28] hover:bg-pink-950/40 border border-slate-800 hover:border-pink-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-pink-500/20 text-pink-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Layers className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Carrossel</span>
-                  </button>
-
-                  <button onClick={() => addNode('resposta', 'Resposta')} className="p-3 bg-[#181a28] hover:bg-teal-950/40 border border-slate-800 hover:border-teal-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <MessageSquare className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Resposta</span>
-                  </button>
-
-                  <button onClick={() => addNode('resposta_avancada', 'Resposta Avançada')} className="p-3 bg-[#181a28] hover:bg-cyan-950/40 border border-slate-800 hover:border-cyan-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <MessageSquare className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Resposta Avançada</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 5. IA */}
+              {/* IA */}
               <div>
                 <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3">
                   INTELIGÊNCIA ARTIFICIAL (IA)
@@ -1932,49 +1974,6 @@ export const FlowBuilder: React.FC = () => {
                       <PhoneCall className="w-5 h-5" />
                     </div>
                     <span className="text-xs font-bold text-white">IA Ligação</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 6. CRM & AVANÇADO */}
-              <div>
-                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3">
-                  CRM & AVANÇADO
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  <button onClick={() => addNode('funil', 'Funil')} className="p-3 bg-[#181a28] hover:bg-rose-950/40 border border-slate-800 hover:border-rose-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Target className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Funil</span>
-                  </button>
-
-                  <button onClick={() => addNode('pipeline', 'Pipeline')} className="p-3 bg-[#181a28] hover:bg-emerald-950/40 border border-slate-800 hover:border-emerald-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <GitBranch className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Pipeline</span>
-                  </button>
-
-                  <button onClick={() => addNode('agendar', 'Agendar')} className="p-3 bg-[#181a28] hover:bg-cyan-950/40 border border-slate-800 hover:border-cyan-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Calendar className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Agendar</span>
-                  </button>
-
-                  <button onClick={() => addNode('grupo_wa', 'Grupo WA')} className="p-3 bg-[#181a28] hover:bg-teal-950/40 border border-slate-800 hover:border-teal-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Users className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Grupo WA</span>
-                  </button>
-
-                  <button onClick={() => addNode('webhook', 'Webhook / Cakto')} className="p-3 bg-[#181a28] hover:bg-slate-800 border border-slate-800 hover:border-purple-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
-                    <div className="w-10 h-10 rounded-xl bg-slate-800 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <WebhookIcon className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-bold text-white">Webhook</span>
                   </button>
                 </div>
               </div>

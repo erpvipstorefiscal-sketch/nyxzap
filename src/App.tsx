@@ -21,7 +21,8 @@ import {
   LifeBuoy,
   Send,
   ChevronDown,
-  Check
+  Check,
+  Radio
 } from 'lucide-react';
 import { UserAuth, SystemUpdate } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -31,6 +32,7 @@ import { AIAgentManager } from './components/AIAgentManager';
 import { FlowBuilder } from './components/FlowBuilder';
 import { LiveChatManager } from './components/LiveChatManager';
 import { RenewSubscriptionScreen } from './components/RenewSubscriptionScreen';
+import { ChannelsIntegrations } from './components/ChannelsIntegrations';
 
 export function App() {
   const [user, setUser] = useState<UserAuth | null>(() => {
@@ -53,7 +55,7 @@ export function App() {
     return null;
   });
 
-  const [activeClientTab, setActiveClientTab] = useState<'chat' | 'whatsapp' | 'flow' | 'ai'>('chat');
+  const [activeClientTab, setActiveClientTab] = useState<'chat' | 'whatsapp' | 'flow' | 'integrations' | 'ai'>('chat');
 
   // Modals state
   const [showSupportModal, setShowSupportModal] = useState(false);
@@ -341,7 +343,7 @@ export function App() {
                 </span>
               </button>
 
-              {/* 3. FLUXO DRAG-AND-DROP */}
+              {/* 3. FLUXO */}
               <button
                 onClick={() => setActiveClientTab('flow')}
                 className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-xs font-bold ${
@@ -352,6 +354,19 @@ export function App() {
               >
                 <Workflow className="w-4 h-4" />
                 <span>Fluxo</span>
+              </button>
+
+              {/* CANAIS & INTEGRAÇÕES */}
+              <button
+                onClick={() => setActiveClientTab('integrations')}
+                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-xs font-bold ${
+                  activeClientTab === 'integrations'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Radio className="w-4 h-4 text-cyan-400" />
+                <span>Canais & Integrações</span>
               </button>
 
               {/* 4. AGENTE DE IA */}
@@ -434,6 +449,8 @@ export function App() {
                 ? 'Gerenciamento de Instâncias WhatsApp' 
                 : activeClientTab === 'flow' 
                 ? 'Fluxo' 
+                : activeClientTab === 'integrations'
+                ? 'Canais & Integrações'
                 : 'Configurações do Agente de IA'}
             </h2>
           </div>
@@ -466,6 +483,7 @@ export function App() {
                 />
               )}
               {activeClientTab === 'flow' && <FlowBuilder />}
+              {activeClientTab === 'integrations' && <ChannelsIntegrations user={user} />}
               {activeClientTab === 'ai' && <AIAgentManager />}
             </div>
           )}
