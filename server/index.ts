@@ -12,6 +12,7 @@ import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 import { pool, initDatabase } from './db.js';
+import { sendPasswordRecoveryEmail } from './mailer.js';
 
 const app = express();
 app.use(cors());
@@ -125,28 +126,117 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Forgot Password Recovery Endpoint
+// Forgot Password Recovery Endpoint with Database Existence Protection & Hostinger Professional Mailer
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { email } = req.body;
   const clientIp = getClientIp(req);
-  if (!email) {
+
+  if (!email || !email.trim()) {
     return res.status(400).json({ error: 'Informe seu e-mail para recuperação.' });
   }
 
+  const normalizedEmail = email.trim().toLowerCase();
+
   try {
-    const token = 'rst-' + Math.random().toString(36).substr(2, 9);
+    // PROTEÇÃO CRÍTICA: Se o e-mail não existir no banco, NÃO faz requisição nem envia e-mail
+    const userResult = await pool.query('SELECT id, name, email FROM users WHERE LOWER(email) = $1', [normalizedEmail]);
+    
+    if (userResult.rows.length === 0) {
+      recordTelemetry('password_recovery_rejected_not_found', 'auth', undefined, normalizedEmail, { reason: 'email_not_in_database' }, clientIp);
+      // Aborta imediatamente sem tocar no SMTP da Hostinger
+      return res.status(404).json({
+        error: 'O e-mail informado não está cadastrado no sistema. Verifique a digitação ou contate o suporte.'
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Gera código de segurança de 6 dígitos e token
+    const recoveryCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const token = 'rst-' + Date.now() + '-' + Math.random().toString(36).substr(2, 8);
+    const resetId = 'rst-id-' + Date.now();
+
+    // Salva no PostgreSQL com validade de 30 minutos
     await pool.query(
-      `INSERT INTO password_resets (id, email, token) VALUES ($1, $2, $3)`,
-      ['rst-' + Date.now(), email.trim(), token]
+      `INSERT INTO password_resets (id, email, token, code, status, expires_at)
+       VALUES ($1, $2, $3, $4, 'pending', CURRENT_TIMESTAMP + INTERVAL '30 minutes')`,
+      [resetId, normalizedEmail, token, recoveryCode]
     );
-    recordTelemetry('password_recovery_requested', 'auth', undefined, email, { token }, clientIp);
+
+    const host = req.get('host') || 'zap.nyxzap.com.br';
+    const protocol = req.protocol === 'https' || host.includes('nyxzap.com.br') ? 'https' : req.protocol;
+    const resetLink = `${protocol}://${host}/?resetToken=${token}&email=${encodeURIComponent(normalizedEmail)}`;
+
+    // Dispara e-mail profissional via SMTP Hostinger
+    await sendPasswordRecoveryEmail({
+      toEmail: normalizedEmail,
+      userName: user.name,
+      recoveryCode,
+      resetLink
+    });
+
+    recordTelemetry('password_recovery_sent', 'auth', user.id, normalizedEmail, { token, host }, clientIp);
 
     res.json({
       success: true,
-      message: `Instruções de redefinição enviadas com sucesso para ${email}! Verifique sua caixa de entrada e spam.`
+      message: `Código de verificação e instruções enviados com sucesso para ${normalizedEmail}! Verifique sua caixa de entrada e spam.`,
+      email: normalizedEmail
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[Forgot Password Error]', err);
+    res.status(500).json({ error: 'Erro ao processar recuperação de senha: ' + err.message });
+  }
+});
+
+// Reset Password Endpoint (Executa a troca definitiva da senha)
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { email, code, token, newPassword } = req.body;
+  const clientIp = getClientIp(req);
+
+  if (!email || !newPassword || (!code && !token)) {
+    return res.status(400).json({ error: 'Informe e-mail, código de verificação e a nova senha.' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  try {
+    // Valida código/token ativo e não expirado
+    const resetRes = await pool.query(
+      `SELECT * FROM password_resets 
+       WHERE LOWER(email) = $1 
+         AND (code = $2 OR token = $3) 
+         AND status = 'pending' 
+         AND expires_at > CURRENT_TIMESTAMP
+       ORDER BY created_at DESC LIMIT 1`,
+      [normalizedEmail, code ? String(code).trim() : '', token ? String(token).trim() : '']
+    );
+
+    if (resetRes.rows.length === 0) {
+      return res.status(400).json({ 
+        error: 'Código de verificação incorreto ou expirado. Por favor, solicite um novo código.' 
+      });
+    }
+
+    const resetRecord = resetRes.rows[0];
+
+    // Atualiza a senha no banco de dados PostgreSQL
+    await pool.query('UPDATE users SET password = $1 WHERE LOWER(email) = $2', [newPassword, normalizedEmail]);
+
+    // Marca o pedido de reset como concluído
+    await pool.query("UPDATE password_resets SET status = 'used' WHERE id = $1", [resetRecord.id]);
+
+    recordTelemetry('password_reset_completed', 'auth', undefined, normalizedEmail, {}, clientIp);
+
+    res.json({
+      success: true,
+      message: 'Sua senha foi atualizada com sucesso! Você já pode entrar com sua nova senha.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro ao redefinir senha: ' + err.message });
   }
 });
 

@@ -81,9 +81,13 @@ export async function initDatabase() {
         id VARCHAR(100) PRIMARY KEY,
         email VARCHAR(150) NOT NULL,
         token VARCHAR(100) NOT NULL,
-        status VARCHAR(20) DEFAULT 'completed',
+        code VARCHAR(20) NOT NULL DEFAULT '123456',
+        status VARCHAR(20) DEFAULT 'pending',
+        expires_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP + INTERVAL '30 minutes',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE password_resets ADD COLUMN IF NOT EXISTS code VARCHAR(20) DEFAULT '123456';
+      ALTER TABLE password_resets ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP + INTERVAL '30 minutes';
     `);
 
     // 3.3 Tabela de Configuração e Links de Checkout Cakto

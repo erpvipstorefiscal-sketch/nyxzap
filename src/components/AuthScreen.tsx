@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2, KeyRound, ArrowLeft, Shield } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2, KeyRound, ArrowLeft, Shield, Check } from 'lucide-react';
 import { UserAuth } from '../types';
 import { identifyUser, trackEvent } from '../lib/telemetry';
 
@@ -19,17 +19,37 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [loginNotice, setLoginNotice] = useState('');
 
   // Forgot password modal state
   const [showForgotModal, setShowForgotModal] = useState(false);
+  const [recoveryStep, setRecoveryStep] = useState<'request' | 'verify'>('request');
   const [forgotEmail, setForgotEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotSuccess, setForgotSuccess] = useState('');
   const [forgotError, setForgotError] = useState('');
 
+  // Check URL query parameters for direct reset link
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('resetToken');
+      const paramEmail = params.get('email');
+      if (token && paramEmail) {
+        setForgotEmail(paramEmail);
+        setVerificationCode(token);
+        setRecoveryStep('verify');
+        setShowForgotModal(true);
+      }
+    }
+  }, []);
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoginNotice('');
 
     if (!email || !password) {
       setError('Por favor, informe seu e-mail e senha.');
@@ -72,7 +92,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     setForgotSuccess('');
 
     if (!forgotEmail) {
-      setForgotError('Informe o e-mail da sua conta.');
+      setForgotError('Informe o e-mail cadastrado da sua conta.');
       return;
     }
 
@@ -88,12 +108,58 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
 
       const data = await res.json();
       if (!res.ok) {
+        // Proteção ativada: se o e-mail não existir, o backend devolve erro e aborta
         throw new Error(data.error || 'Erro ao processar recuperação.');
       }
 
-      setForgotSuccess(data.message || 'Instruções de redefinição enviadas para o seu e-mail!');
+      setForgotSuccess(data.message || 'Código de segurança enviado para o seu e-mail!');
+      setRecoveryStep('verify');
     } catch (err: any) {
       setForgotError(err.message || 'Erro ao solicitar recuperação.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+
+    if (!verificationCode || !newPassword) {
+      setForgotError('Informe o código recebido no e-mail e a nova senha.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setForgotError('A nova senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: forgotEmail.trim(),
+          code: verificationCode.trim(),
+          newPassword
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao redefinir senha.');
+      }
+
+      // Preenche o e-mail na tela de login e fecha modal
+      setEmail(forgotEmail.trim());
+      setPassword('');
+      setShowForgotModal(false);
+      setRecoveryStep('request');
+      setLoginNotice('Senha redefinida com sucesso! Você já pode entrar usando sua nova senha.');
+    } catch (err: any) {
+      setForgotError(err.message || 'Erro ao redefinir senha.');
     } finally {
       setForgotLoading(false);
     }
@@ -126,6 +192,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               : 'Plataforma de Automação & IA'}
           </p>
         </div>
+
+        {loginNotice && (
+          <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fadeIn">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+            <span>{loginNotice}</span>
+          </div>
+        )}
 
         {error && (
           <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fadeIn">
@@ -164,6 +237,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                   setForgotEmail(email);
                   setForgotError('');
                   setForgotSuccess('');
+                  setRecoveryStep('request');
                   setShowForgotModal(true);
                 }}
                 className="text-[11px] font-semibold text-purple-400 hover:text-purple-300 transition-colors"
@@ -215,8 +289,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                 <KeyRound className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Recuperar Senha</h3>
-                <p className="text-xs text-slate-400">Insira seu e-mail para receber as instruções</p>
+                <h3 className="text-base font-bold text-white">Recuperação de Senha</h3>
+                <p className="text-xs text-slate-400">
+                  {recoveryStep === 'request'
+                    ? 'Informe seu e-mail cadastrado no sistema'
+                    : 'Digite o código de 6 dígitos e sua nova senha'}
+                </p>
               </div>
             </div>
 
@@ -227,22 +305,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               </div>
             )}
 
-            {forgotSuccess ? (
-              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs space-y-2">
-                <div className="flex items-center gap-2 font-bold">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>E-mail Enviado!</span>
-                </div>
-                <p>{forgotSuccess}</p>
-                <button
-                  type="button"
-                  onClick={() => setShowForgotModal(false)}
-                  className="w-full mt-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors"
-                >
-                  Voltar ao Login
-                </button>
-              </div>
-            ) : (
+            {recoveryStep === 'request' ? (
               <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
@@ -276,7 +339,67 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                     disabled={forgotLoading}
                     className="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    {forgotLoading ? 'Enviando...' : 'Recuperar Senha'}
+                    {forgotLoading ? 'Verificando...' : 'Enviar Código'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+                {forgotSuccess && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+                    <span>{forgotSuccess}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                    Código de 6 Dígitos (enviado por e-mail)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: 849201"
+                    maxLength={10}
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    className="w-full bg-[#151824] border border-slate-700 rounded-xl px-4 py-3 text-center text-sm font-mono tracking-widest text-white focus:outline-none focus:border-purple-500 font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                    Sua Nova Senha
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="password"
+                      required
+                      placeholder="Mínimo 6 caracteres"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full bg-[#151824] border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setRecoveryStep('request')}
+                    className="flex-1 py-3 bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Reenviar
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={forgotLoading}
+                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {forgotLoading ? 'Salvando...' : 'Salvar Nova Senha'}
                   </button>
                 </div>
               </form>
