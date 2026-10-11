@@ -11,12 +11,73 @@ import makeWASocket, {
 import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import multer from 'multer';
 import { pool, initDatabase } from './db.js';
 import { sendPasswordRecoveryEmail } from './mailer.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Static uploads directory for media (audio, video, image, pdf)
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
+
+// Multer storage for Flow media uploads
+const flowUploadStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const cleanBase = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const uniqueName = `${Date.now()}-${cleanBase}${ext}`;
+    cb(null, uniqueName);
+  }
+});
+
+const flowUpload = multer({
+  storage: flowUploadStorage,
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB
+  },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowed = ['.mp3', '.wav', '.ogg', '.opus', '.m4a', '.aac', '.mp4', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf'];
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Formato de arquivo ${ext} não suportado. Áudios aceitos: MP3, WAV, OGG, OPUS, M4A, AAC. Vídeos: MP4 (máx 50MB). Documentos: PDF. Imagens: PNG, JPG, WEBP.`));
+    }
+  }
+});
+
+app.post('/api/flow/upload', (req, res) => {
+  flowUpload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'O arquivo excede o limite máximo de 50MB.' });
+      }
+      return res.status(400).json({ error: err.message });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    }
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.json({
+      success: true,
+      url: fileUrl,
+      filename: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+  });
+});
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server });

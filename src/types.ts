@@ -102,7 +102,14 @@ export interface KnowledgeDoc {
 
 export interface FlowNode {
   id: string;
-  type: 'inicio' | 'ia' | 'condicao' | 'sms' | 'cakto' | 'whatsapp' | 'audio' | 'imagem' | 'video' | 'timer';
+  type: 
+    | 'inicio' | 'ia' | 'condicao' | 'sms' | 'cakto' | 'whatsapp' 
+    | 'audio' | 'imagem' | 'video' | 'pdf' | 'timer'
+    | 'email' | 'ligacao' | 'contato' | 'randomizador' 
+    | 'botoes' | 'carrossel' | 'resposta' | 'resposta_avancada'
+    | 'ia_audio' | 'ia_video' | 'ia_ligacao'
+    | 'funil' | 'acoes' | 'agendar' | 'pipeline' | 'grupo_wa'
+    | 'webhook' | 'conectar_fluxo' | 'trocar_instancia' | 'anotacao' | 'finalizar';
   title: string;
   x: number;
   y: number;
@@ -114,4 +121,5 @@ export interface FlowEdge {
   from: string;
   to: string;
   label?: string;
+  fromHandle?: 'default' | 'response' | 'timeout' | 'yes' | 'no';
 }
