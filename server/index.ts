@@ -1041,6 +1041,96 @@ async function simulateTyping(sock: any, remoteJid: string, durationMs: number =
   }
 }
 
+interface PendingFlowResponse {
+  remoteJid: string;
+  nodeId: string;
+  sessionId: string;
+  senderName: string;
+  timeoutTimer: NodeJS.Timeout;
+  responseTargetId?: string;
+  timeoutTargetId?: string;
+}
+
+// Leads currently waiting for response at a specific card in a flow
+const pendingFlowResponses = new Map<string, PendingFlowResponse>();
+
+// Resume flow execution starting from a given target node
+async function resumeFlowChain(
+  sock: any,
+  remoteJid: string,
+  startNodeId: string,
+  senderName: string,
+  incomingText: string,
+  sessionId: string
+): Promise<void> {
+  const visitedNodes = new Set<string>();
+  let queue: string[] = [startNodeId];
+
+  while (queue.length > 0) {
+    const currentNodeId = queue.shift()!;
+    if (visitedNodes.has(currentNodeId)) continue;
+    visitedNodes.add(currentNodeId);
+
+    const currentNode = activeFlow.nodes.find(n => n.id === currentNodeId);
+    if (!currentNode) continue;
+
+    // Execute node action
+    await executeNodeAction(sock, remoteJid, currentNode, senderName, incomingText);
+
+    // If node is Finalizar Fluxo, stop chain immediately
+    if (currentNode.type === 'finalizar') {
+      console.log(`[Flow Engine] Fluxo finalizado pelo card Finalizar Fluxo para ${remoteJid}`);
+      return;
+    }
+
+    // Check if node waits for client response
+    if (currentNode.data?.waitForResponse) {
+      const outgoingEdges = activeFlow.edges.filter(e => e.from === currentNode.id);
+      const responseEdge = outgoingEdges.find(e => e.fromHandle === 'response' || e.label?.toLowerCase().includes('respondeu'));
+      const timeoutEdge = outgoingEdges.find(e => e.fromHandle === 'timeout' || e.label?.toLowerCase().includes('não'));
+
+      // Clear any previous timer
+      const existing = pendingFlowResponses.get(remoteJid);
+      if (existing) clearTimeout(existing.timeoutTimer);
+
+      const unit = currentNode.data?.timeoutUnit || 'segundos';
+      const delay = Number(currentNode.data?.timeoutSeconds || (unit === 'minutos' ? 1 : 30));
+      const totalMs = (unit === 'minutos' ? delay * 60 : unit === 'horas' ? delay * 3600 : delay) * 1000;
+
+      console.log(`[Flow Engine] Card '${currentNode.title}' aguardando resposta de ${remoteJid} por ${delay} ${unit} (${totalMs}ms)...`);
+
+      const timeoutTimer = setTimeout(async () => {
+        pendingFlowResponses.delete(remoteJid);
+        console.log(`[Flow Engine] Tempo esgotado (${delay} ${unit}) para ${remoteJid}. Prosseguindo conexão 'Não respondeu' (${timeoutEdge?.to || 'Nenhuma'}).`);
+        if (timeoutEdge?.to) {
+          await resumeFlowChain(sock, remoteJid, timeoutEdge.to, senderName, '', sessionId);
+        }
+      }, totalMs);
+
+      pendingFlowResponses.set(remoteJid, {
+        remoteJid,
+        nodeId: currentNode.id,
+        sessionId,
+        senderName,
+        timeoutTimer,
+        responseTargetId: responseEdge?.to,
+        timeoutTargetId: timeoutEdge?.to
+      });
+
+      // STOP here. Do NOT execute next nodes until response or timeout.
+      return;
+    }
+
+    // Normal progression for nodes without response pause
+    const outgoingEdges = activeFlow.edges.filter(e => e.from === currentNodeId);
+    outgoingEdges.forEach(e => {
+      if (!visitedNodes.has(e.to)) {
+        queue.push(e.to);
+      }
+    });
+  }
+}
+
 // Function to execute visual flow nodes for a contact (Multi-step chain execution)
 async function executeFlowForMessage(
   sock: any, 
@@ -1080,7 +1170,6 @@ async function executeFlowForMessage(
     return keywords.some(kw => {
       const normKw = normalizeText(kw);
       if (!normKw) return false;
-      // Direct substring match or whole sentence match
       return normIncoming.includes(normKw);
     });
   });
@@ -1091,31 +1180,11 @@ async function executeFlowForMessage(
 
   console.log(`[Flow Engine] Gatilho ativado pelo card '${triggerNode.title}' para ${remoteJid}!`);
 
-  // Traverse the graph starting from trigger node (BFS / sequential step-by-step)
-  const visitedNodes = new Set<string>();
-  let queue: string[] = [];
-
   const initialEdges = activeFlow.edges.filter(e => e.from === triggerNode.id);
-  initialEdges.forEach(e => queue.push(e.to));
+  if (initialEdges.length === 0) return true;
 
-  while (queue.length > 0) {
-    const currentNodeId = queue.shift()!;
-    if (visitedNodes.has(currentNodeId)) continue;
-    visitedNodes.add(currentNodeId);
-
-    const currentNode = activeFlow.nodes.find(n => n.id === currentNodeId);
-    if (!currentNode) continue;
-
-    // Execute the action with natural typing simulation
-    await executeNodeAction(sock, remoteJid, currentNode, senderName, incomingText);
-
-    // Queue subsequent connected nodes
-    const outgoingEdges = activeFlow.edges.filter(e => e.from === currentNodeId);
-    outgoingEdges.forEach(e => {
-      if (!visitedNodes.has(e.to)) {
-        queue.push(e.to);
-      }
-    });
+  for (const edge of initialEdges) {
+    await resumeFlowChain(sock, remoteJid, edge.to, senderName, incomingText, sessionId);
   }
 
   return true;
@@ -1244,6 +1313,29 @@ async function executeNodeAction(
       const reply = await queryAI(customPrompt, aiConfig);
       await sock.sendMessage(remoteJid, { text: reply });
       recordFlowMessageInChat(remoteJid, reply, true);
+    } else if (node.type === 'grupo_wa') {
+      const action = node.data?.action || 'adicionar';
+      const groupId = node.data?.groupId;
+      console.log(`[Flow Engine] Executando Gerenciar Grupo (${action}) para ${remoteJid}`);
+      if (groupId && sock.groupParticipantsUpdate) {
+        try {
+          if (action === 'adicionar') {
+            await sock.groupParticipantsUpdate(groupId, [remoteJid], 'add');
+            recordFlowMessageInChat(remoteJid, `👥 [Lead adicionado ao grupo WhatsApp]`);
+          } else if (action === 'remover') {
+            await sock.groupParticipantsUpdate(groupId, [remoteJid], 'remove');
+            recordFlowMessageInChat(remoteJid, `👥 [Lead removido do grupo WhatsApp]`);
+          }
+        } catch (grpErr) {
+          console.error('[Flow Engine] Erro na ação de grupo:', grpErr);
+        }
+      }
+    } else if (node.type === 'conectar_fluxo') {
+      const targetFlowName = node.data?.targetFlow || 'Fluxo Principal';
+      console.log(`[Flow Engine] Redirecionando lead ${remoteJid} para '${targetFlowName}'`);
+      recordFlowMessageInChat(remoteJid, `🔗 [Redirecionado para: ${targetFlowName}]`);
+    } else if (node.type === 'finalizar') {
+      console.log(`[Flow Engine] Funil finalizado para ${remoteJid}`);
     }
   } catch (nodeErr) {
     console.error(`[Flow Engine] Erro ao executar nó ${node.id} (${node.type}):`, nodeErr);
@@ -1428,10 +1520,21 @@ async function startWhatsAppSession(sessionId: string) {
           continue;
         }
 
-        // 1. EXECUTE FLOW FIRST (If botFlowActive is true on the chat)
+        // 1. CHECK PENDING FLOW RESPONSE OR EXECUTE NEW FLOW
         let flowExecuted = false;
         if (chat.botFlowActive !== false) {
-          flowExecuted = await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
+          const pending = pendingFlowResponses.get(remoteJid);
+          if (pending) {
+            clearTimeout(pending.timeoutTimer);
+            pendingFlowResponses.delete(remoteJid);
+            console.log(`[Flow Engine] Cliente ${remoteJid} respondeu a tempo ao card '${pending.nodeId}'! Cancelando timeout e seguindo 'Se responder' (${pending.responseTargetId || 'Fim do fluxo'}).`);
+            if (pending.responseTargetId) {
+              await resumeFlowChain(sock, remoteJid, pending.responseTargetId, chat.leadName, text, sessionId);
+            }
+            flowExecuted = true;
+          } else {
+            flowExecuted = await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
+          }
         }
 
         // 2. FALLBACK TO AI IF FLOW DID NOT MATCH A TRIGGER KEYWORD

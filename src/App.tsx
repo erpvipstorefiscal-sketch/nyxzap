@@ -22,7 +22,11 @@ import {
   Send,
   ChevronDown,
   Check,
-  Radio
+  Radio,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ChevronRight,
+  ChevronLeft
 } from 'lucide-react';
 import { UserAuth, SystemUpdate } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -56,6 +60,14 @@ export function App() {
   });
 
   const [activeClientTab, setActiveClientTab] = useState<'chat' | 'whatsapp' | 'flow' | 'integrations' | 'ai'>('chat');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  const handleSelectClientTab = (tab: 'chat' | 'whatsapp' | 'flow' | 'integrations' | 'ai') => {
+    setActiveClientTab(tab);
+    if (tab === 'flow') {
+      setIsSidebarCollapsed(true);
+    }
+  };
 
   // Modals state
   const [showSupportModal, setShowSupportModal] = useState(false);
@@ -226,7 +238,9 @@ export function App() {
   return (
     <div className="min-h-screen bg-[#090a0f] text-slate-100 flex flex-col md:flex-row font-sans">
       {/* LEFT SIDEBAR NAVIGATION */}
-      <aside className="w-full md:w-64 bg-[#0d0f18] border-r border-slate-800/80 flex flex-col justify-between shrink-0 z-40">
+      <aside className={`transition-all duration-300 ease-in-out bg-[#0d0f18] border-r border-slate-800/80 flex flex-col justify-between shrink-0 z-40 ${
+        isSidebarCollapsed ? 'w-0 hidden md:hidden overflow-hidden' : 'w-full md:w-64'
+      }`}>
         {/* Brand Logo & Status */}
         <div>
           <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
@@ -311,7 +325,7 @@ export function App() {
 
               {/* 1. CHAT AO VIVO */}
               <button
-                onClick={() => setActiveClientTab('chat')}
+                onClick={() => handleSelectClientTab('chat')}
                 className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
                   activeClientTab === 'chat'
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
@@ -327,7 +341,7 @@ export function App() {
 
               {/* 2. CONEXÃO WHATSAPP */}
               <button
-                onClick={() => setActiveClientTab('whatsapp')}
+                onClick={() => handleSelectClientTab('whatsapp')}
                 className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
                   activeClientTab === 'whatsapp'
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
@@ -345,7 +359,7 @@ export function App() {
 
               {/* 3. FLUXO */}
               <button
-                onClick={() => setActiveClientTab('flow')}
+                onClick={() => handleSelectClientTab('flow')}
                 className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-xs font-bold ${
                   activeClientTab === 'flow'
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
@@ -358,7 +372,7 @@ export function App() {
 
               {/* CANAIS & INTEGRAÇÕES */}
               <button
-                onClick={() => setActiveClientTab('integrations')}
+                onClick={() => handleSelectClientTab('integrations')}
                 className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-xs font-bold ${
                   activeClientTab === 'integrations'
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
@@ -371,7 +385,7 @@ export function App() {
 
               {/* 4. AGENTE DE IA */}
               <button
-                onClick={() => setActiveClientTab('ai')}
+                onClick={() => handleSelectClientTab('ai')}
                 className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
                   activeClientTab === 'ai'
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
@@ -438,8 +452,26 @@ export function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#090a0f]">
         {/* Top bar for mobile or extra status */}
-        <header className="border-b border-slate-800/80 bg-[#0d0f18]/90 backdrop-blur-md px-6 py-3.5 flex items-center justify-between">
+        <header className="border-b border-slate-800/80 bg-[#0d0f18]/90 backdrop-blur-md px-4 sm:px-6 py-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSidebarCollapsed(prev => !prev)}
+              className="p-1.5 sm:p-2 rounded-xl bg-[#131622] hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-all flex items-center gap-1.5 text-xs shadow-sm"
+              title={isSidebarCollapsed ? "Expandir menu lateral" : "Retrair menu lateral (Tela cheia para fluxo)"}
+            >
+              {isSidebarCollapsed ? (
+                <>
+                  <PanelLeftOpen className="w-4 h-4 text-purple-400" />
+                  <span className="hidden sm:inline text-[11px] font-semibold text-purple-300">Mostrar Menu</span>
+                </>
+              ) : (
+                <>
+                  <PanelLeftClose className="w-4 h-4 text-slate-400" />
+                  <span className="hidden sm:inline text-[11px] font-semibold text-slate-400">Recolher Menu</span>
+                </>
+              )}
+            </button>
+
             <h2 className="text-sm font-bold text-white capitalize">
               {user.role === 'admin' 
                 ? 'Painel SuperAdmin' 
@@ -470,7 +502,11 @@ export function App() {
         </header>
 
         {/* Main View Container */}
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto overflow-y-auto">
+        <main className={`flex-1 w-full ${
+          activeClientTab === 'flow' 
+            ? 'p-0 max-w-none h-[calc(100vh-57px)] overflow-hidden flex flex-col' 
+            : 'p-6 max-w-7xl mx-auto overflow-y-auto'
+        }`}>
           {user.role === 'admin' ? (
             <AdminDashboard />
           ) : (

@@ -38,7 +38,8 @@ import {
   CheckCircle2,
   Link as LinkIcon,
   HelpCircle,
-  Plus
+  Plus,
+  StopCircle
 } from 'lucide-react';
 import { FlowNode, FlowEdge } from '../types';
 
@@ -78,8 +79,13 @@ const getNodeDimensions = (type: FlowNode['type'], waitForResponse?: boolean) =>
     case 'acoes':
     case 'agendar':
     case 'pipeline':
-    case 'grupo_wa':
       return { width: 260, height: 220 };
+    case 'grupo_wa':
+      return { width: 280, height: 320 };
+    case 'finalizar':
+      return { width: 250, height: 95 };
+    case 'conectar_fluxo':
+      return { width: 290, height: 260 };
     case 'cakto':
     case 'webhook':
       return { width: 270, height: 280 };
@@ -672,6 +678,14 @@ export const FlowBuilder: React.FC = () => {
     } else if (type === 'cakto' || type === 'webhook') {
       defaultData.platform = 'cakto';
       defaultData.activeEvents = ['Compra Aprovada', 'PIX Gerado'];
+    } else if (type === 'grupo_wa') {
+      defaultData.action = 'adicionar';
+      defaultData.instance = 'Inst. 1';
+      defaultData.groupId = '';
+    } else if (type === 'finalizar') {
+      defaultData.reason = 'Fluxo concluído com sucesso';
+    } else if (type === 'conectar_fluxo') {
+      defaultData.targetFlow = 'Fluxo Principal de Vendas';
     }
 
     const spawnX = Math.round((-pan.x + 320) / zoom + (nodes.length % 5) * 35);
@@ -725,7 +739,7 @@ export const FlowBuilder: React.FC = () => {
   };
 
   return (
-    <div className="space-y-3 animate-fadeIn flex flex-col h-[calc(100vh-125px)] relative">
+    <div className="space-y-2 animate-fadeIn flex flex-col h-full w-full p-2 relative flex-1 overflow-hidden">
       {/* Hidden File Input for Native Direct PC Upload */}
       <input 
         type="file" 
@@ -1109,6 +1123,9 @@ export const FlowBuilder: React.FC = () => {
                       node.type === 'pdf' ? 'bg-gradient-to-r from-amber-600 to-yellow-700' :
                       node.type === 'timer' ? 'bg-gradient-to-r from-cyan-600 to-blue-700' :
                       node.type === 'cakto' || node.type === 'webhook' ? 'bg-gradient-to-r from-emerald-600 to-teal-700' :
+                      node.type === 'grupo_wa' ? 'bg-gradient-to-r from-emerald-800 to-teal-900 border-b border-emerald-700/40' :
+                      node.type === 'finalizar' ? 'bg-gradient-to-r from-rose-900 to-red-950 border-b border-rose-800/40' :
+                      node.type === 'conectar_fluxo' ? 'bg-gradient-to-r from-cyan-800 to-blue-900 border-b border-cyan-700/40' :
                       'bg-gradient-to-r from-blue-600 to-indigo-700'
                     }`}
                   >
@@ -1123,6 +1140,9 @@ export const FlowBuilder: React.FC = () => {
                       {node.type === 'timer' && <Clock className="w-3.5 h-3.5 text-white" />}
                       {(node.type === 'cakto' || node.type === 'webhook') && <WebhookIcon className="w-3.5 h-3.5 text-white" />}
                       {(node.type === 'sms' || node.type === 'whatsapp') && <MessageSquare className="w-3.5 h-3.5 text-white" />}
+                      {node.type === 'grupo_wa' && <Users className="w-3.5 h-3.5 text-emerald-300" />}
+                      {node.type === 'finalizar' && <StopCircle className="w-3.5 h-3.5 text-rose-300" />}
+                      {node.type === 'conectar_fluxo' && <LinkIcon className="w-3.5 h-3.5 text-cyan-300" />}
                       <span className="tracking-wide uppercase text-[11px] font-black">{node.title}</span>
                     </div>
 
@@ -1644,11 +1664,134 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
+                    {/* 10. GERENCIAR GRUPO CARD */}
+                    {node.type === 'grupo_wa' && (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-300 block">
+                            Ação no grupo
+                          </label>
+                          <select
+                            value={node.data.action || 'adicionar'}
+                            onChange={(e) => updateNodeData(node.id, { action: e.target.value })}
+                            className="w-full bg-[#1c1d29] border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-semibold"
+                          >
+                            <option value="adicionar">Adicionar lead a um grupo</option>
+                            <option value="remover">Remover lead de um grupo</option>
+                            <option value="criar">Criar novo grupo com o lead</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-300 block">
+                            Instância do WhatsApp
+                          </label>
+                          <div className="grid grid-cols-4 gap-1">
+                            {['Inst. 1', 'Inst. 2', 'Inst. 3', 'Inst. 4'].map((inst) => (
+                              <button
+                                key={inst}
+                                type="button"
+                                onClick={() => updateNodeData(node.id, { instance: inst })}
+                                className={`py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                                  (node.data.instance || 'Inst. 1') === inst
+                                    ? 'bg-emerald-600 text-white border-emerald-500 shadow'
+                                    : 'bg-[#1c1d29] text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {inst}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-[9px] text-slate-500">
+                            Escolha a instância para listar os grupos que você participa.
+                          </p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-300 block">
+                            {node.data.action === 'remover' ? 'Remover do grupo' : node.data.action === 'criar' ? 'Nome do novo grupo' : 'Adicionar ao grupo'}
+                          </label>
+                          {node.data.action === 'criar' ? (
+                            <input
+                              type="text"
+                              value={node.data.newGroupName || ''}
+                              onChange={(e) => updateNodeData(node.id, { newGroupName: e.target.value })}
+                              placeholder="Ex: VIP - Suporte {nome}"
+                              className="w-full bg-[#1c1d29] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                            />
+                          ) : (
+                            <div className="bg-[#10111a] border border-slate-800 rounded-xl p-2.5 text-center space-y-1">
+                              <p className="text-[10px] text-slate-400 leading-relaxed">
+                                Nenhum grupo encontrado. Abra o WhatsApp → aba <strong>WhatsApp Grupos</strong> para sincronizar seus grupos.
+                              </p>
+                            </div>
+                          )}
+                          <p className="text-[9px] text-slate-500">
+                            {node.data.action === 'remover' 
+                              ? 'O lead será removido do grupo selecionado.' 
+                              : 'O lead será adicionado ao grupo selecionado. Ele pode precisar aceitar o convite.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 11. FINALIZAR FLUXO CARD */}
+                    {node.type === 'finalizar' && (
+                      <div className="py-2 px-1">
+                        <div className="flex items-center gap-2 text-rose-400/90 text-xs font-semibold">
+                          <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                          <span>Encerra o funil ao chegar aqui</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 12. CONECTAR A OUTRO FLUXO CARD */}
+                    {node.type === 'conectar_fluxo' && (
+                      <div className="space-y-2.5">
+                        <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-2.5 flex items-start gap-2.5">
+                          <LinkIcon className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                          <div>
+                            <h4 className="text-[11px] font-bold text-cyan-300">Conectar a Outro Fluxo</h4>
+                            <p className="text-[10px] text-cyan-400/80 leading-tight mt-0.5">
+                              Quando o lead chegar neste bloco, o fluxo selecionado será iniciado automaticamente
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-300 block">
+                            Fluxo de Destino
+                          </label>
+                          <select
+                            value={node.data.targetFlow || ''}
+                            onChange={(e) => updateNodeData(node.id, { targetFlow: e.target.value })}
+                            className="w-full bg-[#1c1d29] border border-purple-500/50 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-purple-500 font-semibold"
+                          >
+                            <option value="">Selecione um fluxo...</option>
+                            <option value="Fluxo Principal de Vendas">Fluxo Principal de Vendas</option>
+                            <option value="Funil de Boas-Vindas & Onboarding">Funil de Boas-Vindas & Onboarding</option>
+                            <option value="Recuperação de Boleto / PIX">Recuperação de Boleto / PIX</option>
+                            <option value="Suporte & Atendimento Humano">Suporte & Atendimento Humano</option>
+                            <option value="Pós-Venda e Fidelização">Pós-Venda e Fidelização</option>
+                          </select>
+                        </div>
+
+                        <div className="bg-[#12141f] border border-slate-800/80 rounded-xl p-2 space-y-1">
+                          <div className="text-[10px] font-bold text-amber-300 flex items-center gap-1">
+                            <span>💡 Como funciona</span>
+                          </div>
+                          <p className="text-[9px] text-slate-400 leading-relaxed">
+                            O lead será redirecionado para o fluxo selecionado, iniciando a partir do bloco escolhido. Se nenhum bloco for selecionado, iniciará após o gatilho do fluxo de destino.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* ======================================================== */}
                     {/* CONFIGURAÇÃO DE TEMPO LIMITE DE RESPOSTA (FALLBACK) */}
                     {/* Disponível para mensagens, mídias e interações */}
                     {/* ======================================================== */}
-                    {node.type !== 'inicio' && node.type !== 'timer' && node.type !== 'condicao' && node.type !== 'cakto' && node.type !== 'webhook' && (
+                    {node.type !== 'inicio' && node.type !== 'timer' && node.type !== 'condicao' && node.type !== 'cakto' && node.type !== 'webhook' && node.type !== 'grupo_wa' && node.type !== 'finalizar' && node.type !== 'conectar_fluxo' && (
                       <div className="pt-2 border-t border-slate-800/80 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-bold text-slate-300 flex items-center gap-1">
@@ -1712,63 +1855,73 @@ export const FlowBuilder: React.FC = () => {
                           ? 'scale-150 border-emerald-400 bg-emerald-500 shadow-lg shadow-emerald-500/50' 
                           : canBeTarget 
                           ? 'scale-125 border-cyan-400 bg-cyan-950 animate-pulse' 
+                          : node.type === 'finalizar'
+                          ? 'border-rose-500 hover:scale-125 hover:bg-rose-900'
                           : 'border-purple-500 hover:scale-125 hover:bg-purple-600'
                       }`}
                     >
-                      <div className={`w-2 h-2 rounded-full ${isHoveredTarget ? 'bg-white' : 'bg-purple-300 group-hover:bg-white'}`}></div>
+                      <div className={`w-2 h-2 rounded-full ${
+                        isHoveredTarget 
+                          ? 'bg-white' 
+                          : node.type === 'finalizar'
+                          ? 'bg-rose-400 group-hover:bg-white'
+                          : 'bg-purple-300 group-hover:bg-white'
+                      }`}></div>
                     </div>
                   )}
 
-                  {/* Right Ports (Output) */}
-                  {hasWaitForResponse ? (
-                    <>
-                      {/* Porta 1: SE RESPONDER (Verde / Cyan) */}
-                      <div
-                        onMouseDown={(e) => handleOutputPortMouseDown(node.id, 'response', e)}
-                        title="Conexão 1: Se o cliente responder"
-                        style={{ top: '40%' }}
-                        className={`absolute right-0 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 border-emerald-400 hover:bg-emerald-500 hover:scale-135 transition-all flex items-center justify-center cursor-crosshair z-20 group shadow-md ${
-                          connectingFrom?.nodeId === node.id && connectingFrom.handleType === 'response'
-                            ? 'border-emerald-300 bg-emerald-500 shadow-lg shadow-emerald-500/50 scale-135' 
-                            : ''
-                        }`}
-                      >
-                        <div className="w-2 h-2 rounded-full bg-emerald-400 group-hover:bg-white"></div>
-                        <span className="absolute left-7 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-bold text-emerald-400 bg-[#13141f] px-1.5 py-0.5 rounded border border-emerald-500/30 opacity-80 group-hover:opacity-100">
-                          Respondeu
-                        </span>
-                      </div>
+                  {/* Right Ports (Output) - Omitted for Finalizar Fluxo */}
+                  {node.type !== 'finalizar' && (
+                    hasWaitForResponse ? (
+                      <>
+                        {/* Porta 1: SE RESPONDER (Verde / Cyan) */}
+                        <div
+                          onMouseDown={(e) => handleOutputPortMouseDown(node.id, 'response', e)}
+                          title="Conexão 1: Se o cliente responder"
+                          style={{ top: '40%' }}
+                          className={`absolute right-0 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 border-emerald-400 hover:bg-emerald-500 hover:scale-135 transition-all flex items-center justify-center cursor-crosshair z-20 group shadow-md ${
+                            connectingFrom?.nodeId === node.id && connectingFrom.handleType === 'response'
+                              ? 'border-emerald-300 bg-emerald-500 shadow-lg shadow-emerald-500/50 scale-135' 
+                              : ''
+                          }`}
+                        >
+                          <div className="w-2 h-2 rounded-full bg-emerald-400 group-hover:bg-white"></div>
+                          <span className="absolute left-7 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-bold text-emerald-400 bg-[#13141f] px-1.5 py-0.5 rounded border border-emerald-500/30 opacity-80 group-hover:opacity-100">
+                            Respondeu
+                          </span>
+                        </div>
 
-                      {/* Porta 2: SE NÃO RESPONDER / TIMEOUT (Laranja / Âmbar) */}
+                        {/* Porta 2: SE NÃO RESPONDER / TIMEOUT (Laranja / Âmbar) */}
+                        <div
+                          onMouseDown={(e) => handleOutputPortMouseDown(node.id, 'timeout', e)}
+                          title={`Conexão 2: Se não responder em ${node.data.timeoutSeconds || 30}s`}
+                          style={{ top: '76%' }}
+                          className={`absolute right-0 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 border-amber-400 hover:bg-amber-500 hover:scale-135 transition-all flex items-center justify-center cursor-crosshair z-20 group shadow-md ${
+                            connectingFrom?.nodeId === node.id && connectingFrom.handleType === 'timeout'
+                              ? 'border-amber-300 bg-amber-500 shadow-lg shadow-amber-500/50 scale-135' 
+                              : ''
+                          }`}
+                        >
+                          <div className="w-2 h-2 rounded-full bg-amber-400 group-hover:bg-white"></div>
+                          <span className="absolute left-7 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-bold text-amber-400 bg-[#13141f] px-1.5 py-0.5 rounded border border-amber-500/30 opacity-80 group-hover:opacity-100">
+                            Tempo ({node.data.timeoutSeconds || 30}s)
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      /* Porta Única Normal */
                       <div
-                        onMouseDown={(e) => handleOutputPortMouseDown(node.id, 'timeout', e)}
-                        title={`Conexão 2: Se não responder em ${node.data.timeoutSeconds || 30}s`}
-                        style={{ top: '76%' }}
-                        className={`absolute right-0 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 border-amber-400 hover:bg-amber-500 hover:scale-135 transition-all flex items-center justify-center cursor-crosshair z-20 group shadow-md ${
-                          connectingFrom?.nodeId === node.id && connectingFrom.handleType === 'timeout'
-                            ? 'border-amber-300 bg-amber-500 shadow-lg shadow-amber-500/50 scale-135' 
-                            : ''
+                        onMouseDown={(e) => handleOutputPortMouseDown(node.id, 'default', e)}
+                        title="Saída (Clique e arraste para ligar a outro card)"
+                        className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-crosshair z-20 group hover:scale-135 ${
+                          isConnectingSource && connectingFrom?.handleType === 'default'
+                            ? 'border-cyan-400 bg-cyan-500 shadow-lg shadow-cyan-500/50 scale-125' 
+                            : 'border-blue-400 hover:border-cyan-400 hover:bg-blue-600'
                         }`}
                       >
-                        <div className="w-2 h-2 rounded-full bg-amber-400 group-hover:bg-white"></div>
-                        <span className="absolute left-7 top-1/2 -translate-y-1/2 whitespace-nowrap text-[9px] font-bold text-amber-400 bg-[#13141f] px-1.5 py-0.5 rounded border border-amber-500/30 opacity-80 group-hover:opacity-100">
-                          Tempo ({node.data.timeoutSeconds || 30}s)
-                        </span>
+                        <div className="w-2 h-2 rounded-full bg-white group-hover:scale-110"></div>
                       </div>
-                    </>
-                  ) : (
-                    /* Porta Única Normal */
-                    <div
-                      onMouseDown={(e) => handleOutputPortMouseDown(node.id, 'default', e)}
-                      title="Saída (Clique e arraste para ligar a outro card)"
-                      className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-crosshair z-20 group hover:scale-135 ${
-                        isConnectingSource && connectingFrom?.handleType === 'default'
-                          ? 'border-cyan-400 bg-cyan-500 shadow-lg shadow-cyan-500/50 scale-125' 
-                          : 'border-blue-400 hover:border-cyan-400 hover:bg-blue-600'
-                      }`}
-                    >
-                      <div className="w-2 h-2 rounded-full bg-white group-hover:scale-110"></div>
-                    </div>
+                    )
                   )}
                 </div>
               );
@@ -1875,6 +2028,39 @@ export const FlowBuilder: React.FC = () => {
               <WebhookIcon className="w-4 h-4" />
             </div>
             <span className="text-[9px] font-bold">Webhook</span>
+          </button>
+
+          <button 
+            onClick={() => addNode('grupo_wa', 'Gerenciar Grupo')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Gerenciar Grupos do WhatsApp"
+          >
+            <div className="w-8 h-8 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-400">
+              <Users className="w-4 h-4" />
+            </div>
+            <span className="text-[9px] font-bold">Grupos</span>
+          </button>
+
+          <button 
+            onClick={() => addNode('conectar_fluxo', 'Conectar Fluxo')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Conectar a Outro Fluxo Cadastrado"
+          >
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+              <LinkIcon className="w-4 h-4" />
+            </div>
+            <span className="text-[9px] font-bold">Conectar</span>
+          </button>
+
+          <button 
+            onClick={() => addNode('finalizar', 'Finalizar Fluxo')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Finalizar Funil / Fluxo"
+          >
+            <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+              <StopCircle className="w-4 h-4" />
+            </div>
+            <span className="text-[9px] font-bold">Finalizar</span>
           </button>
 
           <div className="h-6 w-px bg-slate-700/60 mx-1"></div>
@@ -2059,6 +2245,38 @@ export const FlowBuilder: React.FC = () => {
                       <PhoneCall className="w-5 h-5" />
                     </div>
                     <span className="text-xs font-bold text-white">IA Ligação</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* GERENCIAMENTO & FLUXO */}
+              <div>
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-3">
+                  GERENCIAMENTO & FLUXO
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <button onClick={() => addNode('grupo_wa', 'Gerenciar Grupo')} className="p-3 bg-[#181a28] hover:bg-teal-950/40 border border-slate-800 hover:border-teal-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
+                    <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-bold text-white">Gerenciar Grupo</span>
+                    <span className="text-[9px] text-slate-500">Adicionar / Remover Lead</span>
+                  </button>
+
+                  <button onClick={() => addNode('conectar_fluxo', 'Conectar Fluxo')} className="p-3 bg-[#181a28] hover:bg-cyan-950/40 border border-slate-800 hover:border-cyan-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
+                    <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <LinkIcon className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-bold text-white">Conectar a Outro Fluxo</span>
+                    <span className="text-[9px] text-slate-500">Transição de Funis</span>
+                  </button>
+
+                  <button onClick={() => addNode('finalizar', 'Finalizar Fluxo')} className="p-3 bg-[#181a28] hover:bg-rose-950/40 border border-slate-800 hover:border-rose-500/50 rounded-2xl flex flex-col items-center gap-2 transition-all group text-left">
+                    <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <StopCircle className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-bold text-white">Finalizar Fluxo</span>
+                    <span className="text-[9px] text-slate-500">Encerra o funil</span>
                   </button>
                 </div>
               </div>
