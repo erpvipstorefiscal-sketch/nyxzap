@@ -957,7 +957,11 @@ interface FlowEdgeServer {
 }
 
 let activeFlow = {
+  id: 'default',
+  name: 'Fluxo Principal',
+  description: '',
   active: true,
+  execution_count: 0,
   nodes: [
     {
       id: 'node-1',
@@ -992,14 +996,19 @@ let activeFlow = {
 // Load saved flow from PostgreSQL or fallback
 async function loadSavedFlow() {
   try {
-    const res = await pool.query('SELECT nodes, edges, active FROM flow_definitions WHERE id = $1', ['default']);
+    const res = await pool.query('SELECT id, name, description, active, execution_count, nodes, edges FROM flow_definitions WHERE active = true ORDER BY updated_at DESC LIMIT 1');
     if (res.rows.length > 0) {
+      const row = res.rows[0];
       activeFlow = {
-        active: res.rows[0].active !== false,
-        nodes: res.rows[0].nodes || [],
-        edges: res.rows[0].edges || []
+        id: row.id,
+        name: row.name || 'Fluxo Principal',
+        description: row.description || '',
+        active: row.active !== false,
+        execution_count: row.execution_count || 0,
+        nodes: row.nodes || [],
+        edges: row.edges || []
       };
-      console.log(`[Flow Engine] Fluxo carregado do banco de dados com ${activeFlow.nodes.length} cards e ${activeFlow.edges.length} conexões.`);
+      console.log(`[Flow Engine] Fluxo '${activeFlow.name}' (${activeFlow.id}) carregado com ${activeFlow.nodes.length} cards e ${activeFlow.execution_count} execuções registradas.`);
     }
   } catch (err) {
     console.error('[Flow Engine Error] Falha ao ler fluxo do banco:', err);
@@ -1179,6 +1188,15 @@ async function executeFlowForMessage(
   }
 
   console.log(`[Flow Engine] Gatilho ativado pelo card '${triggerNode.title}' para ${remoteJid}!`);
+
+  // Increment execution counter in DB
+  try {
+    const flowId = activeFlow.id || 'default';
+    activeFlow.execution_count = (activeFlow.execution_count || 0) + 1;
+    await pool.query('UPDATE flow_definitions SET execution_count = COALESCE(execution_count, 0) + 1 WHERE id = $1', [flowId]);
+  } catch (err) {
+    // Non-blocking
+  }
 
   const initialEdges = activeFlow.edges.filter(e => e.from === triggerNode.id);
   if (initialEdges.length === 0) return true;
@@ -1575,7 +1593,7 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
 // Flow REST API Endpoints (Multi-flow supported)
 app.get('/api/flows', async (_req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, description, active, nodes, edges, updated_at FROM flow_definitions ORDER BY updated_at DESC');
+    const result = await pool.query('SELECT id, name, description, active, execution_count, nodes, edges, updated_at FROM flow_definitions ORDER BY updated_at DESC');
     if (result.rows.length > 0) {
       return res.json({
         success: true,
@@ -1584,6 +1602,7 @@ app.get('/api/flows', async (_req, res) => {
           name: r.name || 'Fluxo Principal',
           description: r.description || '',
           active: r.active !== false,
+          executionCount: parseInt(r.execution_count, 10) || 0,
           nodes: r.nodes || [],
           edges: r.edges || [],
           nodeCount: Array.isArray(r.nodes) ? r.nodes.length : 0,
@@ -1603,12 +1622,38 @@ app.get('/api/flows', async (_req, res) => {
       name: 'Fluxo Principal de Vendas',
       description: 'Gatilhos de WhatsApp, IA, Mídias diretas do PC e Conexões Inteligentes.',
       active: activeFlow.active,
+      executionCount: activeFlow.execution_count || 0,
       nodes: activeFlow.nodes,
       edges: activeFlow.edges,
       nodeCount: activeFlow.nodes.length,
       updatedAt: new Date().toISOString()
     }]
   });
+});
+
+// Update flow metadata (nome, descrição, pausar/ativar)
+app.put('/api/flows/:id/meta', async (req, res) => {
+  const { id } = req.params;
+  const { name, description, active } = req.body;
+  try {
+    await pool.query(
+      `UPDATE flow_definitions 
+       SET name = COALESCE($1, name),
+           description = COALESCE($2, description),
+           active = COALESCE($3, active),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4`,
+      [name, description, active !== undefined ? Boolean(active) : null, id]
+    );
+    if (activeFlow.id === id) {
+      if (name !== undefined) activeFlow.name = name;
+      if (description !== undefined) activeFlow.description = description;
+      if (active !== undefined) activeFlow.active = Boolean(active);
+    }
+    res.json({ success: true, message: 'Dados do fluxo atualizados com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/flows', async (req, res) => {
@@ -1635,6 +1680,10 @@ app.post('/api/flows', async (req, res) => {
     );
 
     activeFlow = {
+      ...activeFlow,
+      id: flowId,
+      name: flowName,
+      description: flowDesc,
       active: flowActive,
       nodes: flowNodes,
       edges: flowEdges
@@ -1690,6 +1739,7 @@ app.post('/api/flow', async (req, res) => {
   const { nodes, edges, active } = req.body;
   try {
     activeFlow = {
+      ...activeFlow,
       active: active !== undefined ? Boolean(active) : true,
       nodes: Array.isArray(nodes) ? nodes : activeFlow.nodes,
       edges: Array.isArray(edges) ? edges : activeFlow.edges
