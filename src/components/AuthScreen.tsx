@@ -186,7 +186,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
       if (typeof window !== 'undefined' && (window as any).google?.accounts?.id) {
         const googleAuthPromise = new Promise<{ email: string; name?: string; sub: string }>((resolve, reject) => {
           (window as any).google.accounts.id.initialize({
-            client_id: '1088514838612-nyxzap.apps.googleusercontent.com', // fallback client
+            client_id: '617019849221-i5d5gm9cqe34c49h3p6gdffu9b523fuv.apps.googleusercontent.com',
             callback: (response: any) => {
               try {
                 // Decode Google JWT credential payload
@@ -221,7 +221,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               const left = window.screenX + (window.outerWidth - width) / 2;
               const top = window.screenY + (window.outerHeight - height) / 2;
               const popup = window.open(
-                `https://accounts.google.com/o/oauth2/v2/auth?client_id=1088514838612-nyxzap.apps.googleusercontent.com&redirect_uri=${encodeURIComponent(window.location.origin)}&response_type=token%20id_token&scope=email%20profile&nonce=nyx-${Date.now()}`,
+                `https://accounts.google.com/o/oauth2/v2/auth?client_id=617019849221-i5d5gm9cqe34c49h3p6gdffu9b523fuv.apps.googleusercontent.com&redirect_uri=${encodeURIComponent(window.location.origin)}&response_type=token%20id_token&scope=email%20profile&nonce=nyx-${Date.now()}`,
                 'google_login_popup',
                 `width=${width},height=${height},left=${left},top=${top}`
               );
