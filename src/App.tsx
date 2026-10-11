@@ -351,7 +351,7 @@ export function App() {
                 }`}
               >
                 <Workflow className="w-4 h-4" />
-                <span>Fluxo Drag-and-Drop</span>
+                <span>Fluxo</span>
               </button>
 
               {/* 4. AGENTE DE IA */}
@@ -433,7 +433,7 @@ export function App() {
                 : activeClientTab === 'whatsapp' 
                 ? 'Gerenciamento de Instâncias WhatsApp' 
                 : activeClientTab === 'flow' 
-                ? 'Construtor de Fluxo Drag-and-Drop' 
+                ? 'Fluxo' 
                 : 'Configurações do Agente de IA'}
             </h2>
           </div>

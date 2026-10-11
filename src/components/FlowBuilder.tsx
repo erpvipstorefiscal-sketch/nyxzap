@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Zap, 
   Sparkles, 
@@ -9,424 +9,1188 @@ import {
   Check, 
   X, 
   Plus, 
-  Play, 
   Smartphone,
   Mic,
-  Image,
+  Image as ImageIcon,
   Video,
-  Send
+  Trash2,
+  Copy,
+  Save,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  CheckCircle2,
+  Link as LinkIcon,
+  HelpCircle
 } from 'lucide-react';
 import { FlowNode, FlowEdge } from '../types';
 
-export const FlowBuilder: React.FC = () => {
-  const [nodes, setNodes] = useState<FlowNode[]>([
-    {
-      id: 'node-1',
-      type: 'inicio',
-      title: 'INÍCIO',
-      x: 40,
-      y: 50,
-      data: { trigger: 'palavra_chave', keyword: 'preço, comprar', instance: 'Todas' }
-    },
-    {
-      id: 'node-2',
-      type: 'ia',
-      title: 'Assistente IA',
-      x: 540,
-      y: 180,
-      data: { tone: 'Profissional', model: 'Gemini Flash', active: true }
-    },
-    {
-      id: 'node-3',
-      type: 'condicao',
-      title: 'Condição',
-      x: 880,
-      y: 340,
-      data: { field: 'Score do Lead', condition: '>=', value: '70' }
-    },
-    {
-      id: 'node-4',
-      type: 'sms',
-      title: 'SMS',
-      x: 880,
-      y: 80,
-      data: { message: 'Olá {nome}, seu atendimento foi iniciado no WhatsApp!' }
-    },
-    {
-      id: 'node-5',
-      type: 'cakto',
-      title: 'Cakto',
-      x: 360,
-      y: 380,
-      data: { events: ['Aprovada', 'PIX Gerado', 'Boleto Gerado', 'Cartão Pago', 'Reembolsado'] }
+const INITIAL_NODES: FlowNode[] = [
+  {
+    id: 'node-1',
+    type: 'inicio',
+    title: 'INÍCIO',
+    x: 60,
+    y: 80,
+    data: { 
+      trigger: 'palavra_chave', 
+      keywords: ['preço', 'comprar', 'orçamento'], 
+      instance: 'Todas' 
     }
-  ]);
+  },
+  {
+    id: 'node-2',
+    type: 'ia',
+    title: 'Assistente IA',
+    x: 520,
+    y: 120,
+    data: { 
+      tone: 'Profissional', 
+      model: 'Gemini 2.5 Flash', 
+      active: true,
+      prompt: 'Atenda o cliente tirando dúvidas sobre planos e preços' 
+    }
+  },
+  {
+    id: 'node-3',
+    type: 'condicao',
+    title: 'Condição',
+    x: 940,
+    y: 300,
+    data: { 
+      field: 'Score do Lead', 
+      operator: '>=', 
+      value: '70' 
+    }
+  },
+  {
+    id: 'node-4',
+    type: 'sms',
+    title: 'Mensagem WhatsApp',
+    x: 940,
+    y: 70,
+    data: { 
+      message: 'Olá {nome}, tudo bem? Seu atendimento VIP foi iniciado pela nossa IA!' 
+    }
+  },
+  {
+    id: 'node-5',
+    type: 'cakto',
+    title: 'Webhook Cakto',
+    x: 60,
+    y: 420,
+    data: { 
+      events: ['Aprovada', 'PIX Gerado', 'Boleto Gerado'],
+      activeEvents: ['Aprovada', 'PIX Gerado']
+    }
+  }
+];
 
-  const [edges, setEdges] = useState<FlowEdge[]>([
-    { id: 'e1-2', from: 'node-1', to: 'node-2', label: 'Disparo' },
-    { id: 'e5-2', from: 'node-5', to: 'node-2', label: 'Status' },
-    { id: 'e2-4', from: 'node-2', to: 'node-4', label: 'Fallback' },
-    { id: 'e2-3', from: 'node-2', to: 'node-3', label: 'Qualificação' }
-  ]);
+const INITIAL_EDGES: FlowEdge[] = [
+  { id: 'e1-2', from: 'node-1', to: 'node-2', label: 'Disparo' },
+  { id: 'e5-2', from: 'node-5', to: 'node-2', label: 'Status' },
+  { id: 'e2-4', from: 'node-2', to: 'node-4', label: 'Sucesso' },
+  { id: 'e2-3', from: 'node-2', to: 'node-3', label: 'Qualificação' }
+];
+
+export const FlowBuilder: React.FC = () => {
+  // Load saved state or default
+  const [nodes, setNodes] = useState<FlowNode[]>(() => {
+    try {
+      const saved = localStorage.getItem('nyxzap_flow_builder_nodes');
+      return saved ? JSON.parse(saved) : INITIAL_NODES;
+    } catch {
+      return INITIAL_NODES;
+    }
+  });
+
+  const [edges, setEdges] = useState<FlowEdge[]>(() => {
+    try {
+      const saved = localStorage.getItem('nyxzap_flow_builder_edges');
+      return saved ? JSON.parse(saved) : INITIAL_EDGES;
+    } catch {
+      return INITIAL_EDGES;
+    }
+  });
+
+  const [zoom, setZoom] = useState<number>(1);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const handleMouseDown = (id: string, e: React.MouseEvent) => {
+  // Connection mode state
+  const [connectingNodeId, setConnectingNodeId] = useState<string | null>(null);
+  const [connectingHandleType, setConnectingHandleType] = useState<string>('out');
+
+  // Input states for cards
+  const [newKeywordInput, setNewKeywordInput] = useState<{ [nodeId: string]: string }>({});
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [flowActive, setFlowActive] = useState(true);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Wheel zoom handler
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 0.08 : -0.08;
+    setZoom(prev => {
+      const nextZoom = Math.min(2.0, Math.max(0.4, Number((prev + zoomFactor).toFixed(2))));
+      return nextZoom;
+    });
+  };
+
+  // Node Drag handlers
+  const handleNodeMouseDown = (id: string, e: React.MouseEvent) => {
+    // Only drag with left click and if not clicking inside form elements
+    if (e.button !== 0) return;
     e.stopPropagation();
+    
     const node = nodes.find(n => n.id === id);
-    if (!node) return;
-    setDraggingId(id);
-    setDragOffset({ x: e.clientX - node.x, y: e.clientY - node.y });
+    if (!node || !containerRef.current) return;
+
     setSelectedId(id);
+    setDraggingId(id);
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseCanvasX = (e.clientX - rect.left - pan.x) / zoom;
+    const mouseCanvasY = (e.clientY - rect.top - pan.y) / zoom;
+
+    setDragOffset({
+      x: mouseCanvasX - node.x,
+      y: mouseCanvasY - node.y
+    });
+  };
+
+  // Canvas Pan handlers
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0 && !draggingId) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!draggingId) return;
-    setNodes(nodes.map(n => 
-      n.id === draggingId 
-        ? { ...n, x: Math.max(10, e.clientX - dragOffset.x), y: Math.max(10, e.clientY - dragOffset.y) } 
-        : n
-    ));
+    if (draggingId && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseCanvasX = (e.clientX - rect.left - pan.x) / zoom;
+      const mouseCanvasY = (e.clientY - rect.top - pan.y) / zoom;
+
+      setNodes(prev => prev.map(n => 
+        n.id === draggingId 
+          ? { 
+              ...n, 
+              x: Math.round(mouseCanvasX - dragOffset.x), 
+              y: Math.round(mouseCanvasY - dragOffset.y) 
+            } 
+          : n
+      ));
+    } else if (isPanning) {
+      setPan({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y
+      });
+    }
   };
 
   const handleMouseUp = () => {
     setDraggingId(null);
+    setIsPanning(false);
   };
 
+  // Save Flow
+  const handleSaveFlow = () => {
+    try {
+      localStorage.setItem('nyxzap_flow_builder_nodes', JSON.stringify(nodes));
+      localStorage.setItem('nyxzap_flow_builder_edges', JSON.stringify(edges));
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Reset to default
+  const handleResetFlow = () => {
+    if (confirm('Deseja resetar o fluxo para a configuração inicial padrão?')) {
+      setNodes(INITIAL_NODES);
+      setEdges(INITIAL_EDGES);
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      localStorage.removeItem('nyxzap_flow_builder_nodes');
+      localStorage.removeItem('nyxzap_flow_builder_edges');
+    }
+  };
+
+  // Delete node
+  const deleteNode = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setNodes(prev => prev.filter(n => n.id !== id));
+    setEdges(prev => prev.filter(edge => edge.from !== id && edge.to !== id));
+    if (selectedId === id) setSelectedId(null);
+  };
+
+  // Duplicate node
+  const duplicateNode = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const sourceNode = nodes.find(n => n.id === id);
+    if (!sourceNode) return;
+
+    const newNode: FlowNode = {
+      ...sourceNode,
+      id: `node-${Date.now()}`,
+      title: `${sourceNode.title} (Cópia)`,
+      x: sourceNode.x + 40,
+      y: sourceNode.y + 40,
+      data: JSON.parse(JSON.stringify(sourceNode.data))
+    };
+
+    setNodes(prev => [...prev, newNode]);
+    setSelectedId(newNode.id);
+  };
+
+  // Update node data helper
+  const updateNodeData = (nodeId: string, updates: Partial<any>) => {
+    setNodes(prev => prev.map(n => 
+      n.id === nodeId ? { ...n, data: { ...n.data, ...updates } } : n
+    ));
+  };
+
+  // Add new node from dock
   const addNode = (type: FlowNode['type'], title: string) => {
+    const defaultData: Record<string, any> = {};
+    if (type === 'inicio') {
+      defaultData.trigger = 'palavra_chave';
+      defaultData.keywords = ['atendimento'];
+      defaultData.instance = 'Todas';
+    } else if (type === 'ia') {
+      defaultData.tone = 'Profissional';
+      defaultData.model = 'Gemini 2.5 Flash';
+      defaultData.active = true;
+      defaultData.prompt = 'Atenda o cliente tirando dúvidas';
+    } else if (type === 'condicao') {
+      defaultData.field = 'Score do Lead';
+      defaultData.operator = '>=';
+      defaultData.value = '50';
+    } else if (type === 'sms' || type === 'whatsapp') {
+      defaultData.message = 'Olá {nome}, como posso te ajudar hoje?';
+    } else if (type === 'audio') {
+      defaultData.audioUrl = '';
+      defaultData.delaySeconds = 3;
+      defaultData.title = 'Áudio Gravado na Hora';
+    } else if (type === 'imagem') {
+      defaultData.imageUrl = 'https://placehold.co/600x400/png';
+      defaultData.caption = 'Veja nossos produtos e opções!';
+    } else if (type === 'video') {
+      defaultData.videoUrl = '';
+      defaultData.caption = 'Assista ao vídeo explicativo!';
+    } else if (type === 'timer') {
+      defaultData.delay = 5;
+      defaultData.unit = 'minutos';
+    } else if (type === 'cakto') {
+      defaultData.events = ['Aprovada', 'PIX Gerado', 'Boleto Gerado', 'Reembolsado'];
+      defaultData.activeEvents = ['Aprovada'];
+    }
+
+    // Spawn centered in visible area
+    const spawnX = Math.round((-pan.x + 300) / zoom + (nodes.length % 5) * 30);
+    const spawnY = Math.round((-pan.y + 150) / zoom + (nodes.length % 5) * 30);
+
     const newNode: FlowNode = {
       id: `node-${Date.now()}`,
       type,
       title,
-      x: 200 + nodes.length * 30,
-      y: 150 + (nodes.length % 3) * 40,
-      data: {}
+      x: Math.max(40, spawnX),
+      y: Math.max(40, spawnY),
+      data: defaultData
     };
-    setNodes([...nodes, newNode]);
+
+    setNodes(prev => [...prev, newNode]);
     setSelectedId(newNode.id);
   };
 
+  // Handle port connection
+  const handlePortClick = (nodeId: string, portType: 'in' | 'out', e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (!connectingNodeId) {
+      if (portType === 'out') {
+        setConnectingNodeId(nodeId);
+        setConnectingHandleType(portType);
+      }
+    } else {
+      if (portType === 'in' && connectingNodeId !== nodeId) {
+        // Create edge
+        const newEdge: FlowEdge = {
+          id: `e-${connectingNodeId}-${nodeId}-${Date.now()}`,
+          from: connectingNodeId,
+          to: nodeId,
+          label: 'Conexão'
+        };
+        setEdges(prev => [...prev, newEdge]);
+      }
+      setConnectingNodeId(null);
+    }
+  };
+
+  // Delete edge
+  const deleteEdge = (edgeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEdges(prev => prev.filter(ed => ed.id !== edgeId));
+  };
+
+  // Keyword helper for Inicio
+  const addKeywordToNode = (nodeId: string) => {
+    const val = newKeywordInput[nodeId]?.trim();
+    if (!val) return;
+    const node = nodes.find(n => n.id === nodeId);
+    const currentKeywords = node?.data?.keywords || [];
+    if (!currentKeywords.includes(val)) {
+      updateNodeData(nodeId, { keywords: [...currentKeywords, val] });
+    }
+    setNewKeywordInput(prev => ({ ...prev, [nodeId]: '' }));
+  };
+
+  const removeKeywordFromNode = (nodeId: string, kwToRemove: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    const currentKeywords = node?.data?.keywords || [];
+    updateNodeData(nodeId, {
+      keywords: currentKeywords.filter((k: string) => k !== kwToRemove)
+    });
+  };
+
+  // Cakto event toggle helper
+  const toggleCaktoEvent = (nodeId: string, eventName: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    const currentActives: string[] = node?.data?.activeEvents || [];
+    const newActives = currentActives.includes(eventName)
+      ? currentActives.filter(e => e !== eventName)
+      : [...currentActives, eventName];
+    updateNodeData(nodeId, { activeEvents: newActives });
+  };
+
+  // Insert variable into message helper
+  const insertVariable = (nodeId: string, varName: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    const currentMsg = node?.data?.message || '';
+    updateNodeData(nodeId, { message: `${currentMsg} ${varName}` });
+  };
+
   return (
-    <div className="space-y-4 animate-fadeIn flex flex-col h-[calc(100vh-140px)]">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
-            <Zap className="w-5 h-5 text-amber-400" />
-            <span>Construtor de Fluxos Drag-and-Drop</span>
-          </h2>
-          <p className="text-xs text-slate-400">
-            Arraste os cards, configure gatilhos do WhatsApp e ligue o fluxo ao Assistente de IA.
-          </p>
+    <div className="space-y-3 animate-fadeIn flex flex-col h-[calc(100vh-125px)]">
+      {/* Top Header & Actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0d0f18] p-3.5 rounded-2xl border border-slate-800/80">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-600/30">
+            <Zap className="w-5 h-5 fill-current" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-black text-white">Fluxo</h1>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 font-bold">
+                Visual Builder
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Gatilhos de WhatsApp, IA, Condições e Funis. Use o <strong className="text-slate-200">scroll do mouse</strong> para dar zoom.
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-bold flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            Fluxo Ativo no WhatsApp
-          </span>
+        {/* Action Controls */}
+        <div className="flex items-center gap-2.5">
+          {/* Status Toggle */}
+          <button 
+            onClick={() => setFlowActive(!flowActive)}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all ${
+              flowActive 
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                : 'bg-slate-800 text-slate-400 border-slate-700'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${flowActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`}></span>
+            {flowActive ? 'Fluxo Ativo no WhatsApp' : 'Fluxo Pausado'}
+          </button>
+
+          {/* Zoom Controls */}
+          <div className="flex items-center bg-[#131622] border border-slate-800 rounded-xl p-1 gap-1">
+            <button 
+              onClick={() => setZoom(z => Math.max(0.4, Number((z - 0.1).toFixed(1))))}
+              title="Diminuir Zoom"
+              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition-colors"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-[11px] font-mono font-bold text-white px-1.5 min-w-[42px] text-center">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button 
+              onClick={() => setZoom(z => Math.min(2.0, Number((z + 0.1).toFixed(1))))}
+              title="Aumentar Zoom"
+              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition-colors"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            <button 
+              onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+              title="Resetar Zoom (100%)"
+              className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Reset button */}
+          <button
+            onClick={handleResetFlow}
+            title="Restaurar fluxo padrão"
+            className="p-2 bg-[#131622] hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+
+          {/* Save Button */}
+          <button
+            onClick={handleSaveFlow}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg ${
+              saveSuccess 
+                ? 'bg-emerald-600 text-white shadow-emerald-600/30' 
+                : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30'
+            }`}
+          >
+            {saveSuccess ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            <span>{saveSuccess ? 'Fluxo Salvo!' : 'Salvar Fluxo'}</span>
+          </button>
         </div>
       </div>
 
+      {/* Connecting banner indicator */}
+      {connectingNodeId && (
+        <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-1.5 rounded-xl text-xs flex items-center justify-between animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <LinkIcon className="w-3.5 h-3.5 animate-pulse" />
+            <span>Modo de ligação ativo: <strong>Clique no ponto esquerdo (Entrada)</strong> do card destino para conectar.</span>
+          </div>
+          <button 
+            onClick={() => setConnectingNodeId(null)}
+            className="text-amber-400 hover:text-white text-[11px] underline font-semibold"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
       {/* Canvas Area */}
       <div 
-        className="flex-1 bg-[#090a0f] border border-slate-800 rounded-2xl relative overflow-hidden select-none cursor-default"
+        ref={containerRef}
+        onWheel={handleWheel}
+        onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        className="flex-1 bg-[#090a0f] border border-slate-800/80 rounded-2xl relative overflow-hidden select-none cursor-grab active:cursor-grabbing"
         style={{
-          backgroundImage: 'radial-gradient(circle, #1a1e2e 1px, transparent 1px)',
-          backgroundSize: '24px 24px'
+          backgroundImage: 'radial-gradient(circle, #1a1e2e 1.2px, transparent 1.2px)',
+          backgroundSize: `${Math.round(24 * zoom)}px ${Math.round(24 * zoom)}px`,
+          backgroundPosition: `${pan.x}px ${pan.y}px`
         }}
       >
-        {/* SVG Connections */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-          <defs>
-            <linearGradient id="flowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#f97316" />
-              <stop offset="100%" stopColor="#a855f7" />
-            </linearGradient>
-          </defs>
-          {edges.map(edge => {
-            const src = nodes.find(n => n.id === edge.from);
-            const tgt = nodes.find(n => n.id === edge.to);
-            if (!src || !tgt) return null;
+        {/* Helper Badge in Canvas */}
+        <div className="absolute top-3 left-3 z-30 pointer-events-none flex items-center gap-1.5 bg-[#131622]/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-800/80 text-[10px] text-slate-400">
+          <HelpCircle className="w-3 h-3 text-purple-400" />
+          <span>Roda do mouse = Zoom ({Math.round(zoom * 100)}%) • Arraste o fundo para mover</span>
+        </div>
 
-            const isCakto = src.type === 'cakto';
-            const x1 = isCakto ? src.x + 90 : src.x + 240;
-            const y1 = isCakto ? src.y + 40 : src.y + 50;
-            const x2 = tgt.x;
-            const y2 = tgt.y + 50;
-            const dx = (x2 - x1) / 2;
+        {/* Zoom Transform Wrapper */}
+        <div 
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: '0 0',
+            width: '4000px',
+            height: '4000px',
+            position: 'absolute',
+            top: 0,
+            left: 0
+          }}
+        >
+          {/* SVG Connections Layer */}
+          <svg className="absolute inset-0 w-full h-full pointer-events-auto z-0 overflow-visible">
+            <defs>
+              <linearGradient id="flowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#8b5cf6" />
+                <stop offset="100%" stopColor="#3b82f6" />
+              </linearGradient>
+              <linearGradient id="caktoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#10b981" />
+                <stop offset="100%" stopColor="#8b5cf6" />
+              </linearGradient>
+            </defs>
 
-            return (
-              <g key={edge.id}>
-                <path
-                  d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                  fill="none"
-                  stroke={isCakto ? '#f97316' : 'url(#flowGrad)'}
-                  strokeWidth="2.5"
-                  strokeDasharray={isCakto ? '5 5' : 'none'}
-                />
-                {edge.label && (
-                  <text
-                    x={(x1 + x2) / 2}
-                    y={(y1 + y2) / 2 - 8}
-                    fill="#94a3b8"
-                    fontSize="10"
-                    fontFamily="monospace"
-                    textAnchor="middle"
-                    className="bg-nyx-950 px-1"
+            {edges.map(edge => {
+              const src = nodes.find(n => n.id === edge.from);
+              const tgt = nodes.find(n => n.id === edge.to);
+              if (!src || !tgt) return null;
+
+              // Node dimensions approx
+              const srcWidth = src.type === 'cakto' ? 180 : src.type === 'condicao' ? 240 : 270;
+              const srcHeight = src.type === 'cakto' ? 80 : 120;
+              const tgtHeight = tgt.type === 'cakto' ? 80 : 120;
+
+              const x1 = src.x + srcWidth;
+              const y1 = src.y + 45;
+              const x2 = tgt.x;
+              const y2 = tgt.y + 45;
+              const dx = Math.max(40, Math.abs(x2 - x1) / 2);
+
+              const isCakto = src.type === 'cakto';
+              const midX = (x1 + x2) / 2;
+              const midY = (y1 + y2) / 2;
+
+              return (
+                <g key={edge.id} className="group">
+                  <path
+                    d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
+                    fill="none"
+                    stroke={isCakto ? 'url(#caktoGrad)' : 'url(#flowGrad)'}
+                    strokeWidth="3"
+                    strokeDasharray={isCakto ? '6 4' : 'none'}
+                    className="transition-all hover:stroke-purple-400 cursor-pointer"
+                  />
+                  {/* Mid label & delete icon */}
+                  <g 
+                    transform={`translate(${midX}, ${midY})`} 
+                    className="cursor-pointer"
+                    onClick={(e) => deleteEdge(edge.id, e)}
                   >
-                    {edge.label}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+                    <rect 
+                      x="-38" 
+                      y="-11" 
+                      width="76" 
+                      height="22" 
+                      rx="11" 
+                      fill="#131622" 
+                      stroke="#334155" 
+                      strokeWidth="1.5"
+                      className="group-hover:stroke-rose-500 transition-colors"
+                    />
+                    <text
+                      x="0"
+                      y="4"
+                      fill="#cbd5e1"
+                      fontSize="9"
+                      fontWeight="bold"
+                      fontFamily="sans-serif"
+                      textAnchor="middle"
+                      className="select-none group-hover:fill-rose-400"
+                    >
+                      {edge.label || 'Ligar'} ×
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
+          </svg>
 
-        {/* Nodes */}
-        <div className="relative z-10 w-full h-full">
-          {nodes.map(node => {
-            const isSelected = selectedId === node.id;
+          {/* Nodes Layer */}
+          <div className="relative z-10 w-full h-full pointer-events-none">
+            {nodes.map(node => {
+              const isSelected = selectedId === node.id;
+              const isConnectingSource = connectingNodeId === node.id;
 
-            // 1. INÍCIO
-            if (node.type === 'inicio') {
               return (
                 <div
                   key={node.id}
-                  onMouseDown={(e) => handleMouseDown(node.id, e)}
-                  style={{ position: 'absolute', left: `${node.x}px`, top: `${node.y}px` }}
-                  className={`w-64 rounded-2xl bg-[#131316] border border-[#26262b] shadow-2xl transition-all cursor-move relative ${
-                    isSelected ? 'ring-2 ring-amber-500' : 'hover:border-amber-500/50'
-                  }`}
+                  onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
+                  style={{
+                    position: 'absolute',
+                    left: `${node.x}px`,
+                    top: `${node.y}px`
+                  }}
+                  className={`pointer-events-auto rounded-2xl bg-[#13141c] border transition-shadow shadow-2xl relative ${
+                    isSelected 
+                      ? 'ring-2 ring-purple-500 border-purple-500/80 shadow-purple-500/20' 
+                      : 'border-[#262838] hover:border-slate-600'
+                  } ${isConnectingSource ? 'ring-2 ring-amber-400 border-amber-400' : ''}`}
                 >
-                  <div className="bg-[#b45309] text-white px-3.5 py-2 rounded-t-2xl flex items-center gap-2 font-bold text-xs">
-                    <Zap className="w-3.5 h-3.5 fill-current" />
-                    <span>INÍCIO</span>
+                  {/* Top Bar Header of each Card */}
+                  <div 
+                    className={`px-3.5 py-2.5 rounded-t-2xl flex items-center justify-between text-xs font-bold text-white ${
+                      node.type === 'inicio' ? 'bg-gradient-to-r from-amber-600 to-amber-700' :
+                      node.type === 'ia' ? 'bg-gradient-to-r from-purple-600 to-indigo-700' :
+                      node.type === 'condicao' ? 'bg-gradient-to-r from-orange-600 to-amber-700' :
+                      node.type === 'cakto' ? 'bg-gradient-to-r from-emerald-600 to-teal-700' :
+                      node.type === 'timer' ? 'bg-gradient-to-r from-cyan-600 to-blue-700' :
+                      node.type === 'audio' ? 'bg-gradient-to-r from-violet-600 to-purple-700' :
+                      node.type === 'imagem' ? 'bg-gradient-to-r from-pink-600 to-rose-700' :
+                      node.type === 'video' ? 'bg-gradient-to-r from-rose-600 to-red-700' :
+                      'bg-gradient-to-r from-blue-600 to-indigo-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {node.type === 'inicio' && <Zap className="w-3.5 h-3.5 fill-current" />}
+                      {node.type === 'ia' && <Sparkles className="w-3.5 h-3.5 fill-current" />}
+                      {node.type === 'condicao' && <Scissors className="w-3.5 h-3.5" />}
+                      {node.type === 'cakto' && <span className="text-xs">🌵</span>}
+                      {node.type === 'timer' && <Clock className="w-3.5 h-3.5" />}
+                      {node.type === 'audio' && <Mic className="w-3.5 h-3.5" />}
+                      {node.type === 'imagem' && <ImageIcon className="w-3.5 h-3.5" />}
+                      {node.type === 'video' && <Video className="w-3.5 h-3.5" />}
+                      {(node.type === 'sms' || node.type === 'whatsapp') && <MessageSquare className="w-3.5 h-3.5" />}
+                      <span className="tracking-wide uppercase text-[11px] font-black">{node.title}</span>
+                    </div>
+
+                    {/* Card Actions (Duplicate / Delete) */}
+                    <div className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
+                      <button
+                        onClick={(e) => duplicateNode(node.id, e)}
+                        title="Duplicar Card"
+                        className="p-1 hover:bg-black/20 rounded-md transition-colors"
+                      >
+                        <Copy className="w-3 h-3 text-white/80 hover:text-white" />
+                      </button>
+                      <button
+                        onClick={(e) => deleteNode(node.id, e)}
+                        title="Excluir Card"
+                        className="p-1 hover:bg-rose-600/40 rounded-md transition-colors text-white/80 hover:text-rose-200"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="p-3.5 space-y-3">
-                    <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-[#1c1c22]">
-                      <button className="py-1 px-2 text-[10px] font-bold rounded-lg bg-[#b45309] text-white">
-                        Palavra-chave
-                      </button>
-                      <button className="py-1 px-2 text-[10px] font-medium rounded-lg text-slate-400">
-                        Boas-vindas
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5 bg-[#1c1c22] border border-[#2a2a32] rounded-xl px-2.5 py-1.5">
-                      <span className="text-[10px] text-slate-400 flex-1">Adicionar palavra...</span>
-                      <div className="w-4 h-4 rounded bg-[#b45309]/30 text-[#f59e0b] flex items-center justify-center text-xs font-bold">+</div>
-                    </div>
-                    <div className="space-y-1.5 pt-1">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                        DISPARAR EM QUAL INSTÂNCIA?
-                      </span>
-                      <div className="flex flex-wrap gap-1">
-                        {['Todas', 'Inst. 1', 'Inst. 2', 'Inst. 3', 'Inst. 4'].map((inst, i) => (
-                          <span
-                            key={inst}
-                            className={`text-[9px] px-2 py-0.5 rounded-md font-semibold ${
-                              i === 0 ? 'bg-[#7c3aed] text-white' : 'bg-[#1c1c22] text-slate-400'
+
+                  {/* Card Content Based on Type */}
+                  <div className="p-3.5 space-y-3 cursor-default" onMouseDown={(e) => e.stopPropagation()}>
+                    {/* 1. INÍCIO CARD */}
+                    {node.type === 'inicio' && (
+                      <div className="w-64 space-y-3">
+                        {/* Trigger Type Toggle */}
+                        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#1c1d29] border border-slate-800">
+                          <button
+                            onClick={() => updateNodeData(node.id, { trigger: 'palavra_chave' })}
+                            className={`py-1 px-2 text-[10px] font-bold rounded-lg transition-all ${
+                              node.data.trigger === 'palavra_chave'
+                                ? 'bg-amber-600 text-white shadow'
+                                : 'text-slate-400 hover:text-white'
                             }`}
                           >
-                            {inst}
+                            Palavra-chave
+                          </button>
+                          <button
+                            onClick={() => updateNodeData(node.id, { trigger: 'boas_vindas' })}
+                            className={`py-1 px-2 text-[10px] font-bold rounded-lg transition-all ${
+                              node.data.trigger === 'boas_vindas'
+                                ? 'bg-amber-600 text-white shadow'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Boas-vindas
+                          </button>
+                        </div>
+
+                        {/* Keyword list & input */}
+                        {node.data.trigger === 'palavra_chave' && (
+                          <div className="space-y-1.5">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Palavras que ativam:
+                            </span>
+                            <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                              {(node.data.keywords || []).map((kw: string) => (
+                                <span
+                                  key={kw}
+                                  className="text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md flex items-center gap-1"
+                                >
+                                  {kw}
+                                  <button
+                                    onClick={() => removeKeywordFromNode(node.id, kw)}
+                                    className="hover:text-rose-400"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-1.5 bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1">
+                              <input
+                                type="text"
+                                value={newKeywordInput[node.id] || ''}
+                                onChange={(e) => setNewKeywordInput({ ...newKeywordInput, [node.id]: e.target.value })}
+                                onKeyDown={(e) => e.key === 'Enter' && addKeywordToNode(node.id)}
+                                placeholder="Nova palavra e pressione Enter..."
+                                className="bg-transparent text-[10px] text-white focus:outline-none w-full placeholder-slate-500"
+                              />
+                              <button
+                                onClick={() => addKeywordToNode(node.id)}
+                                className="w-5 h-5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 flex items-center justify-center text-xs font-bold shrink-0"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Instances selector */}
+                        <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Disparar na Instância:
                           </span>
-                        ))}
+                          <div className="flex flex-wrap gap-1">
+                            {['Todas', 'Inst. 1', 'Inst. 2', 'Inst. 3', 'Inst. 4'].map((inst) => {
+                              const isActive = (node.data.instance || 'Todas') === inst;
+                              return (
+                                <button
+                                  key={inst}
+                                  onClick={() => updateNodeData(node.id, { instance: inst })}
+                                  className={`text-[9px] px-2 py-0.5 rounded-md font-semibold transition-colors ${
+                                    isActive 
+                                      ? 'bg-purple-600 text-white shadow-sm' 
+                                      : 'bg-[#1c1d29] hover:bg-slate-800 text-slate-400'
+                                  }`}
+                                >
+                                  {inst}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {/* 2. ASSISTENTE IA CARD */}
+                    {node.type === 'ia' && (
+                      <div className="w-64 space-y-2.5">
+                        {/* Power toggle */}
+                        <div className="flex items-center justify-between bg-[#1c1d29] border border-slate-800 px-3 py-1.5 rounded-xl">
+                          <span className="text-[11px] font-medium text-slate-300">Status IA:</span>
+                          <button
+                            onClick={() => updateNodeData(node.id, { active: !node.data.active })}
+                            className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-all ${
+                              node.data.active 
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            }`}
+                          >
+                            <Power className="w-3 h-3" />
+                            <span>{node.data.active ? 'Ativa' : 'Pausada'}</span>
+                          </button>
+                        </div>
+
+                        {/* Tone Selector */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Tom de Resposta:
+                          </label>
+                          <select
+                            value={node.data.tone || 'Profissional'}
+                            onChange={(e) => updateNodeData(node.id, { tone: e.target.value })}
+                            className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                          >
+                            <option value="Profissional">💼 Profissional & Direto</option>
+                            <option value="Amigável">😊 Amigável & Acolhedor</option>
+                            <option value="Vendas">🚀 Persuasivo (Focado em Vendas)</option>
+                            <option value="Técnico">🔬 Técnico & Detalhado</option>
+                          </select>
+                        </div>
+
+                        {/* Model Selector */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Modelo de IA:
+                          </label>
+                          <select
+                            value={node.data.model || 'Gemini 2.5 Flash'}
+                            onChange={(e) => updateNodeData(node.id, { model: e.target.value })}
+                            className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-purple-300 font-semibold focus:outline-none focus:border-purple-500"
+                          >
+                            <option value="Gemini 2.5 Flash">Gemini 2.5 Flash (Ultra-rápido)</option>
+                            <option value="Gemini 3.8 Flash">Gemini 3.8 Flash (Recomendado)</option>
+                            <option value="Gemini Pro">Gemini Pro (Raciocínio complexo)</option>
+                            <option value="GPT-4o">OpenAI GPT-4o</option>
+                            <option value="Claude 3.5 Sonnet">Claude 3.5 Sonnet</option>
+                          </select>
+                        </div>
+
+                        {/* Instructions */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Instrução / Prompt Curto:
+                          </label>
+                          <input
+                            type="text"
+                            value={node.data.prompt || ''}
+                            onChange={(e) => updateNodeData(node.id, { prompt: e.target.value })}
+                            placeholder="Ex: Tirar dúvidas e enviar link de pagamento"
+                            className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-[11px] text-white focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. CONDIÇÃO CARD */}
+                    {node.type === 'condicao' && (
+                      <div className="w-60 space-y-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Regra / Variável:
+                          </label>
+                          <input
+                            type="text"
+                            value={node.data.field || 'Score do Lead'}
+                            onChange={(e) => updateNodeData(node.id, { field: e.target.value })}
+                            className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Operador:
+                            </label>
+                            <select
+                              value={node.data.operator || '>='}
+                              onChange={(e) => updateNodeData(node.id, { operator: e.target.value })}
+                              className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none"
+                            >
+                              <option value=">=">&gt;= (Maior ou igual)</option>
+                              <option value="<=">&lt;= (Menor ou igual)</option>
+                              <option value="==">== (Igual a)</option>
+                              <option value="!=">!= (Diferente de)</option>
+                              <option value="contem">Contém texto</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Valor:
+                            </label>
+                            <input
+                              type="text"
+                              value={node.data.value || '70'}
+                              onChange={(e) => updateNodeData(node.id, { value: e.target.value })}
+                              className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Outcomes labels */}
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-xl px-2.5 py-1.5 flex items-center justify-between text-[11px] text-emerald-400 font-bold">
+                            <span className="flex items-center gap-1"><Check className="w-3 h-3" /> Sim</span>
+                            <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
+                          </div>
+                          <div className="bg-rose-950/40 border border-rose-500/40 rounded-xl px-2.5 py-1.5 flex items-center justify-between text-[11px] text-rose-400 font-bold">
+                            <span className="flex items-center gap-1"><X className="w-3 h-3" /> Não</span>
+                            <div className="w-2 h-2 rounded-full bg-rose-400"></div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 4. SMS / MENSAGEM WHATSAPP */}
+                    {(node.type === 'sms' || node.type === 'whatsapp') && (
+                      <div className="w-64 space-y-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Texto da Mensagem:
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={node.data.message || ''}
+                          onChange={(e) => updateNodeData(node.id, { message: e.target.value })}
+                          placeholder="Digite o texto enviado..."
+                          className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 resize-none font-sans"
+                        />
+                        {/* Variables helpers */}
+                        <div className="flex flex-wrap gap-1">
+                          {['{nome}', '{telefone}', '{empresa}', '{saudacao}'].map((v) => (
+                            <button
+                              key={v}
+                              onClick={() => insertVariable(node.id, v)}
+                              className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 hover:bg-blue-600/30 text-slate-300 hover:text-blue-300 border border-slate-700 transition-colors"
+                            >
+                              + {v}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 5. ÁUDIO CARD */}
+                    {node.type === 'audio' && (
+                      <div className="w-60 space-y-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Simular Gravação (Delay):
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              max="60"
+                              value={node.data.delaySeconds || 3}
+                              onChange={(e) => updateNodeData(node.id, { delaySeconds: Number(e.target.value) })}
+                              className="w-20 bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                            />
+                            <span className="text-xs text-slate-400">segundos (gravando...)</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            URL do Arquivo de Áudio (.mp3 / .ogg):
+                          </label>
+                          <input
+                            type="text"
+                            value={node.data.audioUrl || ''}
+                            onChange={(e) => updateNodeData(node.id, { audioUrl: e.target.value })}
+                            placeholder="https://.../audio.mp3"
+                            className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 6. IMAGEM CARD */}
+                    {node.type === 'imagem' && (
+                      <div className="w-60 space-y-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                          URL da Imagem:
+                        </label>
+                        <input
+                          type="text"
+                          value={node.data.imageUrl || ''}
+                          onChange={(e) => updateNodeData(node.id, { imageUrl: e.target.value })}
+                          placeholder="https://.../imagem.png"
+                          className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none"
+                        />
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Legenda da Imagem:
+                        </label>
+                        <input
+                          type="text"
+                          value={node.data.caption || ''}
+                          onChange={(e) => updateNodeData(node.id, { caption: e.target.value })}
+                          placeholder="Confira nossos produtos!"
+                          className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                    )}
+
+                    {/* 7. VÍDEO CARD */}
+                    {node.type === 'video' && (
+                      <div className="w-60 space-y-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                          URL do Vídeo (.mp4):
+                        </label>
+                        <input
+                          type="text"
+                          value={node.data.videoUrl || ''}
+                          onChange={(e) => updateNodeData(node.id, { videoUrl: e.target.value })}
+                          placeholder="https://.../video.mp4"
+                          className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={node.data.caption || ''}
+                          onChange={(e) => updateNodeData(node.id, { caption: e.target.value })}
+                          placeholder="Legenda do vídeo..."
+                          className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                    )}
+
+                    {/* 8. TIMER CARD */}
+                    {node.type === 'timer' && (
+                      <div className="w-60 space-y-2.5">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Aguardar antes do próximo passo:
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            value={node.data.delay || 5}
+                            onChange={(e) => updateNodeData(node.id, { delay: Number(e.target.value) })}
+                            className="bg-[#1c1d29] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none text-center font-bold"
+                          />
+                          <select
+                            value={node.data.unit || 'minutos'}
+                            onChange={(e) => updateNodeData(node.id, { unit: e.target.value })}
+                            className="bg-[#1c1d29] border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none"
+                          >
+                            <option value="segundos">Segundos</option>
+                            <option value="minutos">Minutos</option>
+                            <option value="horas">Horas</option>
+                            <option value="dias">Dias</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 9. CAKTO CARD */}
+                    {node.type === 'cakto' && (
+                      <div className="w-56 space-y-2">
+                        <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
+                          <span className="text-xl">🌵</span>
+                          <div>
+                            <span className="text-[11px] font-black text-emerald-400 uppercase block">Webhook Cakto</span>
+                            <span className="text-[9px] text-slate-400">Ativa em eventos:</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          {['Aprovada', 'PIX Gerado', 'Boleto Gerado', 'Cartão Pago', 'Reembolsado'].map((ev) => {
+                            const isEventActive = (node.data.activeEvents || []).includes(ev);
+                            return (
+                              <button
+                                key={ev}
+                                onClick={() => toggleCaktoEvent(node.id, ev)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center justify-between border transition-all ${
+                                  isEventActive 
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                                    : 'bg-[#1c1d29] text-slate-500 border-slate-800 hover:text-slate-300'
+                                }`}
+                              >
+                                <span>• {ev}</span>
+                                {isEventActive && <Check className="w-3 h-3 text-emerald-400" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1.5 w-3 h-3 rounded-full bg-[#f59e0b] border-2 border-[#131316]"></div>
+
+                  {/* Ports / Handles */}
+                  {/* Left Port (Input) - Except for Início and Cakto */}
+                  {node.type !== 'inicio' && (
+                    <button
+                      onClick={(e) => handlePortClick(node.id, 'in', e)}
+                      title="Entrada (Conectar aqui)"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2.5 w-5 h-5 rounded-full bg-slate-900 border-2 border-purple-500 hover:scale-125 hover:bg-purple-600 transition-all flex items-center justify-center cursor-pointer z-20 group"
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-white group-hover:scale-110"></div>
+                    </button>
+                  )}
+
+                  {/* Right Port (Output) */}
+                  <button
+                    onClick={(e) => handlePortClick(node.id, 'out', e)}
+                    title="Saída (Clique para ligar a outro card)"
+                    className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-2.5 w-5 h-5 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-pointer z-20 group hover:scale-125 ${
+                      isConnectingSource 
+                        ? 'border-amber-400 bg-amber-500 animate-ping' 
+                        : 'border-blue-400 hover:bg-blue-500'
+                    }`}
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-white group-hover:scale-110"></div>
+                  </button>
                 </div>
               );
-            }
-
-            // 2. ASSISTENTE IA
-            if (node.type === 'ia') {
-              return (
-                <div
-                  key={node.id}
-                  onMouseDown={(e) => handleMouseDown(node.id, e)}
-                  style={{ position: 'absolute', left: `${node.x}px`, top: `${node.y}px` }}
-                  className={`w-64 rounded-2xl bg-[#131316] border border-[#26262b] shadow-2xl transition-all cursor-move relative ${
-                    isSelected ? 'ring-2 ring-purple-500' : 'hover:border-purple-500/50'
-                  }`}
-                >
-                  <div className="bg-[#7e22ce] text-white px-3.5 py-2 rounded-t-2xl flex items-center justify-between font-bold text-xs">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-3.5 h-3.5 fill-current" />
-                      <span>Assistente IA</span>
-                    </div>
-                    <Power className="w-3.5 h-3.5 text-purple-200" />
-                  </div>
-                  <div className="p-3.5 space-y-2">
-                    <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
-                      <span className="text-slate-400">Tom:</span>
-                      <span className="font-semibold text-white">💼 Profissional</span>
-                    </div>
-                    <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
-                      <span className="text-slate-400">Modelo:</span>
-                      <span className="font-semibold text-purple-300">Gemini Flash</span>
-                    </div>
-                    <div className="pt-2 text-center text-[10px] text-slate-400">
-                      Conectado ao WhatsApp & RAG
-                    </div>
-                  </div>
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1.5 w-3 h-3 rounded-full bg-purple-500 border-2 border-[#131316]"></div>
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1.5 w-3 h-3 rounded-full bg-purple-500 border-2 border-[#131316]"></div>
-                </div>
-              );
-            }
-
-            // 3. CONDIÇÃO
-            if (node.type === 'condicao') {
-              return (
-                <div
-                  key={node.id}
-                  onMouseDown={(e) => handleMouseDown(node.id, e)}
-                  style={{ position: 'absolute', left: `${node.x}px`, top: `${node.y}px` }}
-                  className={`w-56 rounded-2xl bg-[#131316] border border-[#26262b] shadow-2xl transition-all cursor-move relative ${
-                    isSelected ? 'ring-2 ring-amber-500' : 'hover:border-amber-500/50'
-                  }`}
-                >
-                  <div className="bg-[#b45309] text-white px-3.5 py-2 rounded-t-2xl flex items-center gap-2 font-bold text-xs">
-                    <Scissors className="w-3.5 h-3.5" />
-                    <span>Condição</span>
-                  </div>
-                  <div className="p-3.5 space-y-2.5">
-                    <div className="bg-[#1c1c22] border border-[#2a2a32] rounded-xl px-2.5 py-1.5 text-[11px] text-slate-300">
-                      Score do Lead
-                    </div>
-                    <div className="flex items-center justify-between bg-emerald-950/40 border border-emerald-500/40 rounded-xl px-2.5 py-1.5 text-[11px] text-emerald-400 font-bold">
-                      <span className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5" /> Sim</span>
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400"></div>
-                    </div>
-                    <div className="flex items-center justify-between bg-rose-950/40 border border-rose-500/40 rounded-xl px-2.5 py-1.5 text-[11px] text-rose-400 font-bold">
-                      <span className="flex items-center gap-1.5"><X className="w-3.5 h-3.5" /> Não</span>
-                      <div className="w-2.5 h-2.5 rounded-full bg-rose-400"></div>
-                    </div>
-                  </div>
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1.5 w-3 h-3 rounded-full bg-amber-500 border-2 border-[#131316]"></div>
-                </div>
-              );
-            }
-
-            // 4. SMS
-            if (node.type === 'sms') {
-              return (
-                <div
-                  key={node.id}
-                  onMouseDown={(e) => handleMouseDown(node.id, e)}
-                  style={{ position: 'absolute', left: `${node.x}px`, top: `${node.y}px` }}
-                  className={`w-64 rounded-2xl bg-[#131316] border border-[#26262b] shadow-2xl transition-all cursor-move relative ${
-                    isSelected ? 'ring-2 ring-blue-500' : 'hover:border-blue-500/50'
-                  }`}
-                >
-                  <div className="bg-[#1d4ed8] text-white px-3.5 py-2 rounded-t-2xl flex items-center gap-2 font-bold text-xs">
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>SMS</span>
-                  </div>
-                  <div className="p-3.5 space-y-2">
-                    <span className="text-[10px] text-slate-400 font-medium">Mensagem</span>
-                    <div className="bg-[#1c1c22] border border-[#2a2a32] rounded-xl p-2.5 h-16 text-[11px] text-slate-400 font-mono">
-                      Digite a mensagem...
-                    </div>
-                    <div className="text-[9px] text-slate-500 font-mono">{`{nome} {telefone} {empresa}`}</div>
-                  </div>
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1.5 w-3 h-3 rounded-full bg-blue-500 border-2 border-[#131316]"></div>
-                </div>
-              );
-            }
-
-            // 5. CAKTO
-            if (node.type === 'cakto') {
-              return (
-                <div
-                  key={node.id}
-                  onMouseDown={(e) => handleMouseDown(node.id, e)}
-                  style={{ position: 'absolute', left: `${node.x}px`, top: `${node.y}px` }}
-                  className="flex flex-col items-center gap-2 cursor-move relative"
-                >
-                  <div className="w-16 h-16 rounded-full bg-[#1b4332] border-2 border-emerald-400 shadow-lg shadow-emerald-500/20 flex flex-col items-center justify-center p-2 text-white">
-                    <span className="text-xl">🌵</span>
-                    <span className="text-[8px] font-extrabold uppercase text-emerald-200">Cakto</span>
-                  </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="px-2 py-0.5 rounded-full bg-[#271f1b] border border-[#78350f] text-[#f59e0b] text-[9px] font-semibold">
-                      • Aprovada
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-[#271f1b] border border-[#78350f] text-[#f59e0b] text-[9px] font-semibold">
-                      • PIX Gerado
-                    </span>
-                  </div>
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 w-3 h-3 rounded-full bg-[#f97316] border-2 border-[#131316]"></div>
-                </div>
-              );
-            }
-
-            return null;
-          })}
+            })}
+          </div>
         </div>
 
         {/* Bottom Floating Tools Dock */}
-        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 bg-[#121215]/95 backdrop-blur-xl border border-slate-700/60 rounded-2xl px-4 py-2 shadow-2xl flex items-center gap-3">
-          <button onClick={() => addNode('inicio', 'WhatsApp')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 bg-[#12131c]/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl px-3 py-2 shadow-2xl flex items-center gap-2">
+          <button 
+            onClick={() => addNode('inicio', 'WhatsApp')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar Gatilho WhatsApp"
+          >
             <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
               <Smartphone className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-medium">WhatsApp</span>
+            <span className="text-[9px] font-bold">WhatsApp</span>
           </button>
 
-          <button onClick={() => addNode('sms', 'Áudio')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+          <button 
+            onClick={() => addNode('sms', 'Mensagem')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar Texto"
+          >
+            <div className="w-8 h-8 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+              <MessageSquare className="w-4 h-4" />
+            </div>
+            <span className="text-[9px] font-bold">Texto</span>
+          </button>
+
+          <button 
+            onClick={() => addNode('audio', 'Áudio Gravado')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar Áudio"
+          >
             <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
               <Mic className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-medium">Áudio</span>
+            <span className="text-[9px] font-bold">Áudio</span>
           </button>
 
-          <button onClick={() => addNode('sms', 'Imagem')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+          <button 
+            onClick={() => addNode('imagem', 'Imagem')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar Imagem"
+          >
             <div className="w-8 h-8 rounded-xl bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400">
-              <Image className="w-4 h-4" />
+              <ImageIcon className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-medium">Imagem</span>
+            <span className="text-[9px] font-bold">Imagem</span>
           </button>
 
-          <button onClick={() => addNode('sms', 'Vídeo')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+          <button 
+            onClick={() => addNode('video', 'Vídeo')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar Vídeo"
+          >
             <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
               <Video className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-medium">Vídeo</span>
+            <span className="text-[9px] font-bold">Vídeo</span>
           </button>
 
-          <button onClick={() => addNode('condicao', 'Timer')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+          <button 
+            onClick={() => addNode('timer', 'Timer')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar Temporizador"
+          >
             <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
               <Clock className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-medium">Timer</span>
+            <span className="text-[9px] font-bold">Timer</span>
           </button>
 
-          <button onClick={() => addNode('ia', 'IA')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+          <button 
+            onClick={() => addNode('ia', 'Assistente IA')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar IA"
+          >
             <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
               <Sparkles className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-medium">IA</span>
+            <span className="text-[9px] font-bold">IA</span>
           </button>
 
-          <button onClick={() => addNode('condicao', 'Condição')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
+          <button 
+            onClick={() => addNode('condicao', 'Condição')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar Condição / Branching"
+          >
             <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
               <Scissors className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-medium">Condição</span>
+            <span className="text-[9px] font-bold">Condição</span>
           </button>
 
-          <button onClick={() => addNode('cakto', 'Cakto')} className="flex flex-col items-center gap-1 text-slate-400 hover:text-white">
-            <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
-              <Plus className="w-4 h-4" />
+          <button 
+            onClick={() => addNode('cakto', 'Webhook Cakto')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            title="Adicionar Webhook Cakto"
+          >
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-sm">
+              🌵
             </div>
-            <span className="text-[9px] font-medium">Mais</span>
+            <span className="text-[9px] font-bold">Cakto</span>
           </button>
         </div>
       </div>

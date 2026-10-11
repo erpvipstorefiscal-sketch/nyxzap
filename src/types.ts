@@ -41,6 +41,7 @@ export interface Subscriber {
   mrrValue: number;
   validUntil: string;
   connectedInstances: number;
+  instancesLimit?: number;
   createdAt: string;
 }
 
@@ -101,7 +102,7 @@ export interface KnowledgeDoc {
 
 export interface FlowNode {
   id: string;
-  type: 'inicio' | 'ia' | 'condicao' | 'sms' | 'cakto' | 'whatsapp';
+  type: 'inicio' | 'ia' | 'condicao' | 'sms' | 'cakto' | 'whatsapp' | 'audio' | 'imagem' | 'video' | 'timer';
   title: string;
   x: number;
   y: number;

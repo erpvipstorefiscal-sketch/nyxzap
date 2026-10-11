@@ -57,7 +57,7 @@ export const AdminDashboard: React.FC = () => {
   const [editPhone, setEditPhone] = useState('');
   const [editPlanId, setEditPlanId] = useState('');
   const [editPlanName, setEditPlanName] = useState('');
-  const [editStatus, setEditStatus] = useState<'active' | 'expired'>('active');
+  const [editStatus, setEditStatus] = useState<'active' | 'pending' | 'expired' | 'canceled'>('active');
   const [editMRR, setEditMRR] = useState(0);
   const [editValidUntil, setEditValidUntil] = useState('');
   const [editInstancesLimit, setEditInstancesLimit] = useState(1);
