@@ -619,32 +619,36 @@ app.post('/api/webhook/cakto', async (req, res) => {
     // Extrair dados do produto / oferta / item
     const items = payload.data?.items || payload.items || payload.products || [];
     const item = items[0] || payload.product || payload.order?.product || {};
-    const productName = (
+    const rawProductName = (
       item.name || 
       item.title || 
+      item.slug ||
       payload.product_name || 
+      payload.product?.name ||
       payload.plan_name || 
       payload.offer_title || 
+      payload.data?.product_name ||
       ''
     ).toLowerCase();
 
-    const offerId = String(payload.offer_id || payload.checkout_id || payload.link_id || item.id || '');
+    const offerId = String(payload.offer_id || payload.checkout_id || payload.link_id || item.id || payload.product_id || '').toLowerCase();
     const amount = parseFloat(payload.data?.amount || payload.amount || payload.order?.amount || item.price || 0) / 100 || 97.00;
 
-    console.log(`[Cakto Webhook] Processando compra aprovada para ${email} (Produto: "${productName}", Valor: R$ ${amount})`);
+    console.log(`[Cakto Webhook] Processando compra aprovada para ${email} (Produto: "${rawProductName}", OfferId: "${offerId}", Valor: R$ ${amount})`);
 
-    // 1. Verificar se é compra de Conexão Extra de WhatsApp (+1, +2, +3, +5 conexões)
+    // 1. Identificar Conexões Extras de WhatsApp
+    // Slugs Cakto: nyxzap-1-numero-extra, nyxzap-2-numeros-extra, nyxzap-3-numeros-extra, nyxzap-5-numeros-extra
     const isExtraConnection = 
-      productName.includes('extra') || 
-      productName.includes('conex') || 
-      productName.includes('adicional') ||
+      rawProductName.includes('extra') || 
+      rawProductName.includes('numero') || 
+      rawProductName.includes('conex') ||
       offerId.includes('extra');
 
     if (isExtraConnection) {
       let extraCount = 1;
-      if (productName.includes('5') || productName.includes('cinco')) extraCount = 5;
-      else if (productName.includes('3') || productName.includes('tres') || productName.includes('três')) extraCount = 3;
-      else if (productName.includes('2') || productName.includes('duas')) extraCount = 2;
+      if (rawProductName.includes('5') || rawProductName.includes('cinco')) extraCount = 5;
+      else if (rawProductName.includes('3') || rawProductName.includes('tres') || rawProductName.includes('três')) extraCount = 3;
+      else if (rawProductName.includes('2') || rawProductName.includes('duas')) extraCount = 2;
 
       // Buscar usuário existente e incrementar instâncias
       const userRes = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1', [email]);
@@ -673,15 +677,21 @@ app.post('/api/webhook/cakto', async (req, res) => {
       }
     }
 
-    // 2. Assinatura ou Renovação de Plano (Plano Dinder ou Plano Pro com IA)
+    // 2. Identificar Plano e Ciclo
+    // Slugs Cakto:
+    // - nyxzap - plano dinder (Mensal)
+    // - nyxzap - plano dinder anual (Anual)
+    // - nyxzap - plano pro + ia ilimitada (Mensal)
+    // - nyxzap - plano pro + ia ilimitada anual (Anual)
     const isPro = 
-      productName.includes('pro') || 
-      productName.includes('ia') || 
+      rawProductName.includes('pro') || 
+      rawProductName.includes('ia') || 
+      rawProductName.includes('ilimitada') ||
       offerId.includes('3764ipv') || 
       offerId.includes('87jcu5r');
 
     const isAnnual = 
-      productName.includes('anual') || 
+      rawProductName.includes('anual') || 
       amount >= 290 || 
       offerId.includes('693263v') || 
       offerId.includes('3764ipv');
