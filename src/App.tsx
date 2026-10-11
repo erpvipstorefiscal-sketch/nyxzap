@@ -33,7 +33,26 @@ import { LiveChatManager } from './components/LiveChatManager';
 import { RenewSubscriptionScreen } from './components/RenewSubscriptionScreen';
 
 export function App() {
-  const [user, setUser] = useState<UserAuth | null>(null);
+  const [user, setUser] = useState<UserAuth | null>(() => {
+    try {
+      const saved = localStorage.getItem('nyxzap_user');
+      const lastActive = localStorage.getItem('nyxzap_last_active');
+      if (saved && lastActive) {
+        const diffMinutes = (Date.now() - parseInt(lastActive, 10)) / (1000 * 60);
+        if (diffMinutes < 30) {
+          localStorage.setItem('nyxzap_last_active', Date.now().toString());
+          return JSON.parse(saved);
+        } else {
+          localStorage.removeItem('nyxzap_user');
+          localStorage.removeItem('nyxzap_last_active');
+        }
+      }
+    } catch (e) {
+      console.error('Erro ao ler sessão salva:', e);
+    }
+    return null;
+  });
+
   const [activeClientTab, setActiveClientTab] = useState<'chat' | 'whatsapp' | 'flow' | 'ai'>('chat');
 
   // Modals state
@@ -42,6 +61,59 @@ export function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showManagePlanModal, setShowManagePlanModal] = useState(false);
+
+  // Manage Plan Modal Cycle: 'monthly' | 'annual'
+  const [manageCycle, setManageCycle] = useState<'monthly' | 'annual'>('monthly');
+
+  // Activity tracking for 30-minute inactivity auto-logout
+  useEffect(() => {
+    if (!user) {
+      localStorage.removeItem('nyxzap_user');
+      localStorage.removeItem('nyxzap_last_active');
+      return;
+    }
+
+    // Save session in localStorage
+    localStorage.setItem('nyxzap_user', JSON.stringify(user));
+    localStorage.setItem('nyxzap_last_active', Date.now().toString());
+
+    const updateActivity = () => {
+      localStorage.setItem('nyxzap_last_active', Date.now().toString());
+    };
+
+    const checkInactivity = () => {
+      const lastActive = localStorage.getItem('nyxzap_last_active');
+      if (lastActive) {
+        const diffMinutes = (Date.now() - parseInt(lastActive, 10)) / (1000 * 60);
+        if (diffMinutes >= 30) {
+          handleLogout();
+        }
+      }
+    };
+
+    // User activity listeners
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('click', updateActivity);
+    window.addEventListener('scroll', updateActivity);
+
+    // Check inactivity every 30 seconds
+    const interval = setInterval(checkInactivity, 30000);
+
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('click', updateActivity);
+      window.removeEventListener('scroll', updateActivity);
+      clearInterval(interval);
+    };
+  }, [user]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('nyxzap_user');
+    localStorage.removeItem('nyxzap_last_active');
+    setUser(null);
+  };
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -141,7 +213,7 @@ export function App() {
       <RenewSubscriptionScreen
         user={user}
         daysRemaining={subInfo.daysRemaining}
-        onLogout={() => setUser(null)}
+        onLogout={handleLogout}
         onSimulateRenewal={(newDate) => {
           setUser(prev => prev ? { ...prev, validUntil: newDate } : null);
         }}
@@ -600,7 +672,7 @@ export function App() {
               <button
                 onClick={() => {
                   setShowProfileModal(false);
-                  setUser(null);
+                  handleLogout();
                 }}
                 className="w-full p-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 text-xs font-semibold flex items-center justify-between transition-colors"
               >
@@ -698,58 +770,197 @@ export function App() {
         </div>
       )}
 
-      {/* 5. Modal de Gerenciar Assinatura */}
+      {/* 5. Modal de Gerenciar Assinatura / Renovar e Antecipar / Upgrade */}
       {showManagePlanModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-nyx-900 border border-slate-800 rounded-3xl p-6 md:p-8 w-full max-w-xl shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0f111a] border border-slate-800 rounded-3xl p-6 md:p-8 w-full max-w-2xl shadow-2xl space-y-6 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
                 <CreditCard className="w-5 h-5 text-purple-400" />
-                <span>Gerenciar Assinatura NyxZap</span>
-              </h3>
+                <h3 className="text-base font-extrabold text-white">
+                  Renovar Assinatura ou Fazer Upgrade
+                </h3>
+              </div>
               <button onClick={() => setShowManagePlanModal(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 rounded-2xl bg-[#151824] border border-slate-800 space-y-2">
-              <span className="text-xs text-slate-400">Status da sua Assinatura</span>
-              <div className="text-base font-bold text-white flex items-center gap-2">
-                <span className="text-emerald-400">● Ativa</span> — {user.planName || 'Plano Pro'}
+            {/* Status Atual do Cliente */}
+            <div className="p-4 rounded-2xl bg-[#151824] border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] text-slate-400 block">Sua Assinatura Atual:</span>
+                <span className="text-base font-black text-purple-300">
+                  {user.planName || 'Plano Dinder'}
+                </span>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Válida até <strong className="text-white font-mono">{user.validUntil || '2026-11-10'}</strong> ({subInfo.daysRemaining === 0 ? 'Vence Hoje' : `${subInfo.daysRemaining} dias restantes`})
+                </p>
               </div>
-              <p className="text-xs text-slate-400">
-                Sua licença renova automaticamente em <span className="text-white font-semibold">{user.validUntil || '10/11/2026'}</span>.
-              </p>
+
+              <div className="text-left sm:text-right">
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  ● Status Ativo
+                </span>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              <span className="text-xs font-bold text-slate-300 block">Opções da Conta:</span>
-              <button
-                onClick={() => {
-                  alert('Sua fatura foi enviada para ' + user.email);
-                }}
-                className="w-full p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold text-left transition-colors flex items-center justify-between"
-              >
-                <span>Baixar 2ª via da Fatura / Recibo</span>
-                <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-              </button>
-
-              <button
-                onClick={() => {
-                  alert('Solicitação de cancelamento aberta. Nossa equipe entrará em contato.');
-                }}
-                className="w-full p-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 text-xs font-semibold text-left transition-colors"
-              >
-                Cancelar Renovação Automática
-              </button>
+            {/* Seletor Mensal / Anual */}
+            <div className="flex items-center justify-center">
+              <div className="flex items-center gap-1.5 bg-[#12141f] p-1.5 rounded-2xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setManageCycle('monthly')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    manageCycle === 'monthly'
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Mensal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManageCycle('annual')}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    manageCycle === 'annual'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>Anual</span>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30 font-black">
+                    58% OFF
+                  </span>
+                </button>
+              </div>
             </div>
 
-            <div className="pt-2 text-right">
+            {/* OPÇÕES: 1. RENOVAR O PLANO ATUAL & 2. FAZER UPGRADE */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* CARD 1: Plano Dinder */}
+                <div className={`p-5 rounded-2xl border flex flex-col justify-between transition-all ${
+                  (user.planName?.toLowerCase().includes('dinder') || !user.planName?.toLowerCase().includes('ia'))
+                    ? 'bg-purple-950/20 border-purple-500/60 ring-1 ring-purple-500/40'
+                    : 'bg-[#12141f] border-slate-800'
+                }`}>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h4 className="text-sm font-black text-white">Plano Dinder</h4>
+                      {(user.planName?.toLowerCase().includes('dinder') || !user.planName?.toLowerCase().includes('ia')) && (
+                        <span className="text-[9px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded">
+                          SEU PLANO
+                        </span>
+                      )}
+                    </div>
+                    <div className="mb-2">
+                      <span className="text-2xl font-black text-white">
+                        {manageCycle === 'annual' ? 'R$ 397,00' : 'R$ 97,00'}
+                      </span>
+                      <span className="text-xs text-slate-400">/{manageCycle === 'annual' ? 'ano' : 'mês'}</span>
+                      {manageCycle === 'annual' && (
+                        <span className="block text-[11px] text-emerald-400 font-bold">58% de desconto no anual</span>
+                      )}
+                    </div>
+
+                    <ul className="text-xs text-slate-300 space-y-1.5 my-3">
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>1 conexão WhatsApp</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>CRM completo + Botzap</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Use sua IA (GPT, Gemini, Claude)</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <a
+                    href={manageCycle === 'annual' ? 'https://pay.cakto.com.br/693263v_1192152' : 'https://pay.cakto.com.br/w9d4ou9_1191931'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full mt-3 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-all text-center"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>{(user.planName?.toLowerCase().includes('dinder') || !user.planName?.toLowerCase().includes('ia')) ? 'Renovar Plano Atual' : 'Contratar Dinder'}</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+
+                {/* CARD 2: Plano Pro + IA ilimitada (UPGRADE) */}
+                <div className={`p-5 rounded-2xl border flex flex-col justify-between transition-all relative ${
+                  user.planName?.toLowerCase().includes('ia')
+                    ? 'bg-indigo-950/20 border-indigo-500/60 ring-1 ring-indigo-500/40'
+                    : 'bg-[#151828] border-2 border-indigo-500 shadow-xl shadow-indigo-600/20'
+                }`}>
+                  <div className="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> UPGRADE RECOMENDADO
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h4 className="text-sm font-black text-white">Plano Pro + IA</h4>
+                      {user.planName?.toLowerCase().includes('ia') && (
+                        <span className="text-[9px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded">
+                          SEU PLANO
+                        </span>
+                      )}
+                    </div>
+                    <div className="mb-2">
+                      <span className="text-2xl font-black text-white">
+                        {manageCycle === 'annual' ? 'R$ 597,00' : 'R$ 147,00'}
+                      </span>
+                      <span className="text-xs text-slate-400">/{manageCycle === 'annual' ? 'ano' : 'mês'}</span>
+                      {manageCycle === 'annual' && (
+                        <span className="block text-[11px] text-emerald-400 font-bold">58% de desconto no anual</span>
+                      )}
+                    </div>
+
+                    <ul className="text-xs text-slate-300 space-y-1.5 my-3">
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Tudo do Dinder + IA Ilimitada</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Respostas Inteligentes Automáticas</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Suporte Prioritário VIP 24/7</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <a
+                    href={manageCycle === 'annual' ? 'https://pay.cakto.com.br/3764ipv_1192156' : 'https://pay.cakto.com.br/87jcu5r_1192138'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full mt-3 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 transition-all text-center"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{user.planName?.toLowerCase().includes('ia') ? 'Renovar Plano Atual' : 'Fazer Upgrade para Pro + IA'}</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-between border-t border-slate-800/80">
+              <span className="text-xs text-slate-400">
+                Pagamento 100% seguro processado via Cakto.
+              </span>
               <button
+                type="button"
                 onClick={() => setShowManagePlanModal(false)}
-                className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all"
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all"
               >
-                Concluído
+                Fechar
               </button>
             </div>
           </div>

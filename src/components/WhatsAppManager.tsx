@@ -193,14 +193,11 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
       console.error('Erro ao buscar link Cakto:', err);
     }
 
-    if (onUpdateUser) {
-      onUpdateUser({ instancesLimit: currentLimit + connections });
-    }
-    setSuccessMsg(`Redirecionando para o Checkout Seguro Cakto (+${connections} conexões adicionadas)!`);
+    setSuccessMsg(`Abrindo checkout da Cakto para +${connections} conexão(ões). A liberação ocorrerá automaticamente assim que o pagamento for confirmado!`);
     setTimeout(() => {
       setSuccessMsg('');
       setShowBuyModal(false);
-    }, 2500);
+    }, 4000);
   };
 
   return (
