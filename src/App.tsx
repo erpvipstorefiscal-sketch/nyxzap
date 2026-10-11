@@ -510,7 +510,7 @@ export function App() {
           {user.role === 'admin' ? (
             <AdminDashboard />
           ) : (
-            <div>
+            <div className={`flex-1 w-full flex flex-col min-h-0 ${activeClientTab === 'flow' ? 'h-full' : ''}`}>
               {activeClientTab === 'chat' && <LiveChatManager />}
               {activeClientTab === 'whatsapp' && (
                 <WhatsAppManager 

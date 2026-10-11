@@ -39,7 +39,14 @@ import {
   Link as LinkIcon,
   HelpCircle,
   Plus,
-  StopCircle
+  StopCircle,
+  ArrowLeft,
+  FolderPlus,
+  Edit3,
+  Play,
+  Pause,
+  Search,
+  Workflow
 } from 'lucide-react';
 import { FlowNode, FlowEdge } from '../types';
 
@@ -173,43 +180,63 @@ const INITIAL_EDGES: FlowEdge[] = [
   { id: 'e4-wh', from: 'node-4', to: 'node-webhook', label: 'Não respondeu (45s)', fromHandle: 'timeout' }
 ];
 
+export interface FlowSummary {
+  id: string;
+  name: string;
+  description: string;
+  active: boolean;
+  nodeCount: number;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  updatedAt: string;
+}
+
 export const FlowBuilder: React.FC = () => {
+  // Multi-flow state
+  const [flowsList, setFlowsList] = useState<FlowSummary[]>([]);
+  const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
+  const [currentFlowName, setCurrentFlowName] = useState<string>('Fluxo Principal');
+  const [currentFlowDesc, setCurrentFlowDesc] = useState<string>('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newFlowNameInput, setNewFlowNameInput] = useState('');
+  const [newFlowDescInput, setNewFlowDescInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoadingFlows, setIsLoadingFlows] = useState(false);
+
   // Load saved state or default
-  const [nodes, setNodes] = useState<FlowNode[]>(() => {
-    try {
-      const saved = localStorage.getItem('nyxzap_flow_builder_nodes');
-      return saved ? JSON.parse(saved) : INITIAL_NODES;
-    } catch {
-      return INITIAL_NODES;
-    }
-  });
+  const [nodes, setNodes] = useState<FlowNode[]>(INITIAL_NODES);
+  const [edges, setEdges] = useState<FlowEdge[]>(INITIAL_EDGES);
 
-  const [edges, setEdges] = useState<FlowEdge[]>(() => {
+  const fetchFlows = async () => {
+    setIsLoadingFlows(true);
     try {
-      const saved = localStorage.getItem('nyxzap_flow_builder_edges');
-      return saved ? JSON.parse(saved) : INITIAL_EDGES;
-    } catch {
-      return INITIAL_EDGES;
+      const res = await fetch('/api/flows');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.flows)) {
+        setFlowsList(data.flows);
+      }
+    } catch (err) {
+      console.error('[FlowBuilder] Erro ao buscar lista de fluxos:', err);
+    } finally {
+      setIsLoadingFlows(false);
     }
-  });
+  };
 
-  // Load flow from backend API
   useEffect(() => {
-    fetch('/api/flow')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && Array.isArray(data.nodes) && data.nodes.length > 0) {
-          setNodes(data.nodes);
-          if (Array.isArray(data.edges)) {
-            setEdges(data.edges);
-          }
-          if (data.active !== undefined) {
-            setFlowActive(data.active);
-          }
-        }
-      })
-      .catch(err => console.error('[FlowBuilder] Erro ao carregar fluxo do servidor:', err));
+    fetchFlows();
   }, []);
+
+  const openFlowEditor = (flow: FlowSummary) => {
+    setActiveFlowId(flow.id);
+    setCurrentFlowName(flow.name);
+    setCurrentFlowDesc(flow.description || '');
+    setNodes(Array.isArray(flow.nodes) && flow.nodes.length > 0 ? flow.nodes : INITIAL_NODES);
+    setEdges(Array.isArray(flow.edges) ? flow.edges : INITIAL_EDGES);
+    setFlowActive(flow.active !== false);
+    setZoom(1.05);
+    setPan({ x: 0, y: 0 });
+    setConnectingFrom(null);
+  };
 
   const [zoom, setZoom] = useState<number>(1.05);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -479,14 +506,33 @@ export const FlowBuilder: React.FC = () => {
   // Save Flow
   const handleSaveFlow = async () => {
     try {
-      localStorage.setItem('nyxzap_flow_builder_nodes', JSON.stringify(nodes));
-      localStorage.setItem('nyxzap_flow_builder_edges', JSON.stringify(edges));
+      const flowId = activeFlowId || 'default';
+      const payload = {
+        id: flowId,
+        name: currentFlowName || 'Fluxo Principal',
+        description: currentFlowDesc || '',
+        nodes,
+        edges,
+        active: flowActive
+      };
 
-      // Post to backend database so WhatsApp engine executes it instantly
+      // Save to local storage for quick fallback
+      localStorage.setItem(`nyxzap_flow_${flowId}_nodes`, JSON.stringify(nodes));
+      localStorage.setItem(`nyxzap_flow_${flowId}_edges`, JSON.stringify(edges));
+
+      // Post to backend database
+      await fetch('/api/flows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      // Also sync active flow to /api/flow
       await fetch('/api/flow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: flowId,
           nodes,
           edges,
           active: flowActive
@@ -494,11 +540,96 @@ export const FlowBuilder: React.FC = () => {
       });
 
       setSaveSuccess(true);
+      fetchFlows();
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error(err);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+    }
+  };
+
+  // Create new flow
+  const handleCreateFlow = async () => {
+    if (!newFlowNameInput.trim()) return;
+    const newId = `flow-${Date.now()}`;
+    const newFlow: FlowSummary = {
+      id: newId,
+      name: newFlowNameInput.trim(),
+      description: newFlowDescInput.trim(),
+      active: true,
+      nodeCount: INITIAL_NODES.length,
+      nodes: INITIAL_NODES,
+      edges: INITIAL_EDGES,
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      await fetch('/api/flows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newFlow)
+      });
+      await fetchFlows();
+      setShowCreateModal(false);
+      setNewFlowNameInput('');
+      setNewFlowDescInput('');
+      openFlowEditor(newFlow);
+    } catch (err) {
+      console.error('Erro ao criar fluxo:', err);
+    }
+  };
+
+  // Duplicate flow
+  const handleDuplicateFlow = async (flow: FlowSummary, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newId = `flow-${Date.now()}`;
+    const duplicated: FlowSummary = {
+      ...flow,
+      id: newId,
+      name: `${flow.name} (Cópia)`,
+      updatedAt: new Date().toISOString()
+    };
+    try {
+      await fetch('/api/flows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(duplicated)
+      });
+      await fetchFlows();
+    } catch (err) {
+      console.error('Erro ao duplicar fluxo:', err);
+    }
+  };
+
+  // Delete flow
+  const handleDeleteFlow = async (flowId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Tem certeza que deseja excluir este fluxo?')) return;
+    try {
+      await fetch(`/api/flows/${flowId}`, { method: 'DELETE' });
+      await fetchFlows();
+      if (activeFlowId === flowId) {
+        setActiveFlowId(null);
+      }
+    } catch (err) {
+      console.error('Erro ao excluir fluxo:', err);
+    }
+  };
+
+  // Toggle flow active status
+  const handleToggleFlowActive = async (flow: FlowSummary, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = { ...flow, active: !flow.active };
+    try {
+      await fetch('/api/flows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      await fetchFlows();
+    } catch (err) {
+      console.error('Erro ao alterar status:', err);
     }
   };
 
@@ -738,8 +869,216 @@ export const FlowBuilder: React.FC = () => {
     updateNodeData(nodeId, { message: `${currentMsg} ${varName}` });
   };
 
+  // DASHBOARD DE FLUXOS EM FORMATO DE CARDS (quando nenhum fluxo estiver aberto no editor)
+  if (activeFlowId === null) {
+    const filteredFlows = flowsList.filter(f => 
+      f.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (f.description && f.description.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    return (
+      <div className="space-y-6 animate-fadeIn flex flex-col h-full w-full p-4 lg:p-6 overflow-y-auto">
+        {/* Top Header Dashboard */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0d0f18] p-5 rounded-2xl border border-slate-800/80 shadow-xl">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-600/30">
+              <Workflow className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl font-black text-white">Fluxos de Automação</h1>
+                <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 font-bold">
+                  {flowsList.length} {flowsList.length === 1 ? 'Fluxo' : 'Fluxos'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Crie múltiplos funis interativos com WhatsApp, inteligência artificial, mídias e condicionais.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Buscar fluxo..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="bg-[#141624] border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500/50 w-48 sm:w-64"
+              />
+            </div>
+
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-purple-600/25 active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Criar Novo Fluxo</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Grid de Cards de Fluxos */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredFlows.map(flow => (
+            <div
+              key={flow.id}
+              onClick={() => openFlowEditor(flow)}
+              className="group bg-[#0d0f18] hover:bg-[#121524] border border-slate-800/80 hover:border-purple-500/50 rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-purple-900/10 flex flex-col justify-between relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl pointer-events-none group-hover:bg-purple-500/10 transition-colors" />
+
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <Zap className="w-5 h-5 fill-purple-400/20" />
+                  </div>
+
+                  <button
+                    onClick={(e) => handleToggleFlowActive(flow, e)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all flex items-center gap-1.5 ${
+                      flow.active
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${flow.active ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                    {flow.active ? 'Ativo' : 'Pausado'}
+                  </button>
+                </div>
+
+                <h3 className="text-base font-black text-white group-hover:text-purple-300 transition-colors line-clamp-1">
+                  {flow.name}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2 min-h-[32px]">
+                  {flow.description || 'Sem descrição cadastrada para este funil de automação.'}
+                </p>
+              </div>
+
+              <div className="mt-5 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center gap-1 text-[11px] font-mono text-purple-300">
+                    <Layers className="w-3.5 h-3.5" />
+                    {flow.nodeCount || flow.nodes?.length || 0} cards
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {flow.edges?.length || 0} conexões
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => handleDuplicateFlow(flow, e)}
+                    title="Duplicar Fluxo"
+                    className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteFlow(flow.id, e)}
+                    title="Excluir Fluxo"
+                    className="p-1.5 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {filteredFlows.length === 0 && !isLoadingFlows && (
+            <div className="col-span-full py-16 text-center bg-[#0d0f18] rounded-2xl border border-slate-800/80 p-8">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mb-4">
+                <Workflow className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-white">Nenhum fluxo encontrado</h3>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                Crie seu primeiro fluxo de automação para engajar leads e responder mensagens no WhatsApp automaticamente.
+              </p>
+              <div className="flex items-center justify-center gap-3 mt-5">
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold inline-flex items-center gap-2 transition-all shadow-lg shadow-purple-600/30"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Criar Novo Fluxo</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Modal Criar Fluxo */}
+        {showCreateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div className="bg-[#11131f] border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-scaleUp">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                    <Workflow className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-base font-bold text-white">Novo Fluxo de Automação</h3>
+                </div>
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1.5">Nome do Fluxo</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Recuperação de Carrinho, Atendimento Geral..."
+                    value={newFlowNameInput}
+                    onChange={e => setNewFlowNameInput(e.target.value)}
+                    className="w-full bg-[#181a28] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-300 block mb-1.5">Descrição (opcional)</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Explique o objetivo deste funil..."
+                    value={newFlowDescInput}
+                    onChange={e => setNewFlowDescInput(e.target.value)}
+                    className="w-full bg-[#181a28] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-800">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleCreateFlow}
+                  disabled={!newFlowNameInput.trim()}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white transition-all shadow-lg shadow-purple-600/30 flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Criar e Abrir Editor</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // VISUAL CANVAS BUILDER (quando um fluxo estiver aberto)
   return (
-    <div className="space-y-2 animate-fadeIn flex flex-col h-full w-full p-2 relative flex-1 overflow-hidden">
+    <div className="space-y-2 animate-fadeIn flex flex-col h-full w-full p-2 relative flex-1 min-h-0 overflow-hidden">
       {/* Hidden File Input for Native Direct PC Upload */}
       <input 
         type="file" 
@@ -751,14 +1090,30 @@ export const FlowBuilder: React.FC = () => {
       {/* Top Header & Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0d0f18] p-3.5 rounded-2xl border border-slate-800/80">
         <div className="flex items-center gap-3">
+          {/* Voltar aos Fluxos */}
+          <button
+            onClick={() => { setActiveFlowId(null); fetchFlows(); }}
+            className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-700/60 shadow-sm"
+            title="Voltar para a listagem de fluxos"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Fluxos</span>
+          </button>
+
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-600/30">
             <Zap className="w-5 h-5 fill-current" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-white">Fluxo</h1>
+              <input
+                type="text"
+                value={currentFlowName}
+                onChange={e => setCurrentFlowName(e.target.value)}
+                className="text-base font-black text-white bg-transparent border-b border-transparent hover:border-slate-700 focus:border-purple-500 focus:outline-none px-0.5"
+                title="Clique para editar o nome do fluxo"
+              />
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 font-bold">
-                Visual Builder
+                Editor Visual
               </span>
             </div>
             <p className="text-xs text-slate-400">
@@ -869,7 +1224,7 @@ export const FlowBuilder: React.FC = () => {
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        className="flex-1 bg-[#090a0f] border border-slate-800/80 rounded-2xl relative overflow-hidden select-none cursor-grab active:cursor-grabbing"
+        className="flex-1 w-full min-h-[550px] h-[calc(100vh-140px)] bg-[#090a0f] border border-slate-800/80 rounded-2xl relative overflow-hidden select-none cursor-grab active:cursor-grabbing"
         style={{
           backgroundImage: 'radial-gradient(circle, #1a1e2e 1.2px, transparent 1.2px)',
           backgroundSize: `${Math.round(24 * zoom)}px ${Math.round(24 * zoom)}px`,

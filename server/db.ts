@@ -137,11 +137,15 @@ export async function initDatabase() {
       CREATE TABLE IF NOT EXISTS flow_definitions (
         id VARCHAR(100) PRIMARY KEY,
         user_id VARCHAR(100) DEFAULT 'default',
+        name VARCHAR(150) DEFAULT 'Fluxo Principal',
+        description TEXT DEFAULT '',
         active BOOLEAN DEFAULT true,
         nodes JSONB NOT NULL DEFAULT '[]',
         edges JSONB NOT NULL DEFAULT '[]',
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE flow_definitions ADD COLUMN IF NOT EXISTS name VARCHAR(150) DEFAULT 'Fluxo Principal';
+      ALTER TABLE flow_definitions ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
     `);
 
     // 5. Tabela de Conversas (Chats de Leads do WhatsApp)

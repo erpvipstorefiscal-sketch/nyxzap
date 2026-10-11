@@ -1572,7 +1572,93 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
   return 'Recebi sua mensagem! Em que posso ajudar?';
 }
 
-// Flow REST API Endpoints (Sync with PostgreSQL & in-memory runner)
+// Flow REST API Endpoints (Multi-flow supported)
+app.get('/api/flows', async (_req, res) => {
+  try {
+    const result = await pool.query('SELECT id, name, description, active, nodes, edges, updated_at FROM flow_definitions ORDER BY updated_at DESC');
+    if (result.rows.length > 0) {
+      return res.json({
+        success: true,
+        flows: result.rows.map(r => ({
+          id: r.id,
+          name: r.name || 'Fluxo Principal',
+          description: r.description || '',
+          active: r.active !== false,
+          nodes: r.nodes || [],
+          edges: r.edges || [],
+          nodeCount: Array.isArray(r.nodes) ? r.nodes.length : 0,
+          updatedAt: r.updated_at
+        }))
+      });
+    }
+  } catch (err: any) {
+    console.error('[Flows List Error]', err);
+  }
+
+  // Default fallback flow
+  res.json({
+    success: true,
+    flows: [{
+      id: 'default',
+      name: 'Fluxo Principal de Vendas',
+      description: 'Gatilhos de WhatsApp, IA, Mídias diretas do PC e Conexões Inteligentes.',
+      active: activeFlow.active,
+      nodes: activeFlow.nodes,
+      edges: activeFlow.edges,
+      nodeCount: activeFlow.nodes.length,
+      updatedAt: new Date().toISOString()
+    }]
+  });
+});
+
+app.post('/api/flows', async (req, res) => {
+  const { id, name, description, nodes, edges, active } = req.body;
+  const flowId = id || `flow-${Date.now()}`;
+  const flowName = name || 'Novo Fluxo';
+  const flowDesc = description || '';
+  const flowActive = active !== undefined ? Boolean(active) : true;
+  const flowNodes = Array.isArray(nodes) ? nodes : activeFlow.nodes;
+  const flowEdges = Array.isArray(edges) ? edges : activeFlow.edges;
+
+  try {
+    await pool.query(
+      `INSERT INTO flow_definitions (id, user_id, name, description, active, nodes, edges, updated_at)
+       VALUES ($1, 'default', $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         description = EXCLUDED.description,
+         active = EXCLUDED.active,
+         nodes = EXCLUDED.nodes,
+         edges = EXCLUDED.edges,
+         updated_at = CURRENT_TIMESTAMP`,
+      [flowId, flowName, flowDesc, flowActive, JSON.stringify(flowNodes), JSON.stringify(flowEdges)]
+    );
+
+    activeFlow = {
+      active: flowActive,
+      nodes: flowNodes,
+      edges: flowEdges
+    };
+
+    console.log(`[Flow Engine] Fluxo '${flowName}' (${flowId}) salvo com sucesso!`);
+    res.json({ success: true, id: flowId, message: 'Fluxo salvo com sucesso e ativo!' });
+  } catch (err: any) {
+    console.error('[Flow Save Error]', err);
+    res.json({ success: true, id: flowId, message: 'Fluxo salvo em memória!' });
+  }
+});
+
+app.delete('/api/flows/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM flow_definitions WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Fluxo excluído com sucesso!' });
+  } catch (err: any) {
+    res.json({ success: true });
+  }
+});
+
+// Single active flow backwards compatibility
 app.get('/api/flow', async (_req, res) => {
   try {
     const result = await pool.query('SELECT nodes, edges, active FROM flow_definitions WHERE id = $1', ['default']);
