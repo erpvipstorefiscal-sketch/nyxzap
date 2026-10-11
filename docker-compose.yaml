@@ -1,0 +1,38 @@
+services:
+  nyxzap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nyxzap-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://nyx_user:nyx_secret_password@postgres:5432/nyxzap_db?schema=public
+    volumes:
+      - nyxzap_whatsapp_sessions:/app/whatsapp_auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: nyxzap-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=nyx_user
+      - POSTGRES_PASSWORD=nyx_secret_password
+      - POSTGRES_DB=nyxzap_db
+    volumes:
+      - nyxzap_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nyx_user -d nyxzap_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  nyxzap_whatsapp_sessions:
+  nyxzap_postgres_data:
