@@ -203,8 +203,12 @@ export const FlowBuilder: React.FC = () => {
     x: number;
     y: number;
   } | null>(null);
+  const connectingFromRef = useRef(connectingFrom);
+  connectingFromRef.current = connectingFrom;
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [hoveredTargetPortId, setHoveredTargetPortId] = useState<string | null>(null);
+  const hoveredTargetPortIdRef = useRef<string | null>(null);
+  hoveredTargetPortIdRef.current = hoveredTargetPortId;
 
   // Palette modal state
   const [showPaletteModal, setShowPaletteModal] = useState(false);
@@ -266,10 +270,16 @@ export const FlowBuilder: React.FC = () => {
     if (e.button !== 0) return;
     e.stopPropagation();
 
-    // If currently drawing a connection line, cancel line and do not drag
-    if (connectingFrom) {
-      setConnectingFrom(null);
-      setHoveredTargetPortId(null);
+    const currentConnecting = connectingFromRef.current;
+    // If currently drawing a connection line from another node, clicking this card finishes the connection!
+    if (currentConnecting) {
+      if (currentConnecting.nodeId !== id) {
+        handleInputPortRelease(id, e);
+      } else {
+        // Clicked the same card's body, cancel connection
+        setConnectingFrom(null);
+        setHoveredTargetPortId(null);
+      }
       return;
     }
     
@@ -291,7 +301,7 @@ export const FlowBuilder: React.FC = () => {
 
   // Canvas Pan & Mouse handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (connectingFrom) {
+    if (connectingFromRef.current) {
       // Clicking on empty canvas while connecting cancels connection immediately
       setConnectingFrom(null);
       setHoveredTargetPortId(null);
@@ -310,7 +320,7 @@ export const FlowBuilder: React.FC = () => {
     const mouseCanvasX = (e.clientX - rect.left - pan.x) / zoom;
     const mouseCanvasY = (e.clientY - rect.top - pan.y) / zoom;
 
-    if (connectingFrom) {
+    if (connectingFromRef.current) {
       setCursorPos({ x: mouseCanvasX, y: mouseCanvasY });
       return; // Do not drag cards while connecting
     }
@@ -363,18 +373,21 @@ export const FlowBuilder: React.FC = () => {
     setCursorPos({ x: mouseCanvasX, y: mouseCanvasY });
   };
 
-  // Complete Connection at Input Port
-  const handleInputPortRelease = (targetNodeId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
+  // Complete Connection at Input Port or Target Node
+  const handleInputPortRelease = (targetNodeId: string, e?: React.MouseEvent | React.PointerEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
 
-    if (connectingFrom && connectingFrom.nodeId !== targetNodeId) {
+    const currentConnecting = connectingFromRef.current;
+    if (currentConnecting && currentConnecting.nodeId !== targetNodeId) {
       // Determine label based on handle
       let label = 'Disparo';
-      if (connectingFrom.handleType === 'response') {
+      if (currentConnecting.handleType === 'response') {
         label = 'Se responder';
-      } else if (connectingFrom.handleType === 'timeout') {
-        const sourceNode = nodes.find(n => n.id === connectingFrom.nodeId);
+      } else if (currentConnecting.handleType === 'timeout') {
+        const sourceNode = nodes.find(n => n.id === currentConnecting.nodeId);
         const secs = sourceNode?.data?.timeoutSeconds || 30;
         const unit = sourceNode?.data?.timeoutUnit === 'minutos' ? 'm' : 's';
         label = `Não respondeu (${secs}${unit})`;
@@ -382,16 +395,16 @@ export const FlowBuilder: React.FC = () => {
 
       // Avoid duplicate edge with same handles
       const exists = edges.some(
-        ed => ed.from === connectingFrom.nodeId && ed.to === targetNodeId && ed.fromHandle === connectingFrom.handleType
+        ed => ed.from === currentConnecting.nodeId && ed.to === targetNodeId && ed.fromHandle === currentConnecting.handleType
       );
 
       if (!exists) {
         const newEdge: FlowEdge = {
-          id: `e-${connectingFrom.nodeId}-${targetNodeId}-${Date.now()}`,
-          from: connectingFrom.nodeId,
+          id: `e-${currentConnecting.nodeId}-${targetNodeId}-${Date.now()}`,
+          from: currentConnecting.nodeId,
           to: targetNodeId,
           label,
-          fromHandle: connectingFrom.handleType
+          fromHandle: currentConnecting.handleType
         };
         setEdges(prev => [...prev, newEdge]);
       }
@@ -1619,10 +1632,13 @@ export const FlowBuilder: React.FC = () => {
                     <div
                       onMouseEnter={() => canBeTarget && setHoveredTargetPortId(node.id)}
                       onMouseLeave={() => setHoveredTargetPortId(null)}
+                      onMouseDown={(e) => { e.stopPropagation(); }}
+                      onPointerDown={(e) => { e.stopPropagation(); }}
                       onMouseUp={(e) => handleInputPortRelease(node.id, e)}
+                      onPointerUp={(e) => handleInputPortRelease(node.id, e)}
                       onClick={(e) => handleInputPortRelease(node.id, e)}
                       title="Entrada (Solte ou clique aqui para conectar)"
-                      className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-pointer z-20 group ${
+                      className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-6 h-6 rounded-full bg-slate-900 border-2 transition-all flex items-center justify-center cursor-pointer z-30 group ${
                         isHoveredTarget 
                           ? 'scale-150 border-emerald-400 bg-emerald-500 shadow-lg shadow-emerald-500/50' 
                           : canBeTarget 
