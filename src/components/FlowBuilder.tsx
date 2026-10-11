@@ -193,8 +193,17 @@ export const FlowBuilder: React.FC = () => {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const draggingIdRef = useRef<string | null>(null);
+  draggingIdRef.current = draggingId;
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  dragOffsetRef.current = dragOffset;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const panRef = useRef(pan);
+  panRef.current = pan;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const rafIdRef = useRef<number | null>(null);
 
   // Connection line state
   const [connectingFrom, setConnectingFrom] = useState<{
@@ -228,7 +237,12 @@ export const FlowBuilder: React.FC = () => {
   // GLOBAL POINTER LISTENERS: GUARANTEES CARDS NEVER GET STUCK OR GLUED ON RELEASE!
   useEffect(() => {
     const handleGlobalPointerUp = () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
       setDraggingId(null);
+      draggingIdRef.current = null;
       setIsPanning(false);
     };
 
@@ -288,15 +302,18 @@ export const FlowBuilder: React.FC = () => {
 
     setSelectedId(id);
     setDraggingId(id);
+    draggingIdRef.current = id;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const mouseCanvasX = (e.clientX - rect.left - pan.x) / zoom;
-    const mouseCanvasY = (e.clientY - rect.top - pan.y) / zoom;
+    const mouseCanvasX = (e.clientX - rect.left - panRef.current.x) / zoomRef.current;
+    const mouseCanvasY = (e.clientY - rect.top - panRef.current.y) / zoomRef.current;
 
-    setDragOffset({
+    const offset = {
       x: mouseCanvasX - node.x,
       y: mouseCanvasY - node.y
-    });
+    };
+    setDragOffset(offset);
+    dragOffsetRef.current = offset;
   };
 
   // Canvas Pan & Mouse handlers
@@ -308,43 +325,62 @@ export const FlowBuilder: React.FC = () => {
       return;
     }
 
-    if (e.button === 0 && !draggingId) {
+    if (e.button === 0 && !draggingIdRef.current) {
       setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      setPanStart({ x: e.clientX - panRef.current.x, y: e.clientY - panRef.current.y });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseCanvasX = (e.clientX - rect.left - pan.x) / zoom;
-    const mouseCanvasY = (e.clientY - rect.top - pan.y) / zoom;
+    const currentDraggingId = draggingIdRef.current;
+    const currentConnecting = connectingFromRef.current;
+    
+    const clientX = e.clientX;
+    const clientY = e.clientY;
 
-    if (connectingFromRef.current) {
-      setCursorPos({ x: mouseCanvasX, y: mouseCanvasY });
-      return; // Do not drag cards while connecting
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
     }
 
-    if (draggingId) {
-      setNodes(prev => prev.map(n => 
-        n.id === draggingId 
-          ? { 
-              ...n, 
-              x: Math.round(mouseCanvasX - dragOffset.x), 
-              y: Math.round(mouseCanvasY - dragOffset.y) 
-            } 
-          : n
-      ));
-    } else if (isPanning) {
-      setPan({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y
-      });
-    }
+    rafIdRef.current = requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const currentPan = panRef.current;
+      const currentZoom = zoomRef.current;
+
+      const mouseCanvasX = (clientX - rect.left - currentPan.x) / currentZoom;
+      const mouseCanvasY = (clientY - rect.top - currentPan.y) / currentZoom;
+
+      if (currentConnecting) {
+        setCursorPos({ x: mouseCanvasX, y: mouseCanvasY });
+        return;
+      }
+
+      if (currentDraggingId) {
+        const offset = dragOffsetRef.current;
+        const newX = Math.round(mouseCanvasX - offset.x);
+        const newY = Math.round(mouseCanvasY - offset.y);
+        
+        setNodes(prev => prev.map(n => 
+          n.id === currentDraggingId ? { ...n, x: newX, y: newY } : n
+        ));
+      } else if (isPanning) {
+        setPan({
+          x: clientX - panStart.x,
+          y: clientY - panStart.y
+        });
+      }
+    });
   };
 
   const handleMouseUp = () => {
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
     setDraggingId(null);
+    draggingIdRef.current = null;
     setIsPanning(false);
   };
 
@@ -882,15 +918,14 @@ export const FlowBuilder: React.FC = () => {
 
               return (
                 <g key={edge.id} className="group cursor-pointer">
-                  {/* Outer Background Glow */}
+                  {/* Outer Background Glow using pure opacity without rasterization blur */}
                   <path
                     d={pathD}
                     fill="none"
                     stroke={isTimeout ? '#f97316' : '#8b5cf6'}
                     strokeWidth="7"
-                    strokeOpacity="0.25"
+                    strokeOpacity="0.22"
                     strokeLinecap="round"
-                    filter="url(#glowEffect)"
                   />
 
                   {/* Base Line */}
@@ -899,7 +934,7 @@ export const FlowBuilder: React.FC = () => {
                     fill="none"
                     stroke={isTimeout ? '#c2410c' : '#3b82f6'}
                     strokeWidth="2.5"
-                    strokeOpacity="0.7"
+                    strokeOpacity="0.75"
                   />
 
                   {/* Animated Flowing Particles / Dashes */}
@@ -913,7 +948,7 @@ export const FlowBuilder: React.FC = () => {
                   />
 
                   {/* Moving Particle Dot traversing the path */}
-                  <circle r="3.5" fill={isTimeout ? '#fb923c' : '#38bdf8'} filter="url(#glowEffect)">
+                  <circle r="3.5" fill={isTimeout ? '#fb923c' : '#38bdf8'}>
                     <animateMotion
                       path={pathD}
                       dur="2.5s"
@@ -981,8 +1016,7 @@ export const FlowBuilder: React.FC = () => {
                     fill="none"
                     stroke="#ec4899"
                     strokeWidth="8"
-                    strokeOpacity="0.3"
-                    filter="url(#glowEffect)"
+                    strokeOpacity="0.25"
                   />
                   <path
                     d={connectPathD}
@@ -994,7 +1028,7 @@ export const FlowBuilder: React.FC = () => {
                     className="connecting-line-anim"
                   />
                   <circle cx={x1} cy={y1} r="6" fill="#38bdf8" />
-                  <circle cx={x2} cy={y2} r="5" fill="#ec4899" filter="url(#glowEffect)" />
+                  <circle cx={x2} cy={y2} r="5" fill="#ec4899" />
                 </g>
               );
             })()}
@@ -1018,9 +1052,12 @@ export const FlowBuilder: React.FC = () => {
                     position: 'absolute',
                     left: `${node.x}px`,
                     top: `${node.y}px`,
-                    width: `${width}px`
+                    width: `${width}px`,
+                    willChange: isSelected || draggingId === node.id ? 'left, top' : 'auto'
                   }}
-                  className={`pointer-events-auto rounded-2xl bg-[#13141c] border transition-all shadow-2xl relative select-none ${
+                  className={`pointer-events-auto rounded-2xl bg-[#13141c] border shadow-2xl relative select-none ${
+                    draggingId === node.id ? '' : 'transition-colors'
+                  } ${
                     isSelected 
                       ? 'ring-2 ring-purple-500 border-purple-500/80 shadow-purple-500/20' 
                       : 'border-[#262838] hover:border-slate-600'
