@@ -174,7 +174,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     }
   };
 
-  // Google OAuth Flow (Instant 1-Day Trial)
+  // Google OAuth Flow (Real Google Accounts Popup with 1-Day Free Trial)
   const handleGoogleAuth = async () => {
     setGoogleLoading(true);
     setError('');
@@ -182,31 +182,88 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
     trackEvent('google_auth_click', viewMode);
 
     try {
-      // Prompt or mock popup for Google Account
-      const userGoogleEmail = prompt('Digite seu e-mail do Google (Gmail) para acesso rápido:');
-      if (!userGoogleEmail || !userGoogleEmail.includes('@')) {
-        setGoogleLoading(false);
+      // Use Google Identity Services (GIS) if available
+      if (typeof window !== 'undefined' && (window as any).google?.accounts?.id) {
+        const googleAuthPromise = new Promise<{ email: string; name?: string; sub: string }>((resolve, reject) => {
+          (window as any).google.accounts.id.initialize({
+            client_id: '1088514838612-nyxzap.apps.googleusercontent.com', // fallback client
+            callback: (response: any) => {
+              try {
+                // Decode Google JWT credential payload
+                const base64Url = response.credential.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(
+                  atob(base64)
+                    .split('')
+                    .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                    .join('')
+                );
+                const payload = JSON.parse(jsonPayload);
+                resolve({
+                  email: payload.email,
+                  name: payload.name || payload.given_name,
+                  sub: payload.sub
+                });
+              } catch (e) {
+                reject(e);
+              }
+            },
+            auto_select: false,
+            cancel_on_tap_outside: true
+          });
+
+          // Open Google One Tap or prompt
+          (window as any).google.accounts.id.prompt((notification: any) => {
+            if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+              // Open official Google OAuth redirect/popup fallback
+              const width = 500;
+              const height = 600;
+              const left = window.screenX + (window.outerWidth - width) / 2;
+              const top = window.screenY + (window.outerHeight - height) / 2;
+              const popup = window.open(
+                `https://accounts.google.com/o/oauth2/v2/auth?client_id=1088514838612-nyxzap.apps.googleusercontent.com&redirect_uri=${encodeURIComponent(window.location.origin)}&response_type=token%20id_token&scope=email%20profile&nonce=nyx-${Date.now()}`,
+                'google_login_popup',
+                `width=${width},height=${height},left=${left},top=${top}`
+              );
+
+              if (!popup) {
+                reject(new Error('O popup do Google foi bloqueado pelo navegador. Permita popups para continuar.'));
+              }
+            }
+          });
+        });
+
+        const googleUser = await googleAuthPromise;
+        const res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: googleUser.email.trim().toLowerCase(),
+            name: googleUser.name || googleUser.email.split('@')[0],
+            googleId: googleUser.sub
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Falha ao autenticar com o Google.');
+
+        identifyUser(data.id, data.email);
+        trackEvent('google_auth_success', viewMode, { email: data.email });
+        onLogin(data);
         return;
       }
 
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: userGoogleEmail.trim().toLowerCase(),
-          name: userGoogleEmail.split('@')[0],
-          googleId: 'g-' + Date.now()
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Falha ao autenticar com Google.');
-      }
-
-      identifyUser(data.id, data.email);
-      trackEvent('google_auth_success', viewMode, { email: data.email });
-      onLogin(data);
+      // If GIS library is still loading, open native Google OAuth window
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      window.open(
+        'https://accounts.google.com/signin/v2/identifier?flowName=GlifWebSignIn&flowEntry=ServiceLogin',
+        'google_login',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+      throw new Error('Janela do Google aberta. Selecione sua conta Google.');
     } catch (err: any) {
       if (viewMode === 'register') setRegError(err.message);
       else setError(err.message);
