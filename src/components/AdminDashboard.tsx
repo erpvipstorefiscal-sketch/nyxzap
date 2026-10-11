@@ -18,77 +18,11 @@ import {
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
-  const [plans, setPlans] = useState<Plan[]>([
-    {
-      id: 'p1',
-      name: 'Start',
-      price: 97.00,
-      period: 'mensal',
-      instancesLimit: 1,
-      aiCreditsLimit: 1000,
-      features: ['1 Conexão WhatsApp', 'Agente IA Básico', 'Suporte']
-    },
-    {
-      id: 'p2',
-      name: 'Pro (Mais Vendido)',
-      price: 197.00,
-      period: 'mensal',
-      instancesLimit: 3,
-      aiCreditsLimit: 5000,
-      features: ['3 Conexões WhatsApp', 'Gemini 3 Grounding & Raciocínio', 'Fluxo Drag-and-Drop']
-    },
-    {
-      id: 'p3',
-      name: 'Enterprise Anual',
-      price: 1490.00,
-      period: 'anual',
-      instancesLimit: 10,
-      aiCreditsLimit: 50000,
-      features: ['10 Conexões WhatsApp', 'RAG Ilimitado', 'Atendimento Humano Prioritário']
-    }
-  ]);
+  // Subscribers and Plans from PostgreSQL
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loadingSubs, setLoadingSubs] = useState(false);
 
-  const [subscribers, setSubscribers] = useState<Subscriber[]>([
-    {
-      id: 'sub-1',
-      name: 'Carlos Mendes',
-      email: 'carlos@empresa.com.br',
-      phone: '+55 11 98765-4321',
-      planId: 'p2',
-      planName: 'Pro',
-      status: 'active',
-      mrrValue: 197.00,
-      validUntil: '2026-11-10',
-      connectedInstances: 2,
-      createdAt: '2026-10-10'
-    },
-    {
-      id: 'sub-2',
-      name: 'Mariana Silveira',
-      email: 'mariana@agenciadigital.com',
-      phone: '+55 21 99887-1122',
-      planId: 'p3',
-      planName: 'Enterprise Anual',
-      status: 'active',
-      mrrValue: 124.16,
-      validUntil: '2027-10-10',
-      connectedInstances: 5,
-      createdAt: '2026-10-09'
-    },
-    {
-      id: 'sub-3',
-      name: 'Lucas Ferreira',
-      email: 'lucas@comercio.com',
-      phone: '+55 31 97654-3210',
-      planId: 'p1',
-      planName: 'Start',
-      status: 'expired',
-      mrrValue: 97.00,
-      validUntil: '2026-10-05',
-      connectedInstances: 0,
-      createdAt: '2026-09-05'
-    }
-  ]);
 
   // System updates state
   const [updates, setUpdates] = useState<SystemUpdate[]>([]);
@@ -98,6 +32,33 @@ export const AdminDashboard: React.FC = () => {
   const [newMessage, setNewMessage] = useState('');
   const [newDate, setNewDate] = useState(new Date().toLocaleDateString('pt-BR'));
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const fetchSubscribers = async () => {
+    setLoadingSubs(true);
+    try {
+      const res = await fetch('/api/admin/subscribers');
+      if (res.ok) {
+        const data = await res.json();
+        setSubscribers(data);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar assinantes:', err);
+    } finally {
+      setLoadingSubs(false);
+    }
+  };
+
+  const fetchPlans = async () => {
+    try {
+      const res = await fetch('/api/admin/plans');
+      if (res.ok) {
+        const data = await res.json();
+        setPlans(data);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar planos:', err);
+    }
+  };
 
   const fetchUpdates = async () => {
     try {
@@ -110,8 +71,22 @@ export const AdminDashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    fetchSubscribers();
+    fetchPlans();
     fetchUpdates();
   }, []);
+
+  const handleRenewSubscriber = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/subscribers/${id}/renew`, { method: 'POST' });
+      if (res.ok) {
+        await fetchSubscribers();
+      }
+    } catch (err) {
+      console.error('Erro ao renovar:', err);
+    }
+  };
+
 
   const handleCreateUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -405,15 +380,14 @@ export const AdminDashboard: React.FC = () => {
                   </td>
                   <td className="p-3 text-right space-x-2">
                     <button 
-                      onClick={() => {
-                        setSubscribers(subscribers.map(s => s.id === sub.id ? { ...s, validUntil: '2026-12-10', status: 'active' } : s));
-                      }}
+                      onClick={() => handleRenewSubscriber(sub.id)}
                       className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-semibold transition-colors"
                     >
                       +30 Dias
                     </button>
                   </td>
                 </tr>
+
               ))}
             </tbody>
           </table>

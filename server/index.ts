@@ -11,6 +11,7 @@ import makeWASocket, {
 import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import { pool, initDatabase } from './db.js';
 
 const app = express();
 app.use(cors());
@@ -20,6 +21,89 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 const logger = pino({ level: 'silent' });
+
+// Initialize database schema and seeds
+initDatabase().catch(err => console.error('[DB Init Error]', err));
+
+// Auth endpoint backed by PostgreSQL
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password, role } = req.body;
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Usuário não encontrado.' });
+    }
+    const user = result.rows[0];
+    if (user.password !== password) {
+      return res.status(401).json({ error: 'Senha incorreta.' });
+    }
+    if (role && user.role !== role) {
+      return res.status(403).json({ error: `Acesso negado. Esta conta não possui perfil de ${role}.` });
+    }
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      planName: user.plan_name,
+      validUntil: user.valid_until,
+      instancesLimit: user.instances_limit,
+      token: 'jwt-token-' + user.id
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Erro no banco de dados: ' + err.message });
+  }
+});
+
+// Admin endpoints backed by PostgreSQL
+app.get('/api/admin/subscribers', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
+    const subscribers = result.rows.map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      phone: u.phone || '+55 11 98888-7777',
+      planId: u.plan_id || 'p2',
+      planName: u.plan_name || 'Pro',
+      status: u.status || 'active',
+      mrrValue: parseFloat(u.mrr_value) || 97.00,
+      validUntil: u.valid_until || '2026-11-10',
+      connectedInstances: u.connected_instances || 0,
+      createdAt: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : '2026-10-10'
+    }));
+    res.json(subscribers);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/subscribers/:id/renew', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query("UPDATE users SET valid_until = '2026-12-31', status = 'active' WHERE id = $1", [id]);
+    res.json({ success: true, message: 'Licença renovada por mais 30 dias no banco de dados!' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/plans', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM plans');
+    res.json(result.rows.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: parseFloat(p.price),
+      period: p.period,
+      instancesLimit: p.instances_limit,
+      aiCreditsLimit: p.ai_credits_limit,
+      features: p.features || []
+    })));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export interface ChatMessage {
   id: string;
