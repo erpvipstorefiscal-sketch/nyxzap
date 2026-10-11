@@ -30,6 +30,7 @@ import { WhatsAppManager } from './components/WhatsAppManager';
 import { AIAgentManager } from './components/AIAgentManager';
 import { FlowBuilder } from './components/FlowBuilder';
 import { LiveChatManager } from './components/LiveChatManager';
+import { RenewSubscriptionScreen } from './components/RenewSubscriptionScreen';
 
 export function App() {
   const [user, setUser] = useState<UserAuth | null>(null);
@@ -70,6 +71,33 @@ export function App() {
     fetchUpdates();
   }, []);
 
+  // Calculate Subscription Days Remaining
+  const getSubscriptionDetails = () => {
+    if (!user || user.role === 'admin') {
+      return { isExpired: false, daysRemaining: 999, label: 'Vitalício' };
+    }
+
+    const validUntilStr = user.validUntil || '2026-11-10';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [year, month, day] = validUntilStr.split('-').map(Number);
+    const targetDate = new Date(year, (month || 1) - 1, day || 1);
+    targetDate.setHours(0, 0, 0, 0);
+
+    const diffTime = targetDate.getTime() - today.getTime();
+    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const isExpired = daysRemaining < 0;
+
+    return {
+      isExpired,
+      daysRemaining,
+      validUntilStr
+    };
+  };
+
+  const subInfo = getSubscriptionDetails();
+
   const handleChangePassword = (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError('');
@@ -107,150 +135,270 @@ export function App() {
     return <AuthScreen onLogin={(authenticatedUser) => setUser(authenticatedUser)} />;
   }
 
+  // If client subscription is expired, lock access and render RenewSubscriptionScreen
+  if (user.role === 'client' && subInfo.isExpired) {
+    return (
+      <RenewSubscriptionScreen
+        user={user}
+        daysRemaining={subInfo.daysRemaining}
+        onLogout={() => setUser(null)}
+        onSimulateRenewal={(newDate) => {
+          setUser(prev => prev ? { ...prev, validUntil: newDate } : null);
+        }}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#090a0f] text-slate-100 flex flex-col">
-      {/* Top Navbar */}
-      <header className="border-b border-slate-800 bg-[#0f111a]/90 backdrop-blur-md sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-extrabold text-white text-base shadow-lg shadow-purple-600/30">
-            ⚡
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-extrabold text-white tracking-tight">NyxZap</h1>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold border ${
-                user.role === 'admin' 
-                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' 
-                  : 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
-              }`}>
-                {user.role === 'admin' ? 'PAINEL SUPERADMIN' : 'PAINEL DO CLIENTE'}
-              </span>
+    <div className="min-h-screen bg-[#090a0f] text-slate-100 flex flex-col md:flex-row font-sans">
+      {/* LEFT SIDEBAR NAVIGATION */}
+      <aside className="w-full md:w-64 bg-[#0d0f18] border-r border-slate-800/80 flex flex-col justify-between shrink-0 z-40">
+        {/* Brand Logo & Status */}
+        <div>
+          <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-extrabold text-white text-lg shadow-lg shadow-purple-600/30">
+                ⚡
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h1 className="text-base font-extrabold text-white tracking-tight">NyxZap</h1>
+                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border ${
+                    user.role === 'admin' 
+                      ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' 
+                      : 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                  }`}>
+                    {user.role === 'admin' ? 'ADMIN' : 'CLIENTE'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 truncate max-w-[130px]">
+                  {user.role === 'admin' ? 'SuperAdmin MRR' : (user.planName || 'Plano Pro')}
+                </p>
+              </div>
             </div>
-            <p className="text-[10px] text-slate-400">
-              {user.role === 'admin' 
-                ? 'Gestão de Planos, Assinaturas e MRR' 
-                : `${user.planName || 'Plano Pro'} • Válido até ${user.validUntil || '2026-11-10'}`}
-            </p>
           </div>
+
+          {/* Subscription Validity Badge with Days Countdown */}
+          {user.role === 'client' && (
+            <div className="m-3 p-3.5 rounded-2xl bg-[#131622] border border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Validade da Licença</span>
+                </span>
+                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                  subInfo.daysRemaining <= 3 
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'
+                    : subInfo.daysRemaining <= 7
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                }`}>
+                  {subInfo.daysRemaining === 0 
+                    ? 'Vence Hoje' 
+                    : subInfo.daysRemaining === 1 
+                    ? 'Falta 1 dia' 
+                    : `Faltam ${subInfo.daysRemaining} dias`}
+                </span>
+              </div>
+
+              <div className="text-[11px] text-slate-400 font-mono flex items-center justify-between">
+                <span>Expira em:</span>
+                <span className="text-white font-bold">{subInfo.validUntilStr}</span>
+              </div>
+
+              {/* Progress bar of validity / warning */}
+              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all ${
+                    subInfo.daysRemaining <= 3 ? 'bg-rose-500' : subInfo.daysRemaining <= 7 ? 'bg-amber-400' : 'bg-gradient-to-r from-purple-500 to-indigo-500'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(10, (subInfo.daysRemaining / 30) * 100))}%` }}
+                />
+              </div>
+
+              {subInfo.daysRemaining <= 5 && (
+                <button
+                  onClick={() => setShowManagePlanModal(true)}
+                  className="w-full mt-1 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-[10px] font-extrabold flex items-center justify-center gap-1 shadow-sm transition-all"
+                >
+                  <CreditCard className="w-3 h-3" />
+                  <span>Renovar / Antecipar</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Client Left Navigation Menu Items */}
+          {user.role === 'client' && (
+            <nav className="p-3 space-y-1.5">
+              <span className="px-3 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                Módulos Principais
+              </span>
+
+              {/* 1. CHAT AO VIVO */}
+              <button
+                onClick={() => setActiveClientTab('chat')}
+                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
+                  activeClientTab === 'chat'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Chat ao Vivo</span>
+                </div>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              </button>
+
+              {/* 2. CONEXÃO WHATSAPP */}
+              <button
+                onClick={() => setActiveClientTab('whatsapp')}
+                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
+                  activeClientTab === 'whatsapp'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Smartphone className="w-4 h-4" />
+                  <span>Conexão WhatsApp</span>
+                </div>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-300 font-normal">
+                  {user.instancesLimit || 1}x
+                </span>
+              </button>
+
+              {/* 3. FLUXO DRAG-AND-DROP */}
+              <button
+                onClick={() => setActiveClientTab('flow')}
+                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-xs font-bold ${
+                  activeClientTab === 'flow'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Workflow className="w-4 h-4" />
+                <span>Fluxo Drag-and-Drop</span>
+              </button>
+
+              {/* 4. AGENTE DE IA */}
+              <button
+                onClick={() => setActiveClientTab('ai')}
+                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
+                  activeClientTab === 'ai'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Bot className="w-4 h-4" />
+                  <span>Agente de IA</span>
+                </div>
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold uppercase">
+                  Gemini
+                </span>
+              </button>
+            </nav>
+          )}
         </div>
 
-        {/* Client Navigation Tabs */}
-        {user.role === 'client' && (
-          <div className="flex items-center gap-1 bg-[#151824] p-1 rounded-xl border border-slate-800 text-xs font-semibold">
-            {/* 1. CHAT AO VIVO */}
+        {/* Bottom Sidebar: Suporte, Novidades, Profile */}
+        <div className="p-3 border-t border-slate-800/80 space-y-2 bg-[#0a0b12]">
+          <div className="grid grid-cols-2 gap-1.5">
+            {/* Suporte Button */}
             <button
-              onClick={() => setActiveClientTab('chat')}
-              className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                activeClientTab === 'chat'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              onClick={() => setShowSupportModal(true)}
+              className="p-2.5 bg-[#131622] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors"
             >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Chat ao Vivo</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <LifeBuoy className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Suporte</span>
             </button>
 
-            {/* 2. WHATSAPP */}
+            {/* Novidades Button */}
             <button
-              onClick={() => setActiveClientTab('whatsapp')}
-              className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                activeClientTab === 'whatsapp'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              onClick={() => {
+                fetchUpdates();
+                setShowUpdatesModal(true);
+              }}
+              className="p-2.5 bg-[#131622] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors relative"
             >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Conexão WhatsApp</span>
-            </button>
-
-            {/* 3. FLUXO DRAG-AND-DROP */}
-            <button
-              onClick={() => setActiveClientTab('flow')}
-              className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                activeClientTab === 'flow'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Workflow className="w-3.5 h-3.5" />
-              <span>Fluxo Drag-and-Drop</span>
-            </button>
-
-            {/* 4. AGENTE DE IA */}
-            <button
-              onClick={() => setActiveClientTab('ai')}
-              className={`px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                activeClientTab === 'ai'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Bot className="w-3.5 h-3.5" />
-              <span>Agente de IA</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Novidades</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
             </button>
           </div>
-        )}
 
-        {/* Right Header Controls: Suporte, Novidades, Profile Dropdown */}
-        <div className="flex items-center gap-3">
-          {/* Suporte Button */}
-          <button
-            onClick={() => setShowSupportModal(true)}
-            className="px-3 py-1.5 bg-[#151824] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
-          >
-            <LifeBuoy className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Suporte</span>
-          </button>
-
-          {/* Novidades Button */}
-          <button
-            onClick={() => {
-              fetchUpdates();
-              setShowUpdatesModal(true);
-            }}
-            className="px-3 py-1.5 bg-[#151824] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors relative"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Novidades</span>
-            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-          </button>
-
-          {/* Clickable User Profile Button */}
+          {/* User Profile Card */}
           <button
             onClick={() => setShowProfileModal(true)}
-            className="flex items-center gap-2.5 p-1.5 pl-3 rounded-xl bg-[#151824] hover:bg-slate-800 border border-slate-800 transition-colors text-left"
+            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[#131622] hover:bg-slate-800 border border-slate-800 transition-colors text-left"
           >
-            <div className="text-right hidden sm:block">
-              <span className="text-xs font-bold text-white block leading-tight">{user.name}</span>
-              <span className="text-[10px] text-purple-300 font-mono block leading-tight">{user.planName || 'Plano Pro'}</span>
+            <div className="flex items-center gap-2.5 truncate">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-sm">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="truncate">
+                <span className="text-xs font-bold text-white block leading-tight truncate">{user.name}</span>
+                <span className="text-[10px] text-purple-300 font-mono block leading-tight truncate">{user.planName || 'Plano Pro'}</span>
+              </div>
             </div>
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
-              {user.name.charAt(0).toUpperCase()}
-            </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* Main Container */}
-      <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
-        {user.role === 'admin' ? (
-          <AdminDashboard />
-        ) : (
-          <div>
-            {activeClientTab === 'chat' && <LiveChatManager />}
-            {activeClientTab === 'whatsapp' && (
-              <WhatsAppManager 
-                user={user} 
-                onUpdateUser={(updated) => setUser(prev => prev ? { ...prev, ...updated } : null)} 
-              />
-            )}
-            {activeClientTab === 'flow' && <FlowBuilder />}
-            {activeClientTab === 'ai' && <AIAgentManager />}
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[#090a0f]">
+        {/* Top bar for mobile or extra status */}
+        <header className="border-b border-slate-800/80 bg-[#0d0f18]/90 backdrop-blur-md px-6 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold text-white capitalize">
+              {user.role === 'admin' 
+                ? 'Painel SuperAdmin' 
+                : activeClientTab === 'chat' 
+                ? 'Chat ao Vivo Multiatendentes' 
+                : activeClientTab === 'whatsapp' 
+                ? 'Gerenciamento de Instâncias WhatsApp' 
+                : activeClientTab === 'flow' 
+                ? 'Construtor de Fluxo Drag-and-Drop' 
+                : 'Configurações do Agente de IA'}
+            </h2>
           </div>
-        )}
-      </main>
+
+          <div className="flex items-center gap-3">
+            {user.role === 'client' && (
+              <div className="flex items-center gap-2 text-xs font-mono bg-[#131622] px-3 py-1.5 rounded-xl border border-slate-800">
+                <span className="text-slate-400">Validade:</span>
+                <span className="text-white font-bold">{subInfo.validUntilStr}</span>
+                <span className="text-slate-600">•</span>
+                <span className={subInfo.daysRemaining <= 3 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                  {subInfo.daysRemaining === 0 ? 'Expira Hoje' : `${subInfo.daysRemaining}d restantes`}
+                </span>
+              </div>
+            )}
+          </div>
+        </header>
+
+        {/* Main View Container */}
+        <main className="flex-1 p-6 max-w-7xl w-full mx-auto overflow-y-auto">
+          {user.role === 'admin' ? (
+            <AdminDashboard />
+          ) : (
+            <div>
+              {activeClientTab === 'chat' && <LiveChatManager />}
+              {activeClientTab === 'whatsapp' && (
+                <WhatsAppManager 
+                  user={user} 
+                  onUpdateUser={(updated) => setUser(prev => prev ? { ...prev, ...updated } : null)} 
+                />
+              )}
+              {activeClientTab === 'flow' && <FlowBuilder />}
+              {activeClientTab === 'ai' && <AIAgentManager />}
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* 1. Modal de Suporte */}
       {showSupportModal && (
