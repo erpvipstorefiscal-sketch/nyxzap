@@ -940,6 +940,272 @@ let aiConfig = {
   ]
 };
 
+// Flow Definitions Storage & Execution Engine
+interface FlowNodeServer {
+  id: string;
+  type: string;
+  title: string;
+  data: Record<string, any>;
+}
+
+interface FlowEdgeServer {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  fromHandle?: string;
+}
+
+let activeFlow = {
+  active: true,
+  nodes: [
+    {
+      id: 'node-1',
+      type: 'inicio',
+      title: 'INÍCIO',
+      data: {
+        trigger: 'palavra_chave',
+        keywords: ['quero saber sobre o curso', 'preço', 'comprar'],
+        instance: 'Todas'
+      }
+    },
+    {
+      id: 'node-2',
+      type: 'whatsapp',
+      title: 'WhatsApp Mensagem',
+      data: {
+        message: 'Olá {nome}, como posso te ajudar hoje?'
+      }
+    }
+  ] as FlowNodeServer[],
+  edges: [
+    {
+      id: 'e-1',
+      from: 'node-1',
+      to: 'node-2',
+      label: 'Disparo',
+      fromHandle: 'default'
+    }
+  ] as FlowEdgeServer[]
+};
+
+// Load saved flow from PostgreSQL or fallback
+async function loadSavedFlow() {
+  try {
+    const res = await pool.query('SELECT nodes, edges, active FROM flow_definitions WHERE id = $1', ['default']);
+    if (res.rows.length > 0) {
+      activeFlow = {
+        active: res.rows[0].active !== false,
+        nodes: res.rows[0].nodes || [],
+        edges: res.rows[0].edges || []
+      };
+      console.log(`[Flow Engine] Fluxo carregado do banco de dados com ${activeFlow.nodes.length} cards e ${activeFlow.edges.length} conexões.`);
+    }
+  } catch (err) {
+    console.error('[Flow Engine Error] Falha ao ler fluxo do banco:', err);
+  }
+}
+loadSavedFlow();
+
+// Helper to sanitize text for matching keywords (remove accents, lowercase, trim)
+function normalizeText(str: string): string {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+// Function to execute visual flow nodes for a contact
+async function executeFlowForMessage(
+  sock: any, 
+  remoteJid: string, 
+  incomingText: string, 
+  senderName: string,
+  sessionId: string
+): Promise<boolean> {
+  if (!activeFlow.active || !activeFlow.nodes || activeFlow.nodes.length === 0) {
+    return false;
+  }
+
+  const normIncoming = normalizeText(incomingText);
+
+  // Find matching trigger 'inicio' node
+  const triggerNode = activeFlow.nodes.find(n => {
+    if (n.type !== 'inicio') return false;
+
+    // Check instance filter if specified
+    const targetInst = n.data?.instance;
+    if (targetInst && targetInst !== 'Todas') {
+      const cleanInstNum = targetInst.replace(/[^0-9]/g, '');
+      const cleanSessionNum = sessionId.replace(/[^0-9]/g, '');
+      if (cleanInstNum && cleanSessionNum && cleanInstNum !== cleanSessionNum) {
+        return false;
+      }
+    }
+
+    const triggerType = n.data?.trigger || 'palavra_chave';
+    if (triggerType === 'boas_vindas') {
+      return true; // Fires on greeting/first message
+    }
+
+    const keywords: string[] = n.data?.keywords || [];
+    if (keywords.length === 0) return false;
+
+    return keywords.some(kw => {
+      const normKw = normalizeText(kw);
+      if (!normKw) return false;
+      // Direct substring match or whole sentence match
+      return normIncoming.includes(normKw);
+    });
+  });
+
+  if (!triggerNode) {
+    return false;
+  }
+
+  console.log(`[Flow Engine] Gatilho ativado pelo card '${triggerNode.title}' para ${remoteJid}!`);
+
+  // Traverse edges from trigger
+  let currentTargetEdges = activeFlow.edges.filter(e => e.from === triggerNode.id);
+  if (currentTargetEdges.length === 0) {
+    return true;
+  }
+
+  for (const edge of currentTargetEdges) {
+    const nextNode = activeFlow.nodes.find(n => n.id === edge.to);
+    if (!nextNode) continue;
+
+    await executeNodeAction(sock, remoteJid, nextNode, senderName, incomingText);
+  }
+
+  return true;
+}
+
+// Helper to execute specific node type (message, media, audio, delay, etc.)
+async function executeNodeAction(
+  sock: any,
+  remoteJid: string,
+  node: FlowNodeServer,
+  senderName: string,
+  incomingText: string
+) {
+  const replaceVariables = (str: string) => {
+    const firstName = (senderName || 'Amigo').split(' ')[0];
+    const hour = new Date().getHours();
+    const saudacao = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+    return (str || '')
+      .replace(/{nome}/gi, firstName)
+      .replace(/{telefone}/gi, remoteJid.replace('@s.whatsapp.net', ''))
+      .replace(/{saudacao}/gi, saudacao)
+      .replace(/{empresa}/gi, 'NyxZap');
+  };
+
+  try {
+    if (node.type === 'sms' || node.type === 'whatsapp' || node.type === 'mensagem') {
+      const rawText = node.data?.message || 'Olá, como posso te ajudar?';
+      const finalText = replaceVariables(rawText);
+      await sock.sendMessage(remoteJid, { text: finalText });
+      recordFlowMessageInChat(remoteJid, finalText);
+    } else if (node.type === 'audio') {
+      if (node.data?.audioUrl) {
+        const fullAudioUrl = node.data.audioUrl.startsWith('http') 
+          ? node.data.audioUrl 
+          : path.join(process.cwd(), node.data.audioUrl.replace(/^\//, ''));
+
+        if (fs.existsSync(fullAudioUrl)) {
+          await sock.sendMessage(remoteJid, {
+            audio: fs.readFileSync(fullAudioUrl),
+            mimetype: 'audio/mp4',
+            ptt: true // Sent as voice note (áudio gravado na hora)
+          });
+          recordFlowMessageInChat(remoteJid, '🎵 [Áudio enviado]');
+        }
+      }
+    } else if (node.type === 'imagem') {
+      if (node.data?.imageUrl) {
+        const fullImgPath = node.data.imageUrl.startsWith('http')
+          ? node.data.imageUrl
+          : path.join(process.cwd(), node.data.imageUrl.replace(/^\//, ''));
+
+        if (fs.existsSync(fullImgPath)) {
+          const caption = replaceVariables(node.data?.caption || '');
+          await sock.sendMessage(remoteJid, {
+            image: fs.readFileSync(fullImgPath),
+            caption
+          });
+          recordFlowMessageInChat(remoteJid, `🖼️ [Imagem enviada: ${caption || 'Sem legenda'}]`);
+        }
+      }
+    } else if (node.type === 'video') {
+      if (node.data?.videoUrl) {
+        const fullVideoPath = node.data.videoUrl.startsWith('http')
+          ? node.data.videoUrl
+          : path.join(process.cwd(), node.data.videoUrl.replace(/^\//, ''));
+
+        if (fs.existsSync(fullVideoPath)) {
+          const caption = replaceVariables(node.data?.caption || '');
+          await sock.sendMessage(remoteJid, {
+            video: fs.readFileSync(fullVideoPath),
+            caption
+          });
+          recordFlowMessageInChat(remoteJid, `🎥 [Vídeo enviado: ${caption || 'Sem legenda'}]`);
+        }
+      }
+    } else if (node.type === 'pdf') {
+      if (node.data?.pdfUrl) {
+        const fullPdfPath = node.data.pdfUrl.startsWith('http')
+          ? node.data.pdfUrl
+          : path.join(process.cwd(), node.data.pdfUrl.replace(/^\//, ''));
+
+        if (fs.existsSync(fullPdfPath)) {
+          await sock.sendMessage(remoteJid, {
+            document: fs.readFileSync(fullPdfPath),
+            mimetype: 'application/pdf',
+            fileName: node.data?.fileName || 'documento.pdf'
+          });
+          recordFlowMessageInChat(remoteJid, `📄 [Documento PDF: ${node.data?.fileName || 'documento.pdf'}]`);
+        }
+      }
+    } else if (node.type === 'timer') {
+      const delayAmount = node.data?.delay || 5;
+      const unit = node.data?.unit || 'segundos';
+      const ms = unit === 'segundos' ? delayAmount * 1000 : unit === 'minutos' ? delayAmount * 60000 : 5000;
+      await new Promise(r => setTimeout(r, Math.min(ms, 30000))); // Max 30s safety inline
+    } else if (node.type === 'ia' || node.type === 'ia_audio') {
+      const customPrompt = node.data?.prompt 
+        ? `${node.data.prompt}\n\nMensagem do cliente: ${incomingText}`
+        : incomingText;
+      const reply = await queryAI(customPrompt, aiConfig);
+      await sock.sendMessage(remoteJid, { text: reply });
+      recordFlowMessageInChat(remoteJid, reply, true);
+    }
+  } catch (nodeErr) {
+    console.error(`[Flow Engine] Erro ao executar nó ${node.id} (${node.type}):`, nodeErr);
+  }
+}
+
+// Record bot sent messages into liveChats & broadcast to UI in real-time
+function recordFlowMessageInChat(remoteJid: string, text: string, isAi = false) {
+  const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  let chat = liveChats.get(remoteJid);
+  if (chat) {
+    const botMsg: ChatMessage = {
+      id: `bot-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      fromMe: true,
+      text,
+      timestamp: timeStr,
+      senderName: isAi ? 'IA NyxZap' : 'Fluxo NyxZap',
+      isAiGenerated: isAi
+    };
+    chat.messages.push(botMsg);
+    chat.lastMessage = text;
+    chat.lastMessageTime = timeStr;
+    liveChats.set(remoteJid, chat);
+    broadcast('chat_message', { chatId: remoteJid, message: botMsg, conversation: chat });
+  }
+}
+
 // Broadcast to WebSocket clients
 function broadcast(type: string, data: any) {
   const msg = JSON.stringify({ type, data });
@@ -988,7 +1254,7 @@ async function startWhatsAppSession(sessionId: string) {
         sessions.set(sessionId, session);
         broadcast('session_qr', { id: sessionId, qrCode: qrDataUrl });
       } catch (err) {
-        console.error('Erro ao gerar QR Code:', err);
+        console.error('Erro ao gerar QRCode:', err);
       }
     }
 
@@ -1097,10 +1363,18 @@ async function startWhatsAppSession(sessionId: string) {
           continue;
         }
 
-        if (chat.aiAgentActive && aiConfig.apiKey) {
+        // 1. EXECUTE FLOW FIRST (If botFlowActive is true on the chat)
+        let flowExecuted = false;
+        if (chat.botFlowActive !== false) {
+          flowExecuted = await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
+        }
+
+        // 2. FALLBACK TO AI IF FLOW DID NOT MATCH A TRIGGER KEYWORD
+        if (!flowExecuted && chat.aiAgentActive && aiConfig.apiKey) {
           try {
             const reply = await queryAI(text, aiConfig);
             await sock.sendMessage(remoteJid, { text: reply });
+            recordFlowMessageInChat(remoteJid, reply, true);
           } catch (err) {
             console.error('Erro ao responder com IA:', err);
           }
@@ -1129,6 +1403,62 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
   }
   return 'Recebi sua mensagem! Em que posso ajudar?';
 }
+
+// Flow REST API Endpoints (Sync with PostgreSQL & in-memory runner)
+app.get('/api/flow', async (_req, res) => {
+  try {
+    const result = await pool.query('SELECT nodes, edges, active FROM flow_definitions WHERE id = $1', ['default']);
+    if (result.rows.length > 0) {
+      return res.json({
+        success: true,
+        active: result.rows[0].active !== false,
+        nodes: result.rows[0].nodes || [],
+        edges: result.rows[0].edges || []
+      });
+    }
+    res.json({
+      success: true,
+      active: activeFlow.active,
+      nodes: activeFlow.nodes,
+      edges: activeFlow.edges
+    });
+  } catch (err: any) {
+    res.json({
+      success: true,
+      active: activeFlow.active,
+      nodes: activeFlow.nodes,
+      edges: activeFlow.edges
+    });
+  }
+});
+
+app.post('/api/flow', async (req, res) => {
+  const { nodes, edges, active } = req.body;
+  try {
+    activeFlow = {
+      active: active !== undefined ? Boolean(active) : true,
+      nodes: Array.isArray(nodes) ? nodes : activeFlow.nodes,
+      edges: Array.isArray(edges) ? edges : activeFlow.edges
+    };
+
+    await pool.query(
+      `INSERT INTO flow_definitions (id, user_id, active, nodes, edges, updated_at)
+       VALUES ('default', 'default', $1, $2, $3, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET
+         active = EXCLUDED.active,
+         nodes = EXCLUDED.nodes,
+         edges = EXCLUDED.edges,
+         updated_at = CURRENT_TIMESTAMP`,
+      [activeFlow.active, JSON.stringify(activeFlow.nodes), JSON.stringify(activeFlow.edges)]
+    );
+
+    console.log(`[Flow Engine] Fluxo atualizado com sucesso no banco de dados (${activeFlow.nodes.length} nós)!`);
+    res.json({ success: true, message: 'Fluxo salvo com sucesso e ativo para novos disparos!' });
+  } catch (err: any) {
+    console.error('[Flow Save Error]', err);
+    res.json({ success: true, message: 'Fluxo salvo em memória!' });
+  }
+});
 
 // REST API Endpoints
 app.get('/api/chats', (req, res) => {

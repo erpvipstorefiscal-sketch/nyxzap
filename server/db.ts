@@ -132,6 +132,18 @@ export async function initDatabase() {
       );
     `);
 
+    // 4.1 Tabela de Definições de Fluxos Visuais (Flow Builder)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS flow_definitions (
+        id VARCHAR(100) PRIMARY KEY,
+        user_id VARCHAR(100) DEFAULT 'default',
+        active BOOLEAN DEFAULT true,
+        nodes JSONB NOT NULL DEFAULT '[]',
+        edges JSONB NOT NULL DEFAULT '[]',
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // 5. Tabela de Conversas (Chats de Leads do WhatsApp)
     await client.query(`
       CREATE TABLE IF NOT EXISTS chats (

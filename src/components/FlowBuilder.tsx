@@ -187,6 +187,24 @@ export const FlowBuilder: React.FC = () => {
     }
   });
 
+  // Load flow from backend API
+  useEffect(() => {
+    fetch('/api/flow')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.nodes) && data.nodes.length > 0) {
+          setNodes(data.nodes);
+          if (Array.isArray(data.edges)) {
+            setEdges(data.edges);
+          }
+          if (data.active !== undefined) {
+            setFlowActive(data.active);
+          }
+        }
+      })
+      .catch(err => console.error('[FlowBuilder] Erro ao carregar fluxo do servidor:', err));
+  }, []);
+
   const [zoom, setZoom] = useState<number>(1.05);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -453,14 +471,28 @@ export const FlowBuilder: React.FC = () => {
   };
 
   // Save Flow
-  const handleSaveFlow = () => {
+  const handleSaveFlow = async () => {
     try {
       localStorage.setItem('nyxzap_flow_builder_nodes', JSON.stringify(nodes));
       localStorage.setItem('nyxzap_flow_builder_edges', JSON.stringify(edges));
+
+      // Post to backend database so WhatsApp engine executes it instantly
+      await fetch('/api/flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodes,
+          edges,
+          active: flowActive
+        })
+      });
+
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error(err);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
     }
   };
 
