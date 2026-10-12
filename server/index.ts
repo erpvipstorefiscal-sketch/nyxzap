@@ -851,6 +851,11 @@ export interface ChatConversation {
   leadName: string;
   tag: 'frio' | 'morno' | 'quente' | 'comprou';
   followUpDate?: string;
+  followUpText?: string;
+  followUpMediaPath?: string;
+  followUpMediaType?: 'image' | 'video' | 'audio' | 'document';
+  followUpFileName?: string;
+  followUpStatus?: 'idle' | 'scheduled' | 'completed';
   internalNotes: string;
   aiAgentActive: boolean;
   botFlowActive: boolean;
@@ -1002,13 +1007,18 @@ loadSavedFlow();
 async function persistChatAndMessage(chat: ChatConversation, newMsg?: ChatMessage) {
   try {
     await pool.query(
-      `INSERT INTO chats (id, lead_phone, lead_name, tag, follow_up_date, internal_notes, ai_agent_active, bot_flow_active, unread_count, last_message, last_message_time, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+      `INSERT INTO chats (id, lead_phone, lead_name, tag, follow_up_date, follow_up_text, follow_up_media_path, follow_up_media_type, follow_up_file_name, follow_up_status, internal_notes, ai_agent_active, bot_flow_active, unread_count, last_message, last_message_time, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
        ON CONFLICT (id) DO UPDATE SET
          lead_phone = EXCLUDED.lead_phone,
          lead_name = EXCLUDED.lead_name,
          tag = EXCLUDED.tag,
          follow_up_date = EXCLUDED.follow_up_date,
+         follow_up_text = EXCLUDED.follow_up_text,
+         follow_up_media_path = EXCLUDED.follow_up_media_path,
+         follow_up_media_type = EXCLUDED.follow_up_media_type,
+         follow_up_file_name = EXCLUDED.follow_up_file_name,
+         follow_up_status = EXCLUDED.follow_up_status,
          internal_notes = EXCLUDED.internal_notes,
          ai_agent_active = EXCLUDED.ai_agent_active,
          bot_flow_active = EXCLUDED.bot_flow_active,
@@ -1016,7 +1026,24 @@ async function persistChatAndMessage(chat: ChatConversation, newMsg?: ChatMessag
          last_message = EXCLUDED.last_message,
          last_message_time = EXCLUDED.last_message_time,
          updated_at = CURRENT_TIMESTAMP`,
-      [chat.id, chat.leadPhone, chat.leadName, chat.tag, chat.followUpDate || null, chat.internalNotes || '', chat.aiAgentActive, chat.botFlowActive, chat.unreadCount, chat.lastMessage, chat.lastMessageTime]
+      [
+        chat.id, 
+        chat.leadPhone, 
+        chat.leadName, 
+        chat.tag, 
+        chat.followUpDate || null, 
+        chat.followUpText || '', 
+        chat.followUpMediaPath || '', 
+        chat.followUpMediaType || '', 
+        chat.followUpFileName || '', 
+        chat.followUpStatus || 'idle', 
+        chat.internalNotes || '', 
+        chat.aiAgentActive, 
+        chat.botFlowActive, 
+        chat.unreadCount, 
+        chat.lastMessage, 
+        chat.lastMessageTime
+      ]
     );
 
     if (newMsg) {
@@ -1053,6 +1080,11 @@ async function loadSavedChats() {
         leadName: row.lead_name,
         tag: row.tag || 'morno',
         followUpDate: row.follow_up_date,
+        followUpText: row.follow_up_text || '',
+        followUpMediaPath: row.follow_up_media_path || '',
+        followUpMediaType: row.follow_up_media_type || '',
+        followUpFileName: row.follow_up_file_name || '',
+        followUpStatus: row.follow_up_status || 'idle',
         internalNotes: row.internal_notes || '',
         aiAgentActive: row.ai_agent_active === true,
         botFlowActive: row.bot_flow_active !== false,
@@ -1661,9 +1693,23 @@ async function startWhatsAppSession(sessionId: string) {
         if (pushName && (chat.leadName === 'Contato WhatsApp' || !chat.leadName)) chat.leadName = pushName;
       }
 
-      // Check if message already exists by ID or content to prevent duplicates
-      const alreadyExists = chat.messages.some(m => m.id === msgId || (m.fromMe === fromMe && m.text === text && Math.abs(Date.now() - parseInt(m.id.replace('out-', '') || '0')) < 4000));
-      if (alreadyExists) continue;
+      // Check if message already exists by ID or content to prevent duplicates (especially bot- or out- messages echoed by Baileys)
+      let isDuplicate = false;
+      if (chat.messages.some(m => m.id === msgId)) {
+        isDuplicate = true;
+      } else if (fromMe) {
+        const botOrOut = chat.messages.find(m => 
+          m.fromMe && 
+          m.text.trim() === text.trim() && 
+          (m.id.startsWith('bot-') || m.id.startsWith('out-'))
+        );
+        if (botOrOut) {
+          botOrOut.id = msgId;
+          isDuplicate = true;
+        }
+      }
+
+      if (isDuplicate) continue;
 
       const newMsg: ChatMessage = {
         id: msgId,
@@ -2164,6 +2210,12 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
     return res.status(400).json({ error: 'Informe um texto ou anexe uma mídia para o disparo.' });
   }
 
+  // Ensure @todos tag is included in message text if mentionAll is true
+  let broadcastText = (text || '').trim();
+  if (mentionAll && !broadcastText.includes('@todos')) {
+    broadcastText = broadcastText ? `${broadcastText}\n\n@todos` : '@todos';
+  }
+
   // Se agendado: salvar no banco para disparo futuro
   if (scheduledAt) {
     const broadcastId = `sch-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
@@ -2171,7 +2223,7 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
       await pool.query(
         `INSERT INTO scheduled_broadcasts (id, group_id, group_name, text, media_path, media_type, file_name, mention_all, scheduled_at, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')`,
-        [broadcastId, groupId, groupName || 'Grupo WhatsApp', text || '', mediaPath || null, mediaType || null, fileName || null, Boolean(mentionAll), new Date(scheduledAt)]
+        [broadcastId, groupId, groupName || 'Grupo WhatsApp', broadcastText, mediaPath || null, mediaType || null, fileName || null, Boolean(mentionAll), new Date(scheduledAt)]
       );
       return res.json({ 
         success: true, 
@@ -2207,7 +2259,7 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
     await sendGroupBroadcastMessage(
       targetSession.sock,
       groupId,
-      text || '',
+      broadcastText,
       mediaPath,
       mediaType,
       fileName,
@@ -2220,7 +2272,7 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
       await pool.query(
         `INSERT INTO scheduled_broadcasts (id, group_id, group_name, text, media_path, media_type, file_name, mention_all, scheduled_at, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, 'sent')`,
-        [histId, groupId, groupName || 'Grupo WhatsApp', text || '', mediaPath || null, mediaType || null, fileName || null, Boolean(mentionAll)]
+        [histId, groupId, groupName || 'Grupo WhatsApp', broadcastText, mediaPath || null, mediaType || null, fileName || null, Boolean(mentionAll)]
       );
     } catch (e) {}
 
@@ -2353,6 +2405,16 @@ app.post('/api/chats/:id/message', async (req, res) => {
   const chat = liveChats.get(id);
   const session = Array.from(sessions.values()).find(s => s.status === 'connected');
 
+  // Immediately switch to Manual mode when attendant replies from panel
+  if (chat) {
+    chat.botFlowActive = false;
+    chat.aiAgentActive = false;
+    try {
+      await pool.query('UPDATE chats SET bot_flow_active = false, ai_agent_active = false WHERE id = $1', [id]);
+    } catch (e) {}
+    broadcast('chat_update', chat);
+  }
+
   if (session && session.sock && text) {
     try {
       await session.sock.sendMessage(id, { text });
@@ -2386,10 +2448,184 @@ app.post('/api/chats/:id/update', (req, res) => {
   if (chat) {
     Object.assign(chat, req.body);
     liveChats.set(id, chat);
+    persistChatAndMessage(chat).catch(e => console.error('[Persist Chat Error]', e));
     broadcast('chat_update', chat);
   }
   res.json({ success: true, chat });
 });
+
+// Cadastrar / Agendar Follow-up Automático com Texto e Mídias
+app.post('/api/chats/:id/follow-up', async (req, res) => {
+  const { id } = req.params;
+  const { followUpDate, followUpText, followUpMediaPath, followUpMediaType, followUpFileName } = req.body;
+
+  let chat = liveChats.get(id);
+  if (chat) {
+    chat.followUpDate = followUpDate || '';
+    chat.followUpText = followUpText || '';
+    chat.followUpMediaPath = followUpMediaPath || '';
+    chat.followUpMediaType = followUpMediaType || '';
+    chat.followUpFileName = followUpFileName || '';
+    chat.followUpStatus = 'scheduled';
+    liveChats.set(id, chat);
+  }
+
+  try {
+    await pool.query(`
+      UPDATE chats
+      SET follow_up_date = $1,
+          follow_up_text = $2,
+          follow_up_media_path = $3,
+          follow_up_media_type = $4,
+          follow_up_file_name = $5,
+          follow_up_status = 'scheduled'
+      WHERE id = $6
+    `, [followUpDate || '', followUpText || '', followUpMediaPath || '', followUpMediaType || '', followUpFileName || '', id]);
+
+    if (chat) broadcast('chat_update', chat);
+    res.json({ success: true, message: 'Follow-up agendado com sucesso!', chat });
+  } catch (err: any) {
+    console.error('[Follow-up Schedule Error]', err);
+    res.status(500).json({ error: 'Erro ao agendar follow-up: ' + err.message });
+  }
+});
+
+// Cancelar Follow-up
+app.delete('/api/chats/:id/follow-up', async (req, res) => {
+  const { id } = req.params;
+  let chat = liveChats.get(id);
+  if (chat) {
+    chat.followUpDate = undefined;
+    chat.followUpText = '';
+    chat.followUpMediaPath = '';
+    chat.followUpMediaType = '';
+    chat.followUpFileName = '';
+    chat.followUpStatus = 'idle';
+    liveChats.set(id, chat);
+  }
+
+  try {
+    await pool.query(`
+      UPDATE chats
+      SET follow_up_date = NULL,
+          follow_up_text = '',
+          follow_up_media_path = '',
+          follow_up_media_type = '',
+          follow_up_file_name = '',
+          follow_up_status = 'idle'
+      WHERE id = $1
+    `, [id]);
+
+    if (chat) broadcast('chat_update', chat);
+    res.json({ success: true, message: 'Follow-up cancelado com sucesso!' });
+  } catch (err: any) {
+    console.error('[Cancel Follow-up Error]', err);
+    res.status(500).json({ error: 'Erro ao cancelar follow-up: ' + err.message });
+  }
+});
+
+// Helper for Brazil datetime string YYYY-MM-DDTHH:mm
+function getBrazilIsoDateTime(): string {
+  const now = new Date();
+  const brStr = now.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // "YYYY-MM-DD HH:mm:ss"
+  return brStr.replace(' ', 'T').substring(0, 16);
+}
+
+// Worker periódico para disparar Follow-ups agendados automaticamente
+async function processScheduledFollowUps() {
+  try {
+    const res = await pool.query(`
+      SELECT id, lead_phone, lead_name, follow_up_date, follow_up_text, 
+             follow_up_media_path, follow_up_media_type, follow_up_file_name
+      FROM chats
+      WHERE follow_up_status = 'scheduled'
+        AND follow_up_date IS NOT NULL
+        AND follow_up_date != ''
+      LIMIT 10
+    `);
+
+    if (res.rows.length === 0) return;
+
+    let targetSession: SessionData | undefined;
+    for (const s of sessions.values()) {
+      if (s.status === 'connected' && s.sock) {
+        targetSession = s;
+        break;
+      }
+    }
+
+    if (!targetSession || !targetSession.sock) return;
+
+    const currentBrIso = getBrazilIsoDateTime();
+
+    for (const r of res.rows) {
+      if (r.follow_up_date <= currentBrIso) {
+        console.log(`[Follow-up Worker] Disparando follow-up agendado para lead ${r.lead_phone} (${r.id})...`);
+        try {
+          if (r.follow_up_media_path) {
+            const fullMediaPath = r.follow_up_media_path.startsWith('http')
+              ? r.follow_up_media_path
+              : path.join(process.cwd(), r.follow_up_media_path.replace(/^\//, ''));
+
+            if (fs.existsSync(fullMediaPath)) {
+              const buffer = fs.readFileSync(fullMediaPath);
+              if (r.follow_up_media_type === 'image') {
+                await targetSession.sock.sendMessage(r.id, {
+                  image: buffer,
+                  caption: r.follow_up_text || ''
+                });
+              } else if (r.follow_up_media_type === 'video') {
+                await targetSession.sock.sendMessage(r.id, {
+                  video: buffer,
+                  caption: r.follow_up_text || ''
+                });
+              } else if (r.follow_up_media_type === 'audio') {
+                await targetSession.sock.sendMessage(r.id, {
+                  audio: buffer,
+                  mimetype: 'audio/mp4',
+                  ptt: true
+                });
+                if (r.follow_up_text) {
+                  await targetSession.sock.sendMessage(r.id, { text: r.follow_up_text });
+                }
+              } else {
+                await targetSession.sock.sendMessage(r.id, {
+                  document: buffer,
+                  mimetype: 'application/octet-stream',
+                  fileName: r.follow_up_file_name || 'arquivo'
+                });
+                if (r.follow_up_text) {
+                  await targetSession.sock.sendMessage(r.id, { text: r.follow_up_text });
+                }
+              }
+            } else if (r.follow_up_text) {
+              await targetSession.sock.sendMessage(r.id, { text: r.follow_up_text });
+            }
+          } else if (r.follow_up_text) {
+            await targetSession.sock.sendMessage(r.id, { text: r.follow_up_text });
+          }
+
+          const sentSummary = r.follow_up_text || `[Follow-up enviado: ${r.follow_up_media_type || 'arquivo'}]`;
+          recordFlowMessageInChat(r.id, sentSummary, false);
+
+          await pool.query(`UPDATE chats SET follow_up_status = 'completed' WHERE id = $1`, [r.id]);
+          const chat = liveChats.get(r.id);
+          if (chat) {
+            chat.followUpStatus = 'completed';
+            broadcast('chat_update', chat);
+          }
+          console.log(`[Follow-up Worker] Follow-up para ${r.id} enviado com sucesso!`);
+        } catch (err: any) {
+          console.error(`[Follow-up Worker Error] Falha ao enviar para ${r.id}:`, err);
+          await pool.query(`UPDATE chats SET follow_up_status = 'failed' WHERE id = $1`, [r.id]);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[Follow-up Worker Loop Error]', e);
+  }
+}
+setInterval(processScheduledFollowUps, 15000);
 
 // System Updates APIs (PostgreSQL backed with real-time broadcast)
 app.get('/api/updates', async (req, res) => {

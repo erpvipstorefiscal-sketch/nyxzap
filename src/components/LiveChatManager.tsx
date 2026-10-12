@@ -54,6 +54,14 @@ export const LiveChatManager: React.FC = () => {
   const [scheduledDate, setScheduledDate] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Follow-up CRM state
+  const [followUpDate, setFollowUpDate] = useState('');
+  const [followUpText, setFollowUpText] = useState('');
+  const [followUpMedia, setFollowUpMedia] = useState<{ url: string; type: 'image' | 'video' | 'audio' | 'document'; fileName: string } | null>(null);
+  const [isSavingFollowUp, setIsSavingFollowUp] = useState(false);
+  const [isUploadingFollowUpMedia, setIsUploadingFollowUpMedia] = useState(false);
+  const followUpFileInputRef = useRef<HTMLInputElement>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const fetchGroups = async () => {
@@ -129,6 +137,23 @@ export const LiveChatManager: React.FC = () => {
     return matchesTag && matchesSearch;
   });
 
+  // Sync follow-up fields when active chat changes
+  useEffect(() => {
+    if (activeChat) {
+      setFollowUpDate(activeChat.followUpDate || '');
+      setFollowUpText(activeChat.followUpText || '');
+      if (activeChat.followUpMediaPath) {
+        setFollowUpMedia({
+          url: activeChat.followUpMediaPath,
+          type: (activeChat.followUpMediaType as any) || 'document',
+          fileName: activeChat.followUpFileName || 'arquivo'
+        });
+      } else {
+        setFollowUpMedia(null);
+      }
+    }
+  }, [activeChatId, activeChat?.followUpDate, activeChat?.followUpText, activeChat?.followUpMediaPath]);
+
   const handleSendMessage = async () => {
     if (!replyText.trim() || !activeChat) return;
 
@@ -136,6 +161,11 @@ export const LiveChatManager: React.FC = () => {
     setReplyText('');
 
     try {
+      // Optimistically switch to Manual Mode in UI immediately
+      setConversations(prev => prev.map(c => 
+        c.id === activeChat.id ? { ...c, botFlowActive: false, aiAgentActive: false } : c
+      ));
+
       await fetch(`/api/chats/${encodeURIComponent(activeChat.id)}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -198,17 +228,134 @@ export const LiveChatManager: React.FC = () => {
     }
   };
 
-  const handleUpdateFollowUp = async (followUpDate: string) => {
+  const handleScheduleFollowUp = async () => {
     if (!activeChat) return;
+    if (!followUpDate) {
+      await alertDialog({
+        title: 'Data Obrigatória',
+        message: 'Por favor, selecione a data e o horário para o disparo automático do follow-up.',
+        variant: 'danger',
+        confirmText: 'Entendi'
+      });
+      return;
+    }
+    if (!followUpText.trim() && !followUpMedia) {
+      await alertDialog({
+        title: 'Mensagem Obrigatória',
+        message: 'Digite uma mensagem ou anexe uma mídia (foto, vídeo, áudio ou documento) para o follow-up.',
+        variant: 'danger',
+        confirmText: 'Entendi'
+      });
+      return;
+    }
+
+    setIsSavingFollowUp(true);
     try {
-      await fetch(`/api/chats/${encodeURIComponent(activeChat.id)}/update`, {
+      const res = await fetch(`/api/chats/${encodeURIComponent(activeChat.id)}/follow-up`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ followUpDate })
+        body: JSON.stringify({
+          followUpDate,
+          followUpText: followUpText.trim(),
+          followUpMediaPath: followUpMedia?.url || '',
+          followUpMediaType: followUpMedia?.type || '',
+          followUpFileName: followUpMedia?.fileName || ''
+        })
       });
+      const data = await res.json();
+      if (data.success) {
+        await alertDialog({
+          title: 'Follow-up Agendado!',
+          message: `O disparo automático foi programado com sucesso para ${new Date(followUpDate).toLocaleString('pt-BR')}!`,
+          variant: 'success',
+          confirmText: 'OK'
+        });
+        fetchChats();
+      } else {
+        await alertDialog({
+          title: 'Erro no Agendamento',
+          message: data.error || 'Falha ao agendar follow-up.',
+          variant: 'danger',
+          confirmText: 'OK'
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setIsSavingFollowUp(false);
+    }
+  };
+
+  const handleCancelFollowUp = async () => {
+    if (!activeChat) return;
+    const ok = await confirmDialog({
+      title: 'Cancelar Follow-up',
+      message: 'Deseja realmente cancelar este follow-up agendado?',
+      confirmText: 'Sim, Cancelar',
+      cancelText: 'Voltar',
+      variant: 'danger'
+    });
+    if (!ok) return;
+
+    try {
+      await fetch(`/api/chats/${encodeURIComponent(activeChat.id)}/follow-up`, { method: 'DELETE' });
+      setFollowUpDate('');
+      setFollowUpText('');
+      setFollowUpMedia(null);
       fetchChats();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleUploadFollowUpMedia = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      await alertDialog({
+        title: 'Arquivo Muito Grande',
+        message: 'O arquivo não pode ultrapassar 50MB.',
+        variant: 'danger',
+        confirmText: 'Entendi'
+      });
+      return;
+    }
+
+    setIsUploadingFollowUpMedia(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/flow/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document';
+        if (file.type.startsWith('image/')) mediaType = 'image';
+        else if (file.type.startsWith('video/')) mediaType = 'video';
+        else if (file.type.startsWith('audio/')) mediaType = 'audio';
+
+        setFollowUpMedia({
+          url: data.url,
+          type: mediaType,
+          fileName: data.filename || file.name
+        });
+      } else {
+        await alertDialog({
+          title: 'Erro no Upload',
+          message: data.error || 'Falha ao enviar arquivo.',
+          variant: 'danger',
+          confirmText: 'OK'
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsUploadingFollowUpMedia(false);
+      if (followUpFileInputRef.current) followUpFileInputRef.current.value = '';
     }
   };
 
@@ -342,11 +489,49 @@ export const LiveChatManager: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleToggleMentionAll = (checked: boolean) => {
+    setMentionAll(checked);
+    if (checked) {
+      if (!groupMessageText.includes('@todos')) {
+        setGroupMessageText(prev => prev.trim() ? `${prev.trim()}\n\n@todos` : '@todos');
+      }
+    } else {
+      setGroupMessageText(prev => prev.replace(/\n\n@todos|@todos/g, '').trim());
+    }
+  };
+
+  const handleReuseBroadcast = (b: ScheduledBroadcast) => {
+    setGroupMessageText(b.text || '');
+    if (b.mediaPath) {
+      setBroadcastMedia({
+        url: b.mediaPath,
+        type: (b.mediaType as any) || 'document',
+        fileName: b.fileName || 'arquivo'
+      });
+    } else {
+      setBroadcastMedia(null);
+    }
+    setMentionAll(Boolean(b.mentionAll));
+    setIsScheduling(true);
+
+    // Set default date to +1 hour from now
+    const nextDate = new Date(Date.now() + 60 * 60 * 1000);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    setScheduledDate(`${nextDate.getFullYear()}-${pad(nextDate.getMonth() + 1)}-${pad(nextDate.getDate())}T${pad(nextDate.getHours())}:${pad(nextDate.getMinutes())}`);
+
+    alertDialog({
+      title: 'Disparo Carregado!',
+      message: 'Os dados da mensagem foram carregados no formulário. Ajuste a data e horário desejado e clique em "Confirmar Agendamento"!',
+      variant: 'success',
+      confirmText: 'Entendi'
+    });
+  };
+
   const handleDeleteScheduledBroadcast = async (id: string) => {
     const ok = await confirmDialog({
-      title: 'Cancelar Agendamento',
-      message: 'Tem certeza que deseja cancelar este disparo agendado?',
-      confirmText: 'Sim, Cancelar',
+      title: 'Excluir Disparo',
+      message: 'Tem certeza que deseja excluir este disparo do histórico/agendamentos?',
+      confirmText: 'Sim, Excluir',
       cancelText: 'Voltar',
       variant: 'danger'
     });
@@ -836,14 +1021,14 @@ export const LiveChatManager: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={mentionAll}
-                          onChange={(e) => setMentionAll(e.target.checked)}
+                          onChange={(e) => handleToggleMentionAll(e.target.checked)}
                           className="w-4 h-4 rounded text-emerald-600 focus:ring-0 bg-[#0f111a] border-slate-700"
                         />
                         <span className="flex items-center gap-1 font-bold">
                           <AtSign className="w-3.5 h-3.5 text-emerald-400" />
                           Marcar @todos no grupo
                         </span>
-                        <span className="text-[10px] text-slate-400">(menciona todos os membros)</span>
+                        <span className="text-[10px] text-slate-400">(inclui @todos no fim do texto)</span>
                       </label>
 
                       {/* Alternador Enviar Agora vs Agendar */}
@@ -963,15 +1148,24 @@ export const LiveChatManager: React.FC = () => {
                             </p>
                           </div>
 
-                          {b.status === 'pending' && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => handleReuseBroadcast(b)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-[#1a1d2e] hover:bg-purple-600/25 text-purple-300 hover:text-white border border-purple-500/30 flex items-center gap-1.5 transition-all shadow-sm"
+                              title="Reaproveitar esta mensagem e reagendar com nova data"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-purple-400" />
+                              <span>Reaproveitar / Reagendar</span>
+                            </button>
+
                             <button
                               onClick={() => handleDeleteScheduledBroadcast(b.id)}
-                              className="p-1.5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition-all shrink-0"
-                              title="Cancelar este disparo"
+                              className="p-1.5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition-all"
+                              title="Excluir este disparo do histórico"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
-                          )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1155,22 +1349,189 @@ export const LiveChatManager: React.FC = () => {
             </div>
           </div>
 
-          <div className="border-b border-slate-800 pb-3 space-y-2">
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-amber-400" />
-              <span>Cadastrar Follow-up</span>
-            </h4>
+          <div className="border-b border-slate-800 pb-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                <span>Follow-up Automático</span>
+              </h4>
+              {activeChat.followUpStatus === 'scheduled' && (
+                <span className="text-[10px] font-bold bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30">
+                  🕒 Agendado
+                </span>
+              )}
+              {activeChat.followUpStatus === 'completed' && (
+                <span className="text-[10px] font-bold bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                  ✓ Concluído
+                </span>
+              )}
+            </div>
+
+            <p className="text-[10px] text-slate-400 leading-snug">
+              Programe o disparo automático de mensagem e anexo direto no WhatsApp do lead:
+            </p>
+
+            {/* Input de arquivo invisível para follow-up */}
             <input
-              type="datetime-local"
-              value={activeChat.followUpDate || ''}
-              onChange={(e) => handleUpdateFollowUp(e.target.value)}
-              className="w-full bg-[#151824] border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500"
+              ref={followUpFileInputRef}
+              type="file"
+              onChange={handleUploadFollowUpMedia}
+              className="hidden"
+              accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
             />
-            {activeChat.followUpDate && (
-              <p className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
-                <Clock className="w-3 h-3" /> Agendado para {new Date(activeChat.followUpDate).toLocaleString('pt-BR')}
-              </p>
-            )}
+
+            {/* Data e Hora */}
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold text-slate-300 block">Data e Horário (Brasília):</span>
+              <input
+                type="datetime-local"
+                value={followUpDate}
+                onChange={(e) => setFollowUpDate(e.target.value)}
+                className="w-full bg-[#151824] border border-slate-700 focus:border-amber-500 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none"
+              />
+            </div>
+
+            {/* Texto do Follow-up */}
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold text-slate-300 block">Mensagem do Follow-up:</span>
+              <textarea
+                rows={3}
+                placeholder="Ex: Olá {nome}, tudo bem? Passando para saber o que achou da nossa proposta..."
+                value={followUpText}
+                onChange={(e) => setFollowUpText(e.target.value)}
+                className="w-full bg-[#151824] border border-slate-700 focus:border-amber-500 rounded-xl p-2.5 text-xs text-white focus:outline-none resize-none leading-relaxed"
+              />
+            </div>
+
+            {/* Anexos de Mídia do Follow-up */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-slate-300 flex items-center gap-1">
+                  <Paperclip className="w-3 h-3 text-amber-400" /> Anexar Mídia:
+                </span>
+                {isUploadingFollowUpMedia && (
+                  <span className="text-[10px] text-amber-400 flex items-center gap-1">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Enviando...
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-4 gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (followUpFileInputRef.current) {
+                      followUpFileInputRef.current.accept = 'image/*';
+                      followUpFileInputRef.current.click();
+                    }
+                  }}
+                  disabled={isUploadingFollowUpMedia}
+                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex flex-col items-center gap-0.5 transition-all"
+                  title="Anexar Foto"
+                >
+                  <ImageIcon className="w-3 h-3 text-pink-400" />
+                  <span>Foto</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (followUpFileInputRef.current) {
+                      followUpFileInputRef.current.accept = 'video/*';
+                      followUpFileInputRef.current.click();
+                    }
+                  }}
+                  disabled={isUploadingFollowUpMedia}
+                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex flex-col items-center gap-0.5 transition-all"
+                  title="Anexar Vídeo"
+                >
+                  <Video className="w-3 h-3 text-rose-400" />
+                  <span>Vídeo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (followUpFileInputRef.current) {
+                      followUpFileInputRef.current.accept = 'audio/*';
+                      followUpFileInputRef.current.click();
+                    }
+                  }}
+                  disabled={isUploadingFollowUpMedia}
+                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex flex-col items-center gap-0.5 transition-all"
+                  title="Anexar Áudio"
+                >
+                  <Mic className="w-3 h-3 text-violet-400" />
+                  <span>Áudio</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (followUpFileInputRef.current) {
+                      followUpFileInputRef.current.accept = '.pdf,.doc,.docx,.txt';
+                      followUpFileInputRef.current.click();
+                    }
+                  }}
+                  disabled={isUploadingFollowUpMedia}
+                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex flex-col items-center gap-0.5 transition-all"
+                  title="Anexar Documento"
+                >
+                  <FileText className="w-3 h-3 text-amber-400" />
+                  <span>Doc</span>
+                </button>
+              </div>
+
+              {/* Mídia Anexada */}
+              {followUpMedia && (
+                <div className="bg-[#151824] border border-amber-500/30 rounded-xl p-2 flex items-center justify-between mt-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {followUpMedia.type === 'image' && <ImageIcon className="w-3.5 h-3.5 text-pink-400 shrink-0" />}
+                    {followUpMedia.type === 'video' && <Video className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                    {followUpMedia.type === 'audio' && <Mic className="w-3.5 h-3.5 text-violet-400 shrink-0" />}
+                    {followUpMedia.type === 'document' && <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                    <span className="text-[10px] text-slate-200 truncate font-mono">{followUpMedia.fileName}</span>
+                  </div>
+                  <button
+                    onClick={() => setFollowUpMedia(null)}
+                    className="p-0.5 text-rose-400 hover:text-rose-300 shrink-0"
+                    title="Remover anexo"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Ações: Salvar / Agendar ou Cancelar */}
+            <div className="pt-1 flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={handleScheduleFollowUp}
+                disabled={isSavingFollowUp || !followUpDate}
+                className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition-all shadow-md shadow-amber-600/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isSavingFollowUp ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Agendando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{activeChat.followUpStatus === 'scheduled' ? 'Atualizar Agendamento' : 'Agendar Follow-up'}</span>
+                  </>
+                )}
+              </button>
+
+              {activeChat.followUpStatus === 'scheduled' && (
+                <button
+                  type="button"
+                  onClick={handleCancelFollowUp}
+                  className="w-full py-1.5 px-3 rounded-xl text-[11px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-all flex items-center justify-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Cancelar Follow-up</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex-1 flex flex-col space-y-2">

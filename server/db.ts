@@ -161,6 +161,11 @@ export async function initDatabase() {
         lead_name VARCHAR(150) NOT NULL,
         tag VARCHAR(50) DEFAULT 'quente',
         follow_up_date VARCHAR(50),
+        follow_up_text TEXT DEFAULT '',
+        follow_up_media_path TEXT DEFAULT '',
+        follow_up_media_type VARCHAR(50) DEFAULT '',
+        follow_up_file_name VARCHAR(255) DEFAULT '',
+        follow_up_status VARCHAR(50) DEFAULT 'idle',
         internal_notes TEXT DEFAULT '',
         ai_agent_active BOOLEAN DEFAULT false,
         bot_flow_active BOOLEAN DEFAULT true,
@@ -171,6 +176,11 @@ export async function initDatabase() {
       );
       ALTER TABLE chats DROP CONSTRAINT IF EXISTS chats_user_id_fkey;
       ALTER TABLE chats ALTER COLUMN bot_flow_active SET DEFAULT true;
+      ALTER TABLE chats ADD COLUMN IF NOT EXISTS follow_up_text TEXT DEFAULT '';
+      ALTER TABLE chats ADD COLUMN IF NOT EXISTS follow_up_media_path TEXT DEFAULT '';
+      ALTER TABLE chats ADD COLUMN IF NOT EXISTS follow_up_media_type VARCHAR(50) DEFAULT '';
+      ALTER TABLE chats ADD COLUMN IF NOT EXISTS follow_up_file_name VARCHAR(255) DEFAULT '';
+      ALTER TABLE chats ADD COLUMN IF NOT EXISTS follow_up_status VARCHAR(50) DEFAULT 'idle';
       UPDATE chats SET bot_flow_active = true WHERE bot_flow_active IS NULL;
       DELETE FROM chats WHERE id LIKE '%broadcast%' OR lead_phone LIKE '%broadcast%';
     `);

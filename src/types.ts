@@ -95,6 +95,11 @@ export interface ChatConversation {
   leadName: string;
   tag: LeadTag;
   followUpDate?: string;
+  followUpText?: string;
+  followUpMediaPath?: string;
+  followUpMediaType?: 'image' | 'video' | 'audio' | 'document';
+  followUpFileName?: string;
+  followUpStatus?: 'idle' | 'scheduled' | 'completed';
   internalNotes: string;
   aiAgentActive: boolean;
   botFlowActive: boolean;
