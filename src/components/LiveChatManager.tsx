@@ -23,7 +23,8 @@ import {
   Video,
   Mic,
   AtSign,
-  X
+  X,
+  Check
 } from 'lucide-react';
 import { ChatConversation, LeadTag, ChatMessage, WhatsAppGroup, ScheduledBroadcast } from '../types';
 import { confirmDialog, alertDialog } from './ModalConfirm';
