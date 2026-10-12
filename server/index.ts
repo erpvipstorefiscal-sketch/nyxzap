@@ -1270,17 +1270,19 @@ async function resumeFlowChain(
       const responseEdge = outgoingEdges.find(e => e.fromHandle === 'response' || e.label?.toLowerCase().includes('respondeu'));
       const timeoutEdge = outgoingEdges.find(e => e.fromHandle === 'timeout' || e.label?.toLowerCase().includes('não'));
 
+      const cleanPhone = remoteJid.replace(/\D/g, '');
       // Clear any previous timer
-      const existing = pendingFlowResponses.get(remoteJid);
+      const existing = pendingFlowResponses.get(cleanPhone) || pendingFlowResponses.get(remoteJid);
       if (existing) clearTimeout(existing.timeoutTimer);
 
       const unit = currentNode.data?.timeoutUnit || 'segundos';
       const delay = Number(currentNode.data?.timeoutSeconds || (unit === 'minutos' ? 1 : 30));
       const totalMs = (unit === 'minutos' ? delay * 60 : unit === 'horas' ? delay * 3600 : delay) * 1000;
 
-      console.log(`[Flow Engine] Card '${currentNode.title}' aguardando resposta de ${remoteJid} por ${delay} ${unit} (${totalMs}ms)...`);
+      console.log(`[Flow Engine] Card '${currentNode.title}' aguardando resposta de ${remoteJid} (${cleanPhone}) por ${delay} ${unit} (${totalMs}ms)...`);
 
       const timeoutTimer = setTimeout(async () => {
+        pendingFlowResponses.delete(cleanPhone);
         pendingFlowResponses.delete(remoteJid);
         console.log(`[Flow Engine] Tempo esgotado (${delay} ${unit}) para ${remoteJid}. Prosseguindo conexão 'Não respondeu' (${timeoutEdge?.to || 'Nenhuma'}).`);
         if (timeoutEdge?.to) {
@@ -1288,7 +1290,7 @@ async function resumeFlowChain(
         }
       }, totalMs);
 
-      pendingFlowResponses.set(remoteJid, {
+      const pendingData: PendingFlowResponse = {
         remoteJid,
         nodeId: currentNode.id,
         sessionId,
@@ -1297,7 +1299,9 @@ async function resumeFlowChain(
         responseTargetId: responseEdge?.to,
         timeoutTargetId: timeoutEdge?.to,
         flow: flowObj
-      });
+      };
+      pendingFlowResponses.set(cleanPhone, pendingData);
+      pendingFlowResponses.set(remoteJid, pendingData);
 
       // STOP here. Do NOT execute next nodes until response or timeout.
       return;
@@ -1584,34 +1588,56 @@ async function executeNodeAction(
           try {
             groupRes = await targetSock.groupCreate(groupSubject, [participantJid]);
           } catch (createErr: any) {
-            console.warn(`[Flow Engine] groupCreate direto com participante falhou (${createErr.message}), criando grupo e gerando convite...`);
+            console.warn(`[Flow Engine] groupCreate direto com participante falhou (${createErr.message}), tentando criar grupo e adicionar participante:`, createErr.message);
             groupRes = await targetSock.groupCreate(groupSubject, []);
+            if (groupRes && groupRes.id) {
+              try {
+                await targetSock.groupParticipantsUpdate(groupRes.id, [participantJid], 'add');
+              } catch (addErr: any) {
+                console.warn(`[Flow Engine] Erro ao adicionar lead ao grupo recém-criado:`, addErr.message);
+              }
+            }
           }
 
           if (groupRes && groupRes.id) {
             console.log(`[Flow Engine] Grupo criado com sucesso! ID: ${groupRes.id}`);
-            recordFlowMessageInChat(remoteJid, `👥 [Grupo WhatsApp '${groupSubject}' criado com sucesso!]`);
+            recordFlowMessageInChat(remoteJid, `👥 [Grupo WhatsApp '${groupSubject}' criado e lead adicionado com sucesso!]`);
 
-            // Obter link de convite oficial do grupo
-            let inviteLink = '';
-            try {
-              const code = await targetSock.groupInviteCode(groupRes.id);
-              if (code) {
-                inviteLink = `https://chat.whatsapp.com/${code}`;
+            // Aplicar foto de perfil do grupo se configurada
+            if (node.data?.groupPhotoUrl) {
+              try {
+                let photoBuffer: Buffer | null = null;
+                const photoUrl = node.data.groupPhotoUrl;
+                if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+                  const imgRes = await fetch(photoUrl);
+                  const arrBuf = await imgRes.arrayBuffer();
+                  photoBuffer = Buffer.from(arrBuf);
+                } else {
+                  const cleanPath = photoUrl.replace(/^\//, '');
+                  const localPath = path.isAbsolute(photoUrl) 
+                    ? photoUrl 
+                    : path.join(process.cwd(), cleanPath);
+                  if (fs.existsSync(localPath)) {
+                    photoBuffer = fs.readFileSync(localPath);
+                  }
+                }
+
+                if (photoBuffer && targetSock.updateProfilePicture) {
+                  await targetSock.updateProfilePicture(groupRes.id, photoBuffer);
+                  console.log(`[Flow Engine] Foto de perfil do grupo '${groupSubject}' aplicada com sucesso!`);
+                }
+              } catch (photoErr: any) {
+                console.warn('[Flow Engine] Erro ao aplicar foto do grupo:', photoErr.message);
               }
-            } catch (invErr) {
-              console.warn('[Flow Engine] Erro ao obter invite code do grupo recém-criado:', invErr);
             }
 
-            // Enviar mensagem ao lead com o link de acesso ao grupo
-            if (inviteLink) {
-              const welcomeMsg = node.data?.welcomeMessage 
-                ? replaceVariables(node.data.welcomeMessage)
-                : `Olá ${replaceVariables('{nome}')}! Criamos seu grupo exclusivo *${groupSubject}*! Acesse através do link oficial abaixo:\n${inviteLink}`;
-              
-              await targetSock.sendMessage(remoteJid, { text: welcomeMsg });
-              recordFlowMessageInChat(remoteJid, `🔗 [Link do grupo enviado ao lead: ${inviteLink}]`);
-            }
+            // Enviar mensagem avisando que o grupo foi criado SEM LINK NENHUM
+            const welcomeMsg = node.data?.welcomeMessage 
+              ? replaceVariables(node.data.welcomeMessage)
+              : `Olá ${replaceVariables('{nome}')}! Seu grupo exclusivo *${groupSubject}* foi criado com sucesso e você já foi adicionado!`;
+            
+            await targetSock.sendMessage(remoteJid, { text: welcomeMsg });
+            recordFlowMessageInChat(remoteJid, welcomeMsg);
           } else {
             recordFlowMessageInChat(remoteJid, `⚠️ [Não foi possível criar o grupo WhatsApp]`);
           }
@@ -1976,20 +2002,21 @@ async function startWhatsAppSession(sessionId: string) {
           continue;
         }
 
-        // EXECUÇÃO EXCLUSIVA BASEADA NA ESCOLHA DA INSTÂNCIA (NUNCA AS DUAS JUNTAS)
-        if (instanceMode === 'flow' && chat.botFlowActive !== false) {
-          // MODO EXCLUSIVO: BOT DE FLUXO
-          const pending = pendingFlowResponses.get(remoteJid);
-          if (pending) {
-            clearTimeout(pending.timeoutTimer);
-            pendingFlowResponses.delete(remoteJid);
-            console.log(`[Flow Engine] Cliente ${remoteJid} respondeu a tempo ao card '${pending.nodeId}'! Cancelando timeout e seguindo 'Se responder' (${pending.responseTargetId || 'Fim do fluxo'}).`);
-            if (pending.responseTargetId) {
-              await resumeFlowChain(sock, remoteJid, pending.responseTargetId, chat.leadName, text, sessionId);
-            }
-          } else {
-            await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
+        // VERIFICA PRIMEIRO SE O CLIENTE ESTAVA AGUARDANDO RESPOSTA EM UM FLUXO ATIVO
+        const cleanPhone = remoteJid.replace(/\D/g, '');
+        const pending = pendingFlowResponses.get(cleanPhone) || pendingFlowResponses.get(remoteJid);
+
+        if (pending && chat.botFlowActive !== false) {
+          clearTimeout(pending.timeoutTimer);
+          pendingFlowResponses.delete(cleanPhone);
+          pendingFlowResponses.delete(remoteJid);
+          console.log(`[Flow Engine] Cliente ${remoteJid} respondeu a tempo ao card '${pending.nodeId}'! Cancelando timeout e seguindo 'Se responder' (${pending.responseTargetId || 'Fim do fluxo'}).`);
+          if (pending.responseTargetId) {
+            await resumeFlowChain(sock, remoteJid, pending.responseTargetId, chat.leadName, text, sessionId, pending.flow);
           }
+        } else if (instanceMode === 'flow' && chat.botFlowActive !== false) {
+          // MODO EXCLUSIVO: BOT DE FLUXO (INÍCIO DE NOVO FLUXO POR GATILHO)
+          await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
         } else if (instanceMode === 'ai' && chat.aiAgentActive !== false && aiConfig.apiKey) {
           // MODO EXCLUSIVO: AGENTE DE IA
           try {

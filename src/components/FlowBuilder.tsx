@@ -928,26 +928,47 @@ export const FlowBuilder: React.FC = () => {
 
       if (res.ok) {
         const data = await res.json();
-        updateNodeData(nodeId, {
-          fileUrl: data.url,
-          fileName: file.name,
-          fileSize: formatBytes(file.size)
-        });
+        if (node.type === 'grupo_wa') {
+          updateNodeData(nodeId, {
+            groupPhotoUrl: data.url,
+            groupPhotoName: file.name
+          });
+        } else {
+          updateNodeData(nodeId, {
+            fileUrl: data.url,
+            fileName: file.name,
+            fileSize: formatBytes(file.size)
+          });
+        }
       } else {
         const localUrl = URL.createObjectURL(file);
+        if (node.type === 'grupo_wa') {
+          updateNodeData(nodeId, {
+            groupPhotoUrl: localUrl,
+            groupPhotoName: file.name
+          });
+        } else {
+          updateNodeData(nodeId, {
+            fileUrl: localUrl,
+            fileName: file.name,
+            fileSize: formatBytes(file.size)
+          });
+        }
+      }
+    } catch {
+      const localUrl = URL.createObjectURL(file);
+      if (node.type === 'grupo_wa') {
+        updateNodeData(nodeId, {
+          groupPhotoUrl: localUrl,
+          groupPhotoName: file.name
+        });
+      } else {
         updateNodeData(nodeId, {
           fileUrl: localUrl,
           fileName: file.name,
           fileSize: formatBytes(file.size)
         });
       }
-    } catch {
-      const localUrl = URL.createObjectURL(file);
-      updateNodeData(nodeId, {
-        fileUrl: localUrl,
-        fileName: file.name,
-        fileSize: formatBytes(file.size)
-      });
     } finally {
       setUploadingNodeId(null);
       setActiveUploadContext(null);
@@ -2495,6 +2516,57 @@ export const FlowBuilder: React.FC = () => {
                                     + {v}
                                   </button>
                                 ))}
+                              </div>
+
+                              <div className="space-y-1 pt-1 border-t border-slate-800/80">
+                                <label className="text-[9px] font-bold text-slate-400 block">
+                                  Foto do Grupo (Ícone do WhatsApp):
+                                </label>
+                                {node.data.groupPhotoUrl ? (
+                                  <div className="bg-[#13141f] border border-emerald-500/30 rounded-xl p-2 space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <img
+                                        src={node.data.groupPhotoUrl}
+                                        alt="Foto do Grupo"
+                                        className="w-12 h-12 object-cover rounded-full border-2 border-emerald-500/40 shrink-0"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-[10px] font-bold text-white truncate">
+                                          {node.data.groupPhotoName || 'Foto do grupo definida'}
+                                        </p>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => triggerFileUpload(node.id, 'image/png,image/jpeg,image/jpg,image/webp')}
+                                            className="text-[9px] text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer"
+                                          >
+                                            Trocar foto
+                                          </button>
+                                          <span className="text-slate-600">•</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => updateNodeData(node.id, { groupPhotoUrl: '', groupPhotoName: '' })}
+                                            className="text-[9px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                                          >
+                                            Remover
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerFileUpload(node.id, 'image/png,image/jpeg,image/jpg,image/webp')}
+                                    disabled={uploadingNodeId === node.id}
+                                    className="w-full py-2 px-3 bg-[#13141f] hover:bg-emerald-950/30 border border-dashed border-emerald-500/40 hover:border-emerald-400 rounded-xl flex items-center justify-center gap-2 transition-all group cursor-pointer"
+                                  >
+                                    <Upload className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                                    <span className="text-[10px] font-bold text-slate-300 group-hover:text-white">
+                                      {uploadingNodeId === node.id ? 'Enviando foto...' : 'Escolher foto do grupo'}
+                                    </span>
+                                  </button>
+                                )}
                               </div>
 
                               <div className="space-y-1 pt-1 border-t border-slate-800/80">
