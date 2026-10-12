@@ -340,7 +340,9 @@ export class SignalingBridge {
 
     const incomingCallId = String(voipChild.attrs["call-id"] ?? voipChild.attrs.call_id ?? "");
     const callIdForRouting = incomingCallId || activeCallId;
-    if (activeCallId && incomingCallId && incomingCallId !== activeCallId) return;
+    if (activeCallId && incomingCallId && incomingCallId.toLowerCase() !== activeCallId.toLowerCase()) {
+      return;
+    }
 
     const senderDeviceJid =
       String(voipChild.attrs.participant ?? "") ||
@@ -432,7 +434,9 @@ export class SignalingBridge {
 
     const incomingCallId = String(receiptChild.attrs["call-id"] ?? receiptChild.attrs.call_id ?? "");
     const callIdForRouting = incomingCallId || activeCallId;
-    if (activeCallId && incomingCallId && incomingCallId !== activeCallId) return;
+    if (activeCallId && incomingCallId && incomingCallId.toLowerCase() !== activeCallId.toLowerCase()) {
+      return;
+    }
 
     const callbackPeerJid = String(node.attrs.from ?? receiptChild.attrs["call-creator"] ?? "");
     const storedPeerJid = callIdForRouting ? this.#incomingCallPeerById.get(callIdForRouting) : undefined;

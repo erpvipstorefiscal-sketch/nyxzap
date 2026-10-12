@@ -68,6 +68,10 @@ export class AudioFeeder {
         this.#proc.stderr.on("data", (chunk) => {
             process.stderr.write(`[AudioFeeder] ${chunk.toString().trim()}\n`);
         });
+        this.#proc.on("error", (err) => {
+            process.stderr.write(`[AudioFeeder] ffmpeg process error: ${err.message}\n`);
+            this.#proc = null;
+        });
         this.#proc.on("exit", (code) => {
             if (code !== 0 && code !== null) {
                 process.stderr.write(`[AudioFeeder] ffmpeg exited with code=${code}\n`);

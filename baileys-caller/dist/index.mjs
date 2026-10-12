@@ -107,9 +107,10 @@ export class ActiveCall extends EventEmitter {
     /** @internal — called by VoipClient on WASM call-state change */
     _updateState = (state) => {
         this.#state = state;
+        console.log(`[VoipClient] Call state updated to: ${state}`);
         if (state === CallState.PreacceptReceived)
             this.emit("ringing");
-        else if (state === CallState.Active)
+        else if (state === CallState.Active || state === CallState.AcceptReceived)
             this.emit("connected");
         else if (state === CallState.Idle || state === CallState.Ending) {
             this._forceEnd("ended");
@@ -321,6 +322,7 @@ export class VoipClient {
     };
     // ─── private ──────────────────────────────────────────────────────────────
     #handleCallEvent = (eventType, eventData) => {
+        console.log(`[VoipClient Event] type=${eventType}, data=${eventData}`);
         if (eventType === 16 && eventData) {
             try {
                 const parsed = JSON.parse(eventData);
@@ -352,9 +354,11 @@ export class VoipClient {
         this.#capturePtr = this.#engine.malloc(this.#captureChunkBytes);
     };
     #handleAudioCaptureStart = () => {
+        console.log(`[VoipClient] Audio capture START triggered! (engine=${!!this.#engine}, ptr=${this.#capturePtr})`);
         if (!this.#engine || !this.#capturePtr)
             return;
         const audioSource = this.#activeCall?._audioSource ?? "silence";
+        console.log(`[VoipClient] Spawning AudioFeeder with source: ${audioSource}`);
         this.#feeder = new AudioFeeder(this.#captureSampleRate, this.#captureChannels, this.#captureFramesPerChunk, (chunk) => {
             if (this.#engine && this.#capturePtr)
                 this.#engine.sendAudioData(chunk, this.#capturePtr);
@@ -362,6 +366,7 @@ export class VoipClient {
         this.#feeder.start();
     };
     #handleAudioCaptureStop = () => {
+        console.log(`[VoipClient] Audio capture STOP triggered`);
         this.#feeder?.stop();
         this.#feeder = null;
         if (this.#engine && this.#capturePtr) {

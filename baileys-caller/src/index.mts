@@ -117,8 +117,9 @@ export class ActiveCall extends EventEmitter {
   /** @internal — called by VoipClient on WASM call-state change */
   _updateState = (state: number): void => {
     this.#state = state as CallState;
+    console.log(`[VoipClient] Call state updated to: ${state}`);
     if (state === CallState.PreacceptReceived) this.emit("ringing");
-    else if (state === CallState.Active) this.emit("connected");
+    else if (state === CallState.Active || state === CallState.AcceptReceived) this.emit("connected");
     else if (state === CallState.Idle || state === CallState.Ending) {
       this._forceEnd("ended");
     }
@@ -352,6 +353,7 @@ export class VoipClient {
   // ─── private ──────────────────────────────────────────────────────────────
 
   #handleCallEvent = (eventType: number, eventData?: string): void => {
+    console.log(`[VoipClient Event] type=${eventType}, data=${eventData}`);
     if (eventType === 16 && eventData) {
       try {
         const parsed = JSON.parse(eventData);
@@ -382,8 +384,10 @@ export class VoipClient {
   };
 
   #handleAudioCaptureStart = (): void => {
+    console.log(`[VoipClient] Audio capture START triggered! (engine=${!!this.#engine}, ptr=${this.#capturePtr})`);
     if (!this.#engine || !this.#capturePtr) return;
     const audioSource = this.#activeCall?._audioSource ?? "silence";
+    console.log(`[VoipClient] Spawning AudioFeeder with source: ${audioSource}`);
     this.#feeder = new AudioFeeder(
       this.#captureSampleRate,
       this.#captureChannels,
@@ -397,6 +401,7 @@ export class VoipClient {
   };
 
   #handleAudioCaptureStop = (): void => {
+    console.log(`[VoipClient] Audio capture STOP triggered`);
     this.#feeder?.stop();
     this.#feeder = null;
     if (this.#engine && this.#capturePtr) {
