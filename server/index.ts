@@ -2122,6 +2122,7 @@ app.get('/api/whatsapp/groups', async (req, res) => {
 });
 
 // Helper to send group broadcast with attachments and @todos mention
+// Helper to send group broadcast with attachments and separate @todos mention
 async function sendGroupBroadcastMessage(
   sock: any,
   groupId: string,
@@ -2131,18 +2132,7 @@ async function sendGroupBroadcastMessage(
   fileName?: string,
   mentionAll?: boolean
 ) {
-  let mentions: string[] = [];
-  if (mentionAll && sock.groupMetadata) {
-    try {
-      const meta = await sock.groupMetadata(groupId);
-      if (meta && Array.isArray(meta.participants)) {
-        mentions = meta.participants.map((p: any) => p.id);
-      }
-    } catch (e) {
-      console.warn('[Broadcast Mentions Warning]', e);
-    }
-  }
-
+  // 1. Enviar mensagem principal (texto ou mídia)
   if (mediaPath) {
     const fullMediaPath = mediaPath.startsWith('http')
       ? mediaPath
@@ -2154,17 +2144,13 @@ async function sendGroupBroadcastMessage(
       if (mediaType === 'image') {
         await sock.sendMessage(groupId, {
           image: buffer,
-          caption: text || '',
-          mentions: mentions.length > 0 ? mentions : undefined
+          caption: text || ''
         });
-        return;
       } else if (mediaType === 'video') {
         await sock.sendMessage(groupId, {
           video: buffer,
-          caption: text || '',
-          mentions: mentions.length > 0 ? mentions : undefined
+          caption: text || ''
         });
-        return;
       } else if (mediaType === 'audio') {
         await sock.sendMessage(groupId, {
           audio: buffer,
@@ -2172,30 +2158,45 @@ async function sendGroupBroadcastMessage(
           ptt: true
         });
         if (text) {
-          await sock.sendMessage(groupId, {
-            text,
-            mentions: mentions.length > 0 ? mentions : undefined
-          });
+          await sock.sendMessage(groupId, { text });
         }
-        return;
       } else if (mediaType === 'document') {
         await sock.sendMessage(groupId, {
           document: buffer,
           mimetype: 'application/octet-stream',
           fileName: fileName || path.basename(fullMediaPath) || 'documento',
-          caption: text || '',
-          mentions: mentions.length > 0 ? mentions : undefined
+          caption: text || ''
         });
-        return;
       }
     }
+  } else if (text) {
+    await sock.sendMessage(groupId, { text });
   }
 
-  // Pure text fallback
-  await sock.sendMessage(groupId, {
-    text: text || '',
-    mentions: mentions.length > 0 ? mentions : undefined
-  });
+  // 2. Se a opção @todos estiver marcada, aguarda 2 segundos e envia uma mensagem separada '@todos' marcando todos os participantes
+  if (mentionAll) {
+    try {
+      await new Promise(r => setTimeout(r, 2000));
+      let mentions: string[] = [];
+      if (sock.groupMetadata) {
+        try {
+          const meta = await sock.groupMetadata(groupId);
+          if (meta && Array.isArray(meta.participants)) {
+            mentions = meta.participants.map((p: any) => p.id);
+          }
+        } catch (e) {
+          console.warn('[Broadcast Mentions Warning]', e);
+        }
+      }
+      await sock.sendMessage(groupId, {
+        text: '@todos',
+        mentions: mentions.length > 0 ? mentions : undefined
+      });
+      console.log(`[Broadcast] Mensagem separada @todos enviada com sucesso no grupo ${groupId} marcando ${mentions.length} membros.`);
+    } catch (mentionErr) {
+      console.error('[Broadcast @todos Error]', mentionErr);
+    }
+  }
 }
 
 // Disparo em Grupo (Imediato ou Agendado com Mídias e @todos)
@@ -2210,11 +2211,7 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
     return res.status(400).json({ error: 'Informe um texto ou anexe uma mídia para o disparo.' });
   }
 
-  // Ensure @todos tag is included in message text if mentionAll is true
-  let broadcastText = (text || '').trim();
-  if (mentionAll && !broadcastText.includes('@todos')) {
-    broadcastText = broadcastText ? `${broadcastText}\n\n@todos` : '@todos';
-  }
+  const broadcastText = (text || '').trim();
 
   // Se agendado: salvar no banco para disparo futuro
   if (scheduledAt) {

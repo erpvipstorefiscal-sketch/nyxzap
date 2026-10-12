@@ -50,6 +50,7 @@ export const LiveChatManager: React.FC = () => {
   const [broadcastMedia, setBroadcastMedia] = useState<{ url: string; type: 'image' | 'video' | 'audio' | 'document'; fileName: string } | null>(null);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [mentionAll, setMentionAll] = useState(false);
+  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -491,13 +492,6 @@ export const LiveChatManager: React.FC = () => {
 
   const handleToggleMentionAll = (checked: boolean) => {
     setMentionAll(checked);
-    if (checked) {
-      if (!groupMessageText.includes('@todos')) {
-        setGroupMessageText(prev => prev.trim() ? `${prev.trim()}\n\n@todos` : '@todos');
-      }
-    } else {
-      setGroupMessageText(prev => prev.replace(/\n\n@todos|@todos/g, '').trim());
-    }
   };
 
   const handleReuseBroadcast = (b: ScheduledBroadcast) => {
@@ -1004,14 +998,73 @@ export const LiveChatManager: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Sugestão @todos idêntica ao WhatsApp (Foto 2) */}
+                  {showMentionSuggestions && (
+                    <div className="bg-[#181b29] border border-purple-500/50 rounded-2xl p-2 shadow-2xl shadow-purple-900/30 animate-fadeIn">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGroupMessageText(prev => prev.replace(/@\s*$/, '').trim());
+                          setMentionAll(true);
+                          setShowMentionSuggestions(false);
+                        }}
+                        className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-purple-600/20 text-left transition-all border border-transparent hover:border-purple-500/30 group cursor-pointer"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          <Users className="w-5 h-5 text-emerald-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-white">todos</span>
+                            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">
+                              @todos
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 truncate">
+                            Mencione todos os membros do grupo (envio automático 2s após a mensagem)
+                          </p>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Campo de Texto do Comunicado */}
-                  <textarea
-                    rows={4}
-                    placeholder="Digite seu comunicado ou mensagem para o grupo..."
-                    value={groupMessageText}
-                    onChange={(e) => setGroupMessageText(e.target.value)}
-                    className="w-full bg-[#151824] border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none leading-relaxed"
-                  />
+                  <div className="relative">
+                    <textarea
+                      rows={4}
+                      placeholder="Digite seu comunicado ou mensagem para o grupo (digite @ para marcar @todos)..."
+                      value={groupMessageText}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setGroupMessageText(val);
+                        if (val.includes('@')) {
+                          setShowMentionSuggestions(true);
+                        } else {
+                          setShowMentionSuggestions(false);
+                        }
+                      }}
+                      className="w-full bg-[#151824] border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Indicador de @todos ativo */}
+                  {mentionAll && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2 flex items-center justify-between text-xs text-emerald-300">
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <AtSign className="w-4 h-4 text-emerald-400" />
+                        <span>Marcação @todos ativada:</span>
+                        <span className="font-normal text-slate-300">uma nova mensagem "@todos" será enviada 2s após o comunicado marcando todos os membros.</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMentionAll(false)}
+                        className="text-slate-400 hover:text-rose-400 font-bold px-1.5 py-0.5"
+                        title="Desativar marcação @todos"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
 
                   {/* Controles: Marcar @todos e Agendamento */}
                   <div className="bg-[#151824]/60 border border-slate-800 rounded-xl p-3 space-y-3">
@@ -1028,7 +1081,7 @@ export const LiveChatManager: React.FC = () => {
                           <AtSign className="w-3.5 h-3.5 text-emerald-400" />
                           Marcar @todos no grupo
                         </span>
-                        <span className="text-[10px] text-slate-400">(inclui @todos no fim do texto)</span>
+                        <span className="text-[10px] text-slate-400">(disparo 2s após a mensagem)</span>
                       </label>
 
                       {/* Alternador Enviar Agora vs Agendar */}
@@ -1112,14 +1165,15 @@ export const LiveChatManager: React.FC = () => {
                       <Clock className="w-4 h-4 text-purple-400" />
                       Disparos Agendados e Histórico ({scheduledBroadcasts.filter(b => b.groupId === activeGroup.id).length})
                     </h4>
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {scheduledBroadcasts.filter(b => b.groupId === activeGroup.id).map(b => (
                         <div
                           key={b.id}
-                          className="bg-[#151824] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-3"
+                          className="bg-[#151824] border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 flex flex-col gap-2.5 transition-all shadow-sm"
                         >
-                          <div className="space-y-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                          {/* Linha Superior: Status, Data, Badges e Botões na Direita */}
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 b.status === 'pending'
                                   ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
@@ -1133,8 +1187,8 @@ export const LiveChatManager: React.FC = () => {
                                 {new Date(b.scheduledAt).toLocaleString('pt-BR')}
                               </span>
                               {b.mentionAll && (
-                                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                                  @todos
+                                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
+                                  <AtSign className="w-3 h-3" /> todos
                                 </span>
                               )}
                               {b.mediaType && (
@@ -1143,28 +1197,33 @@ export const LiveChatManager: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-slate-300 truncate max-w-lg">
-                              {b.text || (b.fileName ? `Arquivo: ${b.fileName}` : 'Disparo de mídia')}
-                            </p>
+
+                            {/* Botões de Ação na Direita */}
+                            <div className="flex items-center gap-2 ml-auto shrink-0">
+                              <button
+                                onClick={() => handleReuseBroadcast(b)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#1e2235] hover:bg-purple-600/30 text-purple-300 hover:text-white border border-purple-500/30 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                                title="Reaproveitar esta mensagem e reagendar com nova data"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5 text-purple-400" />
+                                <span>Reaproveitar / Reagendar</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteScheduledBroadcast(b.id)}
+                                className="p-1.5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition-all cursor-pointer"
+                                title="Excluir este disparo do histórico"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              onClick={() => handleReuseBroadcast(b)}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-[#1a1d2e] hover:bg-purple-600/25 text-purple-300 hover:text-white border border-purple-500/30 flex items-center gap-1.5 transition-all shadow-sm"
-                              title="Reaproveitar esta mensagem e reagendar com nova data"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5 text-purple-400" />
-                              <span>Reaproveitar / Reagendar</span>
-                            </button>
-
-                            <button
-                              onClick={() => handleDeleteScheduledBroadcast(b.id)}
-                              className="p-1.5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition-all"
-                              title="Excluir este disparo do histórico"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                          {/* Linha Inferior: Conteúdo do Texto / Arquivo */}
+                          <div className="bg-[#0f111a] border border-slate-800/80 rounded-lg p-2.5">
+                            <p className="text-xs text-slate-300 break-words leading-relaxed whitespace-pre-wrap">
+                              {b.text || (b.fileName ? `Arquivo: ${b.fileName}` : 'Disparo de mídia')}
+                            </p>
                           </div>
                         </div>
                       ))}
