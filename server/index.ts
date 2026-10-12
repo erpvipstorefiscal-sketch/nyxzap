@@ -2211,7 +2211,14 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
     return res.status(400).json({ error: 'Informe um texto ou anexe uma mídia para o disparo.' });
   }
 
-  const broadcastText = (text || '').trim();
+  let shouldMentionAll = Boolean(mentionAll);
+  let cleanBroadcastText = (text || '').trim();
+
+  // Se o texto tiver '@todos' ou mentionAll estiver ativo, ativa menção geral e limpa o texto principal
+  if (cleanBroadcastText.includes('@todos') || shouldMentionAll) {
+    shouldMentionAll = true;
+    cleanBroadcastText = cleanBroadcastText.replace(/@todos/gi, '').trim();
+  }
 
   // Se agendado: salvar no banco para disparo futuro
   if (scheduledAt) {
@@ -2220,7 +2227,7 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
       await pool.query(
         `INSERT INTO scheduled_broadcasts (id, group_id, group_name, text, media_path, media_type, file_name, mention_all, scheduled_at, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')`,
-        [broadcastId, groupId, groupName || 'Grupo WhatsApp', broadcastText, mediaPath || null, mediaType || null, fileName || null, Boolean(mentionAll), new Date(scheduledAt)]
+        [broadcastId, groupId, groupName || 'Grupo WhatsApp', cleanBroadcastText, mediaPath || null, mediaType || null, fileName || null, shouldMentionAll, new Date(scheduledAt)]
       );
       return res.json({ 
         success: true, 
@@ -2256,11 +2263,11 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
     await sendGroupBroadcastMessage(
       targetSession.sock,
       groupId,
-      broadcastText,
+      cleanBroadcastText,
       mediaPath,
       mediaType,
       fileName,
-      Boolean(mentionAll)
+      shouldMentionAll
     );
 
     // Salva histórico de envio imediato
@@ -2269,7 +2276,7 @@ app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
       await pool.query(
         `INSERT INTO scheduled_broadcasts (id, group_id, group_name, text, media_path, media_type, file_name, mention_all, scheduled_at, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, 'sent')`,
-        [histId, groupId, groupName || 'Grupo WhatsApp', broadcastText, mediaPath || null, mediaType || null, fileName || null, Boolean(mentionAll)]
+        [histId, groupId, groupName || 'Grupo WhatsApp', cleanBroadcastText, mediaPath || null, mediaType || null, fileName || null, shouldMentionAll]
       );
     } catch (e) {}
 
