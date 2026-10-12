@@ -1721,60 +1721,78 @@ async function executeNodeAction(
         console.error(`[Flow Engine] Erro ao originar chamada:`, voipErr.message);
       }
 
-      // 2. Se o lead NÃO atendeu a ligação, segue o fluxo e dispara o áudio configurado
-      if (!leadAnswered) {
-        console.log(`[Flow Engine] Lead ${targetPhone} não atendeu a ligação (ou expirou ${ringDuration}s). Disparando áudio...`);
-        recordFlowMessageInChat(remoteJid, `📴 [Lead não atendeu após ${ringDuration}s - Enviando áudio no WhatsApp]`);
+      // 2. Envia o áudio gravado configurado como Nota de Voz Oficial (tanto se atendeu quanto se não atendeu)
+      console.log(`[Flow Engine] Ligação com ${targetPhone} concluída (${leadAnswered ? 'lead ATENDEU e chamada foi desligada' : 'lead NÃO atendeu / tempo esgotado'}). Enviando áudio gravado no WhatsApp...`);
+      recordFlowMessageInChat(remoteJid, `📴 [Ligação encerrada (${leadAnswered ? 'atendida' : 'não atendeu'}) - Enviando áudio no WhatsApp]`);
 
-        if (fullAudioUrl && (fs.existsSync(fullAudioUrl) || fullAudioUrl.startsWith('http'))) {
-          try {
-            await sock.sendPresenceUpdate('recording', remoteJid);
-            await new Promise(r => setTimeout(r, 1500));
-            await sock.sendPresenceUpdate('paused', remoteJid);
+      // Busca o arquivo de áudio no disco em múltiplos locais possíveis
+      let resolvedAudioBuffer: Buffer | null = null;
+      if (fullAudioUrl && fs.existsSync(fullAudioUrl)) {
+        try { resolvedAudioBuffer = fs.readFileSync(fullAudioUrl); } catch {}
+      } else if (audioPath) {
+        const directName = path.basename(audioPath);
+        const p1 = path.join(process.cwd(), 'uploads', directName);
+        const p2 = path.join(uploadsDir, directName);
+        const p3 = path.join(process.cwd(), audioPath.replace(/^\//, ''));
+        if (fs.existsSync(p1)) {
+          try { resolvedAudioBuffer = fs.readFileSync(p1); } catch {}
+        } else if (fs.existsSync(p2)) {
+          try { resolvedAudioBuffer = fs.readFileSync(p2); } catch {}
+        } else if (fs.existsSync(p3)) {
+          try { resolvedAudioBuffer = fs.readFileSync(p3); } catch {}
+        }
+      }
 
-            let audioBuffer: Buffer;
-            if (fullAudioUrl.startsWith('http')) {
-              const resp = await fetch(fullAudioUrl);
-              const arrayBuf = await resp.arrayBuffer();
-              audioBuffer = Buffer.from(arrayBuf);
-            } else {
-              audioBuffer = fs.readFileSync(fullAudioUrl);
-            }
-
-            let finalAudioBuffer = audioBuffer;
-            let mimetype = 'audio/ogg; codecs=opus';
-
-            try {
-              if (!fullAudioUrl.endsWith('.ogg') && !fullAudioUrl.endsWith('.opus')) {
-                const tempInput = path.join(process.cwd(), 'uploads', `temp_in_${Date.now()}_${Math.floor(Math.random()*1000)}.bin`);
-                const tempOutput = path.join(process.cwd(), 'uploads', `temp_out_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
-                fs.writeFileSync(tempInput, audioBuffer);
-                execSync(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 32k -vbr on "${tempOutput}"`, { timeout: 8000 });
-                if (fs.existsSync(tempOutput) && fs.statSync(tempOutput).size > 0) {
-                  finalAudioBuffer = fs.readFileSync(tempOutput);
-                  try { fs.unlinkSync(tempOutput); } catch {}
-                }
-                try { fs.unlinkSync(tempInput); } catch {}
-              }
-            } catch (ffmpegErr: any) {
-              console.warn('[Flow Engine] Falha na conversão ffmpeg, enviando arquivo original:', ffmpegErr.message);
-              mimetype = 'audio/mp4';
-            }
-
-            await sock.sendMessage(remoteJid, {
-              audio: finalAudioBuffer,
-              mimetype,
-              ptt: true // Nota de voz gravada oficial (bolinha verde)
-            });
-
-            recordFlowMessageInChat(remoteJid, `🎤 [Nota de voz enviada para o lead]`);
-            console.log(`[Flow Engine] Áudio gravado enviado com sucesso para ${remoteJid}`);
-          } catch (audioSendErr: any) {
-            console.error(`[Flow Engine] Falha no envio do áudio pós-chamada:`, audioSendErr);
+      if (!resolvedAudioBuffer && fullAudioUrl && fullAudioUrl.startsWith('http')) {
+        try {
+          const resp = await fetch(fullAudioUrl);
+          if (resp.ok) {
+            const arrayBuf = await resp.arrayBuffer();
+            resolvedAudioBuffer = Buffer.from(arrayBuf);
           }
+        } catch (fetchErr: any) {
+          console.warn('[Flow Engine] Erro ao baixar áudio da URL:', fetchErr.message);
+        }
+      }
+
+      if (resolvedAudioBuffer && resolvedAudioBuffer.length > 0) {
+        try {
+          await sock.sendPresenceUpdate('recording', remoteJid);
+          await new Promise(r => setTimeout(r, 1500));
+          await sock.sendPresenceUpdate('paused', remoteJid);
+
+          let finalAudioBuffer = resolvedAudioBuffer;
+          let mimetype = 'audio/mp4';
+
+          try {
+            const tempInput = path.join(uploadsDir, `temp_in_${Date.now()}_${Math.floor(Math.random()*1000)}.bin`);
+            const tempOutput = path.join(uploadsDir, `temp_out_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
+            fs.writeFileSync(tempInput, resolvedAudioBuffer);
+            execSync(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 32k -vbr on "${tempOutput}"`, { timeout: 8000 });
+            if (fs.existsSync(tempOutput) && fs.statSync(tempOutput).size > 0) {
+              finalAudioBuffer = fs.readFileSync(tempOutput);
+              mimetype = 'audio/ogg; codecs=opus';
+              try { fs.unlinkSync(tempOutput); } catch {}
+            }
+            try { fs.unlinkSync(tempInput); } catch {}
+          } catch (ffmpegErr: any) {
+            console.warn('[Flow Engine] ffmpeg indisponível ou falhou na conversão, enviando nativo mp4:', ffmpegErr.message);
+            mimetype = 'audio/mp4';
+          }
+
+          await sock.sendMessage(remoteJid, {
+            audio: finalAudioBuffer,
+            mimetype,
+            ptt: true // Nota de voz gravada oficial (microfone verde)
+          });
+
+          recordFlowMessageInChat(remoteJid, `🎤 [Nota de voz enviada para o lead]`);
+          console.log(`[Flow Engine] Áudio gravado enviado com sucesso para ${remoteJid}`);
+        } catch (audioSendErr: any) {
+          console.error(`[Flow Engine] Falha no envio do áudio pós-chamada:`, audioSendErr);
         }
       } else {
-        console.log(`[Flow Engine] Lead atendeu a ligação e foi desligado. Fluxo de chamada concluído com sucesso.`);
+        console.warn(`[Flow Engine] Nenhum arquivo de áudio encontrado para o card ligação (${audioPath || 'sem áudio'})`);
       }
     } else if (node.type === 'audio') {
       const audioPath = node.data?.fileUrl || node.data?.audioUrl;

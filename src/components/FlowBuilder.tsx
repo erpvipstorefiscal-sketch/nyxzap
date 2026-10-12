@@ -2725,7 +2725,7 @@ export const FlowBuilder: React.FC = () => {
                               2. Se ele <strong>atender</strong>, o robô desliga imediatamente a ligação.
                             </p>
                             <p>
-                              3. Se ele <strong>não atender</strong>, segue o fluxo e entrega o áudio gravado no WhatsApp.
+                              3. Em ambos os casos (<strong>se atender ou não atender</strong>), entrega o áudio gravado no WhatsApp como nota de voz oficial (bolinha verde).
                             </p>
                           </div>
                         </div>
