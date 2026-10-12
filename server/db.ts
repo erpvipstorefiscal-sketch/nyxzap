@@ -82,11 +82,68 @@ const mockData = {
       plan_p2: 'https://pay.cakto.com.br/nyxzap-pro',
       plan_p3: 'https://pay.cakto.com.br/nyxzap-enterprise'
     }
-  }
+  },
+  flow_definitions: [] as any[]
 };
 
 function executeMockQuery(sql: string, params?: any[]) {
   const upperSql = sql.toUpperCase();
+
+  if (upperSql.includes('FLOW_DEFINITIONS')) {
+    if (upperSql.includes('DELETE FROM')) {
+      const targetId = params?.[0];
+      if (targetId) {
+        mockData.flow_definitions = mockData.flow_definitions.filter(f => f.id !== targetId);
+      }
+      return { rows: [], rowCount: 1 };
+    }
+    if (upperSql.includes('INSERT INTO') || upperSql.includes('ON CONFLICT')) {
+      const flowId = params?.[0];
+      const name = params?.[1] || 'Fluxo';
+      const description = params?.[2] || '';
+      const active = params?.[3] !== false;
+      let nodes = [];
+      let edges = [];
+      try {
+        nodes = typeof params?.[4] === 'string' ? JSON.parse(params[4]) : (params?.[4] || []);
+        edges = typeof params?.[5] === 'string' ? JSON.parse(params[5]) : (params?.[5] || []);
+      } catch (e) {}
+      const existingIdx = mockData.flow_definitions.findIndex(f => f.id === flowId);
+      const flowItem = {
+        id: flowId,
+        user_id: 'default',
+        name,
+        description,
+        active,
+        execution_count: 0,
+        nodes,
+        edges,
+        updated_at: new Date()
+      };
+      if (existingIdx >= 0) {
+        mockData.flow_definitions[existingIdx] = flowItem;
+      } else {
+        mockData.flow_definitions.push(flowItem);
+      }
+      return { rows: [flowItem], rowCount: 1 };
+    }
+    if (upperSql.includes('UPDATE')) {
+      if (upperSql.includes('SET NAME =')) {
+        const name = params?.[0];
+        const description = params?.[1];
+        const active = params?.[2];
+        const id = params?.[3];
+        const target = mockData.flow_definitions.find(f => f.id === id);
+        if (target) {
+          if (name !== undefined && name !== null) target.name = name;
+          if (description !== undefined && description !== null) target.description = description;
+          if (active !== undefined && active !== null) target.active = active;
+        }
+      }
+      return { rows: [], rowCount: 1 };
+    }
+    return { rows: mockData.flow_definitions, rowCount: mockData.flow_definitions.length };
+  }
 
   if (upperSql.includes('FROM USERS')) {
     if (upperSql.includes('WHERE EMAIL =') || upperSql.includes('WHERE LOWER(EMAIL) =')) {

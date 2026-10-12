@@ -1771,33 +1771,33 @@ async function executeNodeAction(
             }
 
             // Enviar mensagem de boas-vindas DENTRO DO GRUPO marcando o lead com @
-            const firstName = (senderName || 'Amigo').split(' ')[0];
-            const leadMentionTag = `@${cleanPhone}`;
-
-            let welcomeMsg = '';
-            if (node.data?.welcomeMessage) {
-              let custom = replaceVariables(node.data.welcomeMessage);
-              // Garante a menção oficial do WhatsApp @[numero] associada ao nome do lead
-              if (!custom.includes(leadMentionTag)) {
-                if (custom.toLowerCase().includes(firstName.toLowerCase())) {
-                  custom = custom.replace(new RegExp(firstName, 'i'), `${leadMentionTag} (${firstName})`);
-                } else {
-                  custom = `Olá ${leadMentionTag} (${firstName})!\n\n${custom}`;
-                }
-              }
-              welcomeMsg = custom;
-            } else {
-              welcomeMsg = `Olá ${leadMentionTag} (${firstName})! Seja muito bem-vindo(a) ao seu grupo exclusivo *${groupSubject}*! 🎉`;
-            }
-
             try {
-              // Envia diretamente DENTRO do grupo recém-criado mencionando o participante
+              const firstNameClean = (senderName || 'Amigo').split(' ')[0].replace(/[^\w\sÀ-ÿ]/gi, '').trim() || 'Amigo';
+              const leadMentionTag = `@${cleanPhone}`;
+
+              let welcomeMsg = '';
+              if (node.data?.welcomeMessage) {
+                let custom = replaceVariables(node.data.welcomeMessage);
+                if (!custom.includes(leadMentionTag)) {
+                  welcomeMsg = `Olá ${leadMentionTag} (${firstNameClean})!\n\n${custom}`;
+                } else {
+                  welcomeMsg = custom;
+                }
+              } else {
+                welcomeMsg = `Olá ${leadMentionTag} (${firstNameClean})! Seja muito bem-vindo(a) ao seu grupo exclusivo *${groupSubject}*! 🎉`;
+              }
+
+              const validMentions = candidateParticipants.filter(p => typeof p === 'string' && p.includes('@'));
+
+              // Aguarda 1.2s para garantir que os servidores do WhatsApp propaguem a lista de membros no grupo
+              await new Promise(r => setTimeout(r, 1200));
+
               await targetSock.sendMessage(groupRes.id, {
                 text: welcomeMsg,
-                mentions: candidateParticipants
+                mentions: validMentions
               });
-              console.log(`[Flow Engine] Mensagem de boas-vindas enviada DENTRO do grupo ${groupRes.id} marcando @${cleanPhone} (${firstName})`);
-              recordFlowMessageInChat(remoteJid, `👥 [Boas-vindas enviada no grupo '${groupSubject}' marcando @${firstName}]`);
+              console.log(`[Flow Engine] Mensagem de boas-vindas enviada DENTRO do grupo ${groupRes.id} marcando @${cleanPhone} (${firstNameClean})`);
+              recordFlowMessageInChat(remoteJid, `👥 [Boas-vindas enviada no grupo '${groupSubject}' marcando @${firstNameClean}]`);
             } catch (msgErr: any) {
               console.warn('[Flow Engine] Erro ao enviar mensagem de boas-vindas dentro do grupo:', msgErr.message);
             }
@@ -2243,41 +2243,24 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
 app.get('/api/flows', async (_req, res) => {
   try {
     const result = await pool.query('SELECT id, name, description, active, execution_count, nodes, edges, updated_at FROM flow_definitions ORDER BY updated_at DESC');
-    if (result.rows.length > 0) {
-      return res.json({
-        success: true,
-        flows: result.rows.map(r => ({
-          id: r.id,
-          name: r.name || 'Fluxo Principal',
-          description: r.description || '',
-          active: r.active !== false,
-          executionCount: parseInt(r.execution_count, 10) || 0,
-          nodes: r.nodes || [],
-          edges: r.edges || [],
-          nodeCount: Array.isArray(r.nodes) ? r.nodes.length : 0,
-          updatedAt: r.updated_at
-        }))
-      });
-    }
+    return res.json({
+      success: true,
+      flows: result.rows.map(r => ({
+        id: r.id,
+        name: r.name || 'Fluxo',
+        description: r.description || '',
+        active: r.active !== false,
+        executionCount: parseInt(r.execution_count, 10) || 0,
+        nodes: r.nodes || [],
+        edges: r.edges || [],
+        nodeCount: Array.isArray(r.nodes) ? r.nodes.length : 0,
+        updatedAt: r.updated_at
+      }))
+    });
   } catch (err: any) {
     console.error('[Flows List Error]', err);
+    res.json({ success: true, flows: [] });
   }
-
-  // Default fallback flow
-  res.json({
-    success: true,
-    flows: [{
-      id: 'default',
-      name: 'Fluxo Principal de Vendas',
-      description: 'Gatilhos de WhatsApp, IA, Mídias diretas do PC e Conexões Inteligentes.',
-      active: activeFlow.active,
-      executionCount: activeFlow.execution_count || 0,
-      nodes: activeFlow.nodes,
-      edges: activeFlow.edges,
-      nodeCount: activeFlow.nodes.length,
-      updatedAt: new Date().toISOString()
-    }]
-  });
 });
 
 // Update flow metadata (nome, descrição, pausar/ativar)
@@ -2350,19 +2333,34 @@ app.delete('/api/flows/:id', async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query('DELETE FROM flow_definitions WHERE id = $1', [id]);
+    if (activeFlow.id === id) {
+      activeFlow = {
+        id: '',
+        name: '',
+        description: '',
+        active: false,
+        execution_count: 0,
+        nodes: [],
+        edges: []
+      };
+    }
+    console.log(`[Flow Engine] Fluxo '${id}' excluído permanentemente do banco de dados.`);
     res.json({ success: true, message: 'Fluxo excluído com sucesso!' });
   } catch (err: any) {
-    res.json({ success: true });
+    console.error('[Flow Delete Error]', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Single active flow backwards compatibility
 app.get('/api/flow', async (_req, res) => {
   try {
-    const result = await pool.query('SELECT nodes, edges, active FROM flow_definitions WHERE id = $1', ['default']);
+    const result = await pool.query('SELECT id, name, nodes, edges, active FROM flow_definitions WHERE active = true ORDER BY updated_at DESC LIMIT 1');
     if (result.rows.length > 0) {
       return res.json({
         success: true,
+        id: result.rows[0].id,
+        name: result.rows[0].name,
         active: result.rows[0].active !== false,
         nodes: result.rows[0].nodes || [],
         edges: result.rows[0].edges || []
@@ -2385,10 +2383,15 @@ app.get('/api/flow', async (_req, res) => {
 });
 
 app.post('/api/flow', async (req, res) => {
-  const { nodes, edges, active } = req.body;
+  const { id, nodes, edges, active } = req.body;
+  const targetId = id || (activeFlow.id && activeFlow.id !== 'default' ? activeFlow.id : null);
+  if (!targetId) {
+    return res.json({ success: true, message: 'Nenhum fluxo selecionado para sincronizar.' });
+  }
   try {
     activeFlow = {
       ...activeFlow,
+      id: targetId,
       active: active !== undefined ? Boolean(active) : true,
       nodes: Array.isArray(nodes) ? nodes : activeFlow.nodes,
       edges: Array.isArray(edges) ? edges : activeFlow.edges
@@ -2396,16 +2399,16 @@ app.post('/api/flow', async (req, res) => {
 
     await pool.query(
       `INSERT INTO flow_definitions (id, user_id, active, nodes, edges, updated_at)
-       VALUES ('default', 'default', $1, $2, $3, CURRENT_TIMESTAMP)
+       VALUES ($1, 'default', $2, $3, $4, CURRENT_TIMESTAMP)
        ON CONFLICT (id) DO UPDATE SET
          active = EXCLUDED.active,
          nodes = EXCLUDED.nodes,
          edges = EXCLUDED.edges,
          updated_at = CURRENT_TIMESTAMP`,
-      [activeFlow.active, JSON.stringify(activeFlow.nodes), JSON.stringify(activeFlow.edges)]
+      [targetId, activeFlow.active, JSON.stringify(activeFlow.nodes), JSON.stringify(activeFlow.edges)]
     );
 
-    console.log(`[Flow Engine] Fluxo atualizado com sucesso no banco de dados (${activeFlow.nodes.length} nós)!`);
+    console.log(`[Flow Engine] Fluxo '${targetId}' atualizado com sucesso no banco de dados (${activeFlow.nodes.length} nós)!`);
     res.json({ success: true, message: 'Fluxo salvo com sucesso e ativo para novos disparos!' });
   } catch (err: any) {
     console.error('[Flow Save Error]', err);

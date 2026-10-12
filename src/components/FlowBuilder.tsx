@@ -199,19 +199,7 @@ export interface FlowSummary {
 
 export const FlowBuilder: React.FC = () => {
   // Multi-flow state
-  const [flowsList, setFlowsList] = useState<FlowSummary[]>([
-    {
-      id: 'default',
-      name: 'Fluxo Principal de Vendas',
-      description: 'Funil inteligente com mensagem inicial, gatilho por palavra-chave e respostas automáticas.',
-      active: true,
-      executionCount: 12,
-      nodeCount: INITIAL_NODES.length,
-      nodes: INITIAL_NODES,
-      edges: INITIAL_EDGES,
-      updatedAt: new Date().toISOString()
-    }
-  ]);
+  const [flowsList, setFlowsList] = useState<FlowSummary[]>([]);
   const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
   const [currentFlowName, setCurrentFlowName] = useState<string>('Fluxo Principal');
   const [currentFlowDesc, setCurrentFlowDesc] = useState<string>('');
@@ -242,34 +230,11 @@ export const FlowBuilder: React.FC = () => {
     try {
       const res = await fetch('/api/flows');
       const data = await res.json();
-      if (data.success && Array.isArray(data.flows) && data.flows.length > 0) {
+      if (data.success && Array.isArray(data.flows)) {
         setFlowsList(data.flows);
-      } else {
-        setFlowsList([{
-          id: 'default',
-          name: 'Fluxo Principal de Vendas',
-          description: 'Funil inteligente com mensagem inicial, gatilho por palavra-chave e respostas automáticas.',
-          active: true,
-          executionCount: 12,
-          nodeCount: INITIAL_NODES.length,
-          nodes: INITIAL_NODES,
-          edges: INITIAL_EDGES,
-          updatedAt: new Date().toISOString()
-        }]);
       }
     } catch (err) {
       console.error('[FlowBuilder] Erro ao buscar lista de fluxos:', err);
-      setFlowsList([{
-        id: 'default',
-        name: 'Fluxo Principal de Vendas',
-        description: 'Funil inteligente com mensagem inicial, gatilho por palavra-chave e respostas automáticas.',
-        active: true,
-        executionCount: 12,
-        nodeCount: INITIAL_NODES.length,
-        nodes: INITIAL_NODES,
-        edges: INITIAL_EDGES,
-        updatedAt: new Date().toISOString()
-      }]);
     } finally {
       setIsLoadingFlows(false);
     }
@@ -620,18 +585,6 @@ export const FlowBuilder: React.FC = () => {
         body: JSON.stringify(payload)
       });
 
-      // Also sync active flow to /api/flow
-      await fetch('/api/flow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: flowId,
-          nodes,
-          edges,
-          active: flowActive
-        })
-      });
-
       setSaveSuccess(true);
       fetchFlows();
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -708,11 +661,14 @@ export const FlowBuilder: React.FC = () => {
     if (!confirmed) return;
 
     try {
-      await fetch(`/api/flows/${flowId}`, { method: 'DELETE' });
-      await fetchFlows();
+      localStorage.removeItem(`nyxzap_flow_${flowId}_nodes`);
+      localStorage.removeItem(`nyxzap_flow_${flowId}_edges`);
+      setFlowsList(prev => prev.filter(f => f.id !== flowId));
       if (activeFlowId === flowId) {
         setActiveFlowId(null);
       }
+      await fetch(`/api/flows/${flowId}`, { method: 'DELETE' });
+      await fetchFlows();
     } catch (err) {
       console.error('Erro ao excluir fluxo:', err);
     }
