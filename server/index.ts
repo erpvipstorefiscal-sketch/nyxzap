@@ -2074,6 +2074,77 @@ app.get('/api/chats', (req, res) => {
   res.json(validChats);
 });
 
+// Helper to resolve real phone numbers for group participants (resolving LIDs to real numbers)
+async function resolveGroupParticipants(sock: any, participants: any[]): Promise<Array<{ id: string; phone: string; admin: any }>> {
+  if (!Array.isArray(participants)) return [];
+  const result: Array<{ id: string; phone: string; admin: any }> = [];
+  const lidToResolve: string[] = [];
+
+  for (const p of participants) {
+    let phone = '';
+    const id = p.id || '';
+    
+    // 1. Check if phoneNumber is provided directly by Baileys/WhatsApp
+    if (p.phoneNumber) {
+      phone = String(p.phoneNumber).split('@')[0].split(':')[0].replace(/\D/g, '');
+    } else if (id.endsWith('@s.whatsapp.net')) {
+      phone = id.split('@')[0].split(':')[0].replace(/\D/g, '');
+    } else if (id.endsWith('@lid')) {
+      lidToResolve.push(id);
+    } else if (id && !id.includes('@')) {
+      phone = id.split(':')[0].replace(/\D/g, '');
+    }
+
+    result.push({
+      id,
+      phone,
+      admin: p.admin || null
+    });
+  }
+
+  // 2. If there are LIDs, attempt batch resolution via signalRepository lidMapping
+  if (lidToResolve.length > 0 && sock?.signalRepository?.lidMapping?.getPNsForLIDs) {
+    try {
+      const resolvedPairs = await sock.signalRepository.lidMapping.getPNsForLIDs(lidToResolve);
+      if (Array.isArray(resolvedPairs)) {
+        const lidMap = new Map<string, string>();
+        for (const pair of resolvedPairs) {
+          if (pair?.lid && pair?.pn) {
+            const cleanPn = String(pair.pn).split('@')[0].split(':')[0].replace(/\D/g, '');
+            lidMap.set(pair.lid, cleanPn);
+            lidMap.set(pair.lid.split('@')[0], cleanPn);
+          }
+        }
+        for (const item of result) {
+          if (!item.phone && item.id) {
+            const mapped = lidMap.get(item.id) || lidMap.get(item.id.split('@')[0]);
+            if (mapped) item.phone = mapped;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[LID Mapping Batch Error]', e);
+    }
+  }
+
+  // 3. Fallback: Check liveChats for any participant whose customerPhone is known
+  for (const item of result) {
+    if (!item.phone && item.id) {
+      const lidClean = item.id.split('@')[0];
+      const matchChat = liveChats.find(c => 
+        c.remoteJid === item.id || 
+        c.id === item.id || 
+        (c.customerPhone && c.customerPhone !== lidClean && (c.remoteJid?.includes(lidClean) || c.id?.includes(lidClean)))
+      );
+      if (matchChat && matchChat.customerPhone && !matchChat.customerPhone.startsWith('175') && matchChat.customerPhone.length >= 8) {
+        item.phone = matchChat.customerPhone.replace(/\D/g, '');
+      }
+    }
+  }
+
+  return result;
+}
+
 // Endpoint para buscar grupos do WhatsApp conectado
 app.get('/api/whatsapp/groups', async (req, res) => {
   const { sessionId } = req.query;
@@ -2101,23 +2172,86 @@ app.get('/api/whatsapp/groups', async (req, res) => {
 
   try {
     const rawGroups = await targetSession.sock.groupFetchAllParticipating();
-    const groups = Object.values(rawGroups).map((g: any) => ({
-      id: g.id,
-      name: g.subject || 'Grupo sem nome',
-      participantsCount: Array.isArray(g.participants) ? g.participants.length : 0,
-      desc: g.desc || '',
-      owner: g.owner || '',
-      participants: Array.isArray(g.participants) ? g.participants.map((p: any) => ({
-        id: p.id,
-        phone: p.id ? p.id.split('@')[0] : '',
-        admin: p.admin || null
-      })) : []
+    const groupsList = Object.values(rawGroups);
+    const groups = await Promise.all(groupsList.map(async (g: any) => {
+      const resolvedParticipants = await resolveGroupParticipants(targetSession?.sock, g.participants || []);
+      return {
+        id: g.id,
+        name: g.subject || 'Grupo sem nome',
+        participantsCount: Array.isArray(g.participants) ? g.participants.length : 0,
+        desc: g.desc || '',
+        owner: g.owner || '',
+        participants: resolvedParticipants
+      };
     }));
 
     res.json({ success: true, sessionId: targetSession.id, groups });
   } catch (err: any) {
     console.error('[WhatsApp Groups Error]', err);
     res.status(500).json({ success: false, groups: [], error: 'Erro ao buscar grupos: ' + err.message });
+  }
+});
+
+// Endpoint dedicado para extração de contatos reais do grupo com metadata interativa
+app.get('/api/whatsapp/groups/:groupId/contacts', async (req, res) => {
+  const { groupId } = req.params;
+  const sessionId = req.query.sessionId as string;
+  let targetSession: SessionData | undefined;
+
+  if (sessionId && typeof sessionId === 'string') {
+    targetSession = sessions.get(sessionId);
+  }
+  if (!targetSession || !targetSession.sock || targetSession.status !== 'connected') {
+    for (const s of sessions.values()) {
+      if (s.status === 'connected' && s.sock) {
+        targetSession = s;
+        break;
+      }
+    }
+  }
+
+  if (!targetSession || !targetSession.sock || targetSession.status !== 'connected') {
+    return res.status(400).json({ success: false, error: 'Nenhum WhatsApp conectado para extrair os contatos.' });
+  }
+
+  try {
+    const sock = targetSession.sock;
+    // groupMetadata dispara consulta interativa que traz os atributos detalhados de cada participante (incluindo phone_number)
+    const metadata = await sock.groupMetadata(groupId);
+    const participants = metadata.participants || [];
+    const resolved = await resolveGroupParticipants(sock, participants);
+
+    // Filtrar apenas números de telefone válidos (descartar LIDs não resolvidos como 175...)
+    const validPhones: string[] = [];
+    const contacts: any[] = [];
+
+    for (const p of resolved) {
+      const ph = p.phone ? p.phone.replace(/\D/g, '') : '';
+      // Um número de telefone real geralmente tem entre 9 e 15 dígitos e não é um LID puro de 15/16 dígitos desconhecido
+      if (ph && ph.length >= 8 && ph.length <= 15) {
+        // Se for 15+ dígitos começando com 175 (padrão de LID Baileys), ignorar se for LID cru
+        if (ph.startsWith('175') && ph.length >= 15) {
+          continue;
+        }
+        if (!validPhones.includes(ph)) {
+          validPhones.push(ph);
+        }
+        contacts.push({ phone: ph, id: p.id, admin: p.admin });
+      }
+    }
+
+    res.json({
+      success: true,
+      groupId,
+      groupName: metadata.subject || 'Grupo',
+      totalParticipants: participants.length,
+      extractedCount: validPhones.length,
+      phones: validPhones,
+      contacts
+    });
+  } catch (err: any) {
+    console.error('[Group Contacts Extraction Error]', err);
+    res.status(500).json({ success: false, error: 'Erro ao extrair contatos do grupo: ' + err.message });
   }
 });
 

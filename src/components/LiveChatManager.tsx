@@ -53,6 +53,7 @@ export const LiveChatManager: React.FC = () => {
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
+  const [isExtractingContacts, setIsExtractingContacts] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Follow-up CRM state
@@ -456,38 +457,83 @@ export const LiveChatManager: React.FC = () => {
     }
   };
 
-  const handleExportContacts = (group: WhatsAppGroup) => {
-    const participants = group.participants || [];
-    let lines = [
-      `# NyxZap - Contatos Extraídos do Grupo`,
-      `# Nome do Grupo: ${group.name}`,
-      `# ID do Grupo: ${group.id}`,
-      `# Total de Participantes: ${participants.length}`,
-      `# Data de Extração: ${new Date().toLocaleString('pt-BR')}`,
-      `# ----------------------------------------------------`,
-      ``
-    ];
+  const handleExportContacts = async (group: WhatsAppGroup) => {
+    setIsExtractingContacts(true);
+    try {
+      // 1. Consultar endpoint com metadata interativa e resolução reversa de LID para número real
+      const res = await fetch(`/api/whatsapp/groups/${encodeURIComponent(group.id)}/contacts`);
+      const data = await res.json();
 
-    if (participants.length === 0) {
-      lines.push(`# Nenhum participante detalhado encontrado no cache.`);
-    } else {
-      participants.forEach(p => {
-        const num = p.phone || p.id.split('@')[0];
-        lines.push(`+${num}`);
+      let phoneNumbers: string[] = [];
+
+      if (data.success && Array.isArray(data.phones) && data.phones.length > 0) {
+        phoneNumbers = data.phones;
+      } else {
+        // Fallback: usar participantes locais caso o endpoint falhe
+        const participants = group.participants || [];
+        phoneNumbers = participants
+          .map(p => {
+            const raw = p.phone || (p.id?.endsWith('@s.whatsapp.net') ? p.id.split('@')[0] : '');
+            return raw.replace(/\D/g, '');
+          })
+          .filter(p => p.length >= 8 && !p.startsWith('175')); // evita LIDs internos do Baileys
+      }
+
+      // Remover duplicados e manter somente números válidos
+      const uniquePhones = Array.from(new Set(phoneNumbers)).filter(
+        num => num.length >= 8 && !(num.startsWith('175') && num.length >= 15)
+      );
+
+      if (uniquePhones.length === 0) {
+        await alertDialog({
+          title: 'Nenhum Número Identificado',
+          message: 'Não foi possível extrair números de telefone válidos para este grupo (os membros podem estar com privacidade de número oculta ou o WhatsApp ainda não sincronizou os dados).',
+          variant: 'danger',
+          confirmText: 'OK'
+        });
+        return;
+      }
+
+      const lines = [
+        `# NyxZap - Contatos Extraídos do Grupo`,
+        `# Nome do Grupo: ${group.name}`,
+        `# ID do Grupo: ${group.id}`,
+        `# Total de Telefones Extraídos: ${uniquePhones.length}`,
+        `# Data de Extração: ${new Date().toLocaleString('pt-BR')}`,
+        `# ----------------------------------------------------`,
+        ``,
+        ...uniquePhones.map(num => `+${num}`)
+      ];
+
+      const content = lines.join('\n');
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeName = group.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+      link.download = `contatos_${safeName}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      await alertDialog({
+        title: 'Contatos Extraídos com Sucesso!',
+        message: `${uniquePhones.length} número(s) de telefone reais foram extraídos e salvos no arquivo TXT.`,
+        variant: 'success',
+        confirmText: 'OK'
       });
+    } catch (err: any) {
+      console.error('[Export Contacts Error]', err);
+      await alertDialog({
+        title: 'Erro na Extração',
+        message: 'Falha ao buscar participantes do grupo: ' + (err.message || err),
+        variant: 'danger',
+        confirmText: 'OK'
+      });
+    } finally {
+      setIsExtractingContacts(false);
     }
-
-    const content = lines.join('\n');
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    const safeName = group.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
-    link.download = `contatos_${safeName}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const handleToggleMentionAll = (checked: boolean) => {
@@ -832,11 +878,12 @@ export const LiveChatManager: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleExportContacts(activeGroup)}
-                    className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-emerald-600/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/25 transition-all shadow-sm"
+                    disabled={isExtractingContacts}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-emerald-600/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/25 transition-all shadow-sm disabled:opacity-50"
                     title="Exportar todos os números dos participantes deste grupo em formato .TXT"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Extrair Contatos (.TXT)</span>
+                    <Download className={`w-3.5 h-3.5 ${isExtractingContacts ? 'animate-bounce' : ''}`} />
+                    <span>{isExtractingContacts ? 'Extraindo Contatos...' : 'Extrair Contatos (.TXT)'}</span>
                   </button>
 
                   <button
