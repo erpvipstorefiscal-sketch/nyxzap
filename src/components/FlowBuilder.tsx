@@ -199,7 +199,19 @@ export interface FlowSummary {
 
 export const FlowBuilder: React.FC = () => {
   // Multi-flow state
-  const [flowsList, setFlowsList] = useState<FlowSummary[]>([]);
+  const [flowsList, setFlowsList] = useState<FlowSummary[]>([
+    {
+      id: 'default',
+      name: 'Fluxo Principal de Vendas',
+      description: 'Funil inteligente com mensagem inicial, gatilho por palavra-chave e respostas automáticas.',
+      active: true,
+      executionCount: 12,
+      nodeCount: INITIAL_NODES.length,
+      nodes: INITIAL_NODES,
+      edges: INITIAL_EDGES,
+      updatedAt: new Date().toISOString()
+    }
+  ]);
   const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
   const [currentFlowName, setCurrentFlowName] = useState<string>('Fluxo Principal');
   const [currentFlowDesc, setCurrentFlowDesc] = useState<string>('');
@@ -230,11 +242,34 @@ export const FlowBuilder: React.FC = () => {
     try {
       const res = await fetch('/api/flows');
       const data = await res.json();
-      if (data.success && Array.isArray(data.flows)) {
+      if (data.success && Array.isArray(data.flows) && data.flows.length > 0) {
         setFlowsList(data.flows);
+      } else {
+        setFlowsList([{
+          id: 'default',
+          name: 'Fluxo Principal de Vendas',
+          description: 'Funil inteligente com mensagem inicial, gatilho por palavra-chave e respostas automáticas.',
+          active: true,
+          executionCount: 12,
+          nodeCount: INITIAL_NODES.length,
+          nodes: INITIAL_NODES,
+          edges: INITIAL_EDGES,
+          updatedAt: new Date().toISOString()
+        }]);
       }
     } catch (err) {
       console.error('[FlowBuilder] Erro ao buscar lista de fluxos:', err);
+      setFlowsList([{
+        id: 'default',
+        name: 'Fluxo Principal de Vendas',
+        description: 'Funil inteligente com mensagem inicial, gatilho por palavra-chave e respostas automáticas.',
+        active: true,
+        executionCount: 12,
+        nodeCount: INITIAL_NODES.length,
+        nodes: INITIAL_NODES,
+        edges: INITIAL_EDGES,
+        updatedAt: new Date().toISOString()
+      }]);
     } finally {
       setIsLoadingFlows(false);
     }
@@ -1047,13 +1082,13 @@ export const FlowBuilder: React.FC = () => {
         {/* Top Header Dashboard */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0d0f18] p-5 rounded-2xl border border-slate-800/80 shadow-xl">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-600/30">
-              <Workflow className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-xl bg-surface-card border border-white/10 flex items-center justify-center text-white shadow-subtle">
+              <Workflow className="w-5 h-5 text-indigo-400" />
             </div>
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-black text-white">Fluxos de Automação</h1>
-                <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 font-bold">
+                <h1 className="text-xl font-bold text-white tracking-tight">Fluxos de Automação</h1>
+                <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] text-slate-300 border border-white/10 font-medium">
                   {flowsList.length} {flowsList.length === 1 ? 'Fluxo' : 'Fluxos'}
                 </span>
               </div>
@@ -1071,13 +1106,13 @@ export const FlowBuilder: React.FC = () => {
                 placeholder="Buscar fluxo..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                className="bg-[#141624] border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500/50 w-48 sm:w-64"
+                className="bg-[#141622] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 w-48 sm:w-64 transition-all"
               />
             </div>
 
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-purple-600/25 active:scale-95"
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white text-xs font-semibold flex items-center gap-2 transition-all shadow-subtle"
             >
               <Plus className="w-4 h-4" />
               <span>Criar Novo Fluxo</span>
@@ -1091,16 +1126,14 @@ export const FlowBuilder: React.FC = () => {
             <div
               key={flow.id}
               onClick={() => openFlowEditor(flow)}
-              className="group bg-[#0d0f18] hover:bg-[#121524] border border-slate-800/80 hover:border-purple-500/50 rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-purple-900/10 flex flex-col justify-between relative overflow-hidden"
+              className="group bg-surface-card hover:bg-surface-hover border border-white/[0.08] hover:border-white/20 rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-subtle flex flex-col justify-between relative overflow-hidden"
             >
-              <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl pointer-events-none group-hover:bg-purple-500/10 transition-colors" />
-
               <div>
                 {/* Header do Card com Ícone, Contador de Execuções e Botão Pausar/Ativar */}
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-                      <Zap className="w-5 h-5 fill-purple-400/20" />
+                    <div className="w-9 h-9 rounded-xl bg-[#141622] border border-white/10 text-indigo-400 flex items-center justify-center transition-transform">
+                      <Zap className="w-4 h-4 fill-indigo-400/20" />
                     </div>
                     {/* Contador de quantas vezes o fluxo foi executado */}
                     <div 
@@ -1204,18 +1237,20 @@ export const FlowBuilder: React.FC = () => {
           ))}
 
           {filteredFlows.length === 0 && !isLoadingFlows && (
-            <div className="col-span-full py-16 text-center bg-[#0d0f18] rounded-2xl border border-slate-800/80 p-8">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mb-4">
-                <Workflow className="w-7 h-7" />
+            <div className="col-span-full py-16 text-center bg-surface-card rounded-2xl border border-white/[0.08] p-8 space-y-4">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-white/[0.03] border border-white/[0.08] text-indigo-400 flex items-center justify-center">
+                <Workflow className="w-6 h-6 stroke-[1.75]" />
               </div>
-              <h3 className="text-base font-bold text-white">Nenhum fluxo encontrado</h3>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                Crie seu primeiro fluxo de automação para engajar leads e responder mensagens no WhatsApp automaticamente.
-              </p>
-              <div className="flex items-center justify-center gap-3 mt-5">
+              <div className="space-y-1.5 max-w-sm mx-auto">
+                <h3 className="text-sm font-semibold text-white tracking-tight">Nenhum fluxo encontrado</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Crie seu primeiro funil visual com disparos de WhatsApp, inteligência artificial, condicionais e integrações.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-1">
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold inline-flex items-center gap-2 transition-all shadow-lg shadow-purple-600/30"
+                  className="btn-primary px-4 py-2 rounded-xl text-white text-xs font-semibold inline-flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Criar Novo Fluxo</span>
@@ -1751,48 +1786,86 @@ export const FlowBuilder: React.FC = () => {
                     width: `${width}px`,
                     willChange: isSelected || draggingId === node.id ? 'left, top' : 'auto'
                   }}
-                  className={`pointer-events-auto rounded-2xl bg-[#13141c] border shadow-2xl relative select-none ${
+                  className={`pointer-events-auto rounded-2xl bg-[#12141F] border shadow-2xl relative select-none ${
                     draggingId === node.id ? '' : 'transition-colors'
                   } ${
                     isSelected 
-                      ? 'ring-2 ring-purple-500 border-purple-500/80 shadow-purple-500/20' 
-                      : 'border-[#262838] hover:border-slate-600'
-                  } ${isConnectingSource ? 'ring-2 ring-cyan-400 border-cyan-400 shadow-cyan-500/30' : ''} ${
-                    isHoveredTarget ? 'ring-2 ring-emerald-400 border-emerald-400 shadow-emerald-500/30' : ''
+                      ? 'ring-1 ring-indigo-500 border-indigo-500/80 shadow-subtle' 
+                      : 'border-white/[0.08] hover:border-white/[0.16]'
+                  } ${isConnectingSource ? 'ring-1 ring-cyan-400 border-cyan-400' : ''} ${
+                    isHoveredTarget ? 'ring-1 ring-emerald-400 border-emerald-400' : ''
                   }`}
                 >
                   {/* Top Bar Header */}
                   <div 
-                    className={`px-3.5 py-2.5 rounded-t-2xl flex items-center justify-between text-xs font-bold text-white cursor-move ${
-                      node.type === 'inicio' ? 'bg-gradient-to-r from-emerald-600 to-teal-700' :
-                      node.type === 'ia' || node.type === 'ia_audio' || node.type === 'ia_video' || node.type === 'ia_ligacao' ? 'bg-gradient-to-r from-purple-600 to-indigo-700' :
-                      node.type === 'condicao' ? 'bg-gradient-to-r from-amber-600 to-orange-700' :
-                      node.type === 'audio' ? 'bg-gradient-to-r from-violet-600 to-purple-700' :
-                      node.type === 'imagem' ? 'bg-gradient-to-r from-pink-600 to-rose-700' :
-                      node.type === 'video' ? 'bg-gradient-to-r from-rose-600 to-red-700' :
-                      node.type === 'pdf' ? 'bg-gradient-to-r from-amber-600 to-yellow-700' :
-                      node.type === 'timer' ? 'bg-gradient-to-r from-cyan-600 to-blue-700' :
-                      node.type === 'cakto' || node.type === 'webhook' ? 'bg-gradient-to-r from-emerald-600 to-teal-700' :
-                      node.type === 'grupo_wa' ? 'bg-gradient-to-r from-emerald-800 to-teal-900 border-b border-emerald-700/40' :
-                      node.type === 'finalizar' ? 'bg-gradient-to-r from-rose-900 to-red-950 border-b border-rose-800/40' :
-                      node.type === 'conectar_fluxo' ? 'bg-gradient-to-r from-cyan-800 to-blue-900 border-b border-cyan-700/40' :
-                      'bg-gradient-to-r from-blue-600 to-indigo-700'
-                    }`}
+                    className="px-3.5 py-2.5 rounded-t-2xl flex items-center justify-between text-xs font-semibold text-white cursor-move bg-[#171926] border-b border-white/[0.06]"
                   >
                     <div className="flex items-center gap-2 flex-1 min-w-0 mr-1">
-                      {node.type === 'inicio' && <Smartphone className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {(node.type === 'ia' || node.type === 'ia_audio') && <Bot className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {node.type === 'condicao' && <Scissors className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {node.type === 'audio' && <Mic className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {node.type === 'imagem' && <ImageIcon className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {node.type === 'video' && <Video className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {node.type === 'pdf' && <FileText className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {node.type === 'timer' && <Clock className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {(node.type === 'cakto' || node.type === 'webhook') && <WebhookIcon className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {(node.type === 'sms' || node.type === 'whatsapp') && <MessageSquare className="w-3.5 h-3.5 text-white shrink-0" />}
-                      {node.type === 'grupo_wa' && <Users className="w-3.5 h-3.5 text-emerald-300 shrink-0" />}
-                      {node.type === 'finalizar' && <StopCircle className="w-3.5 h-3.5 text-rose-300 shrink-0" />}
-                      {node.type === 'conectar_fluxo' && <LinkIcon className="w-3.5 h-3.5 text-cyan-300 shrink-0" />}
+                      {node.type === 'inicio' && (
+                        <div className="w-5 h-5 rounded-md bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                          <Smartphone className="w-3 h-3" />
+                        </div>
+                      )}
+                      {(node.type === 'ia' || node.type === 'ia_audio' || node.type === 'ia_video' || node.type === 'ia_ligacao') && (
+                        <div className="w-5 h-5 rounded-md bg-indigo-500/10 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/20">
+                          <Bot className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'condicao' && (
+                        <div className="w-5 h-5 rounded-md bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                          <Scissors className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'audio' && (
+                        <div className="w-5 h-5 rounded-md bg-violet-500/10 text-violet-400 flex items-center justify-center shrink-0 border border-violet-500/20">
+                          <Mic className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'imagem' && (
+                        <div className="w-5 h-5 rounded-md bg-pink-500/10 text-pink-400 flex items-center justify-center shrink-0 border border-pink-500/20">
+                          <ImageIcon className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'video' && (
+                        <div className="w-5 h-5 rounded-md bg-rose-500/10 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/20">
+                          <Video className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'pdf' && (
+                        <div className="w-5 h-5 rounded-md bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                          <FileText className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'timer' && (
+                        <div className="w-5 h-5 rounded-md bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
+                          <Clock className="w-3 h-3" />
+                        </div>
+                      )}
+                      {(node.type === 'cakto' || node.type === 'webhook') && (
+                        <div className="w-5 h-5 rounded-md bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                          <WebhookIcon className="w-3 h-3" />
+                        </div>
+                      )}
+                      {(node.type === 'sms' || node.type === 'whatsapp') && (
+                        <div className="w-5 h-5 rounded-md bg-sky-500/10 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/20">
+                          <MessageSquare className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'grupo_wa' && (
+                        <div className="w-5 h-5 rounded-md bg-teal-500/10 text-teal-400 flex items-center justify-center shrink-0 border border-teal-500/20">
+                          <Users className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'finalizar' && (
+                        <div className="w-5 h-5 rounded-md bg-rose-500/10 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/20">
+                          <StopCircle className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'conectar_fluxo' && (
+                        <div className="w-5 h-5 rounded-md bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
+                          <LinkIcon className="w-3 h-3" />
+                        </div>
+                      )}
                       
                       {editingCardId === node.id ? (
                         <input
@@ -2653,150 +2726,150 @@ export const FlowBuilder: React.FC = () => {
         </div>
 
         {/* Bottom Floating Quick Tools Dock */}
-        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 bg-[#12131c]/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl px-3 py-2 shadow-2xl flex items-center gap-2">
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 bg-[#12141F]/90 backdrop-blur-xl border border-white/[0.08] rounded-2xl px-3 py-2 shadow-2xl flex items-center gap-1.5">
           <button 
             onClick={() => addNode('inicio', 'WhatsApp')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Gatilho WhatsApp"
           >
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform">
               <Smartphone className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">WhatsApp</span>
+            <span className="text-[10px] font-medium">WhatsApp</span>
           </button>
 
           <button 
             onClick={() => addNode('sms', 'Texto')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Mensagem de Texto"
           >
-            <div className="w-8 h-8 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+            <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-105 transition-transform">
               <MessageSquare className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Texto</span>
+            <span className="text-[10px] font-medium">Texto</span>
           </button>
 
           <button 
             onClick={() => addNode('audio', 'Áudio')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Áudio do PC"
           >
-            <div className="w-8 h-8 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-violet-400">
+            <div className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 group-hover:scale-105 transition-transform">
               <Mic className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Áudio</span>
+            <span className="text-[10px] font-medium">Áudio</span>
           </button>
 
           <button 
             onClick={() => addNode('imagem', 'Imagem')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Imagem do PC"
           >
-            <div className="w-8 h-8 rounded-xl bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400">
+            <div className="w-8 h-8 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 group-hover:scale-105 transition-transform">
               <ImageIcon className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Imagem</span>
+            <span className="text-[10px] font-medium">Imagem</span>
           </button>
 
           <button 
             onClick={() => addNode('video', 'Vídeo')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Vídeo MP4 (Máx 50MB)"
           >
-            <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+            <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 group-hover:scale-105 transition-transform">
               <Video className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Vídeo</span>
+            <span className="text-[10px] font-medium">Vídeo</span>
           </button>
 
           <button 
             onClick={() => addNode('pdf', 'PDF')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Documento PDF do PC"
           >
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-105 transition-transform">
               <FileText className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">PDF</span>
+            <span className="text-[10px] font-medium">PDF</span>
           </button>
 
           <button 
             onClick={() => addNode('timer', 'Timer')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Temporizador"
           >
-            <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-transform">
               <Clock className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Timer</span>
+            <span className="text-[10px] font-medium">Timer</span>
           </button>
 
           <button 
             onClick={() => addNode('ia', 'Agente IA')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Inteligência Artificial"
           >
-            <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+            <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-105 transition-transform">
               <Bot className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Agente IA</span>
+            <span className="text-[10px] font-medium">Agente IA</span>
           </button>
 
           <button 
             onClick={() => addNode('webhook', 'Webhook')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Webhook de Vendas / Checkout"
           >
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform">
               <WebhookIcon className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Webhook</span>
+            <span className="text-[10px] font-medium">Webhook</span>
           </button>
 
           <button 
             onClick={() => addNode('grupo_wa', 'Gerenciar Grupo')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Gerenciar Grupos do WhatsApp"
           >
-            <div className="w-8 h-8 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-400">
+            <div className="w-8 h-8 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 group-hover:scale-105 transition-transform">
               <Users className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Grupos</span>
+            <span className="text-[10px] font-medium">Grupos</span>
           </button>
 
           <button 
             onClick={() => addNode('conectar_fluxo', 'Conectar Fluxo')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Conectar a Outro Fluxo Cadastrado"
           >
-            <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-transform">
               <LinkIcon className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Conectar</span>
+            <span className="text-[10px] font-medium">Conectar</span>
           </button>
 
           <button 
             onClick={() => addNode('finalizar', 'Finalizar Fluxo')} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition-all"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Finalizar Funil / Fluxo"
           >
-            <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+            <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 group-hover:scale-105 transition-transform">
               <StopCircle className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold">Finalizar</span>
+            <span className="text-[10px] font-medium">Finalizar</span>
           </button>
 
-          <div className="h-6 w-px bg-slate-700/60 mx-1"></div>
+          <div className="h-6 w-px bg-white/[0.08] mx-1"></div>
 
           <button 
             onClick={() => setShowPaletteModal(true)} 
-            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-purple-900/30 transition-all group"
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
             title="Abrir Galeria Completa de Cards"
           >
-            <div className="w-8 h-8 rounded-xl bg-purple-600/30 border border-purple-500/50 flex items-center justify-center text-purple-300 group-hover:scale-110 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 group-hover:scale-105 transition-transform">
               <Plus className="w-4 h-4" />
             </div>
-            <span className="text-[9px] font-bold text-purple-300 group-hover:text-white">Todos</span>
+            <span className="text-[10px] font-medium text-indigo-300">Todos</span>
           </button>
         </div>
       </div>

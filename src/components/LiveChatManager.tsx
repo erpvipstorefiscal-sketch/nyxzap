@@ -658,27 +658,27 @@ export const LiveChatManager: React.FC = () => {
   const getTagBadge = (tag: LeadTag) => {
     switch (tag) {
       case 'quente':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">🔥 Quente</span>;
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">Quente</span>;
       case 'morno':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">⚡ Morno</span>;
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">Morno</span>;
       case 'frio':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">❄️ Frio</span>;
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Frio</span>;
       case 'comprou':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">💎 Comprou</span>;
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Comprou</span>;
     }
   };
 
   return (
-    <div className="flex h-[calc(100vh-140px)] bg-nyx-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl animate-fadeIn">
+    <div className="flex h-full w-full bg-[#0D0F17] border-0 overflow-hidden animate-fadeIn">
       {/* 1. LEFT SIDEBAR: CONVERSATIONS LIST */}
-      <div className="w-80 border-r border-slate-800 bg-[#0c0d14] flex flex-col shrink-0">
-        <div className="p-3.5 border-b border-slate-800 space-y-2.5">
+      <div className="w-80 border-r border-white/[0.06] bg-[#0E1017] flex flex-col shrink-0">
+        <div className="p-3.5 border-b border-white/[0.06] space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-white uppercase tracking-wider">Conversas WhatsApp</span>
+            <span className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider">Conversas WhatsApp</span>
             <button 
               onClick={fetchChats}
-              className={`p-1.5 rounded-lg bg-[#151824] hover:bg-purple-600/20 text-slate-400 hover:text-purple-400 transition-all border border-slate-800 ${
-                isRefreshing ? 'animate-spin text-purple-400' : ''
+              className={`p-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.06] text-zinc-400 hover:text-white transition-all border border-white/[0.06] ${
+                isRefreshing ? 'animate-spin text-indigo-400' : ''
               }`}
               title="Atualizar conversas agora"
             >
@@ -687,17 +687,17 @@ export const LiveChatManager: React.FC = () => {
           </div>
 
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Buscar contato ou número..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[#151824] border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+              className="w-full bg-[#0B0C10] border border-white/[0.08] rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
             />
           </div>
 
-            <div className="flex gap-1 overflow-x-auto pb-1 text-[10px] font-semibold">
+          <div className="flex gap-1 overflow-x-auto pb-1 text-[11px] font-medium">
             {['todos', 'grupos', 'quente', 'morno', 'frio', 'comprou'].map((t) => (
               <button
                 key={t}
@@ -705,13 +705,13 @@ export const LiveChatManager: React.FC = () => {
                   setFilterTag(t);
                   if (t === 'grupos') fetchGroups();
                 }}
-                className={`px-2.5 py-1 rounded-lg capitalize transition-all flex items-center gap-1 ${
+                className={`px-2.5 py-1 rounded-lg capitalize transition-all flex items-center gap-1.5 ${
                   filterTag === t 
-                    ? t === 'grupos' ? 'bg-emerald-600 text-white font-bold' : 'bg-purple-600 text-white font-bold' 
-                    : 'bg-[#151824] text-slate-400 hover:text-white'
+                    ? 'bg-white/[0.1] text-white border border-white/[0.12] shadow-sm' 
+                    : 'bg-white/[0.02] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.05] border border-transparent'
                 }`}
               >
-                {t === 'grupos' && <Users className="w-3 h-3" />}
+                {t === 'grupos' && <Users className="w-3 h-3 text-emerald-400" />}
                 {t}
               </button>
             ))}
@@ -783,12 +783,16 @@ export const LiveChatManager: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
+          <div className="flex-1 overflow-y-auto divide-y divide-white/[0.04]">
             {filteredChats.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-500 space-y-2">
-                <MessageSquare className="w-8 h-8 text-slate-600 mx-auto" />
-                <p>Nenhuma conversa encontrada.</p>
-                <p className="text-[10px]">As mensagens do WhatsApp conectado aparecem aqui automaticamente.</p>
+              <div className="p-8 text-center text-xs text-zinc-500 space-y-3">
+                <div className="w-10 h-10 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-center mx-auto text-zinc-500">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-medium text-zinc-300">Nenhuma conversa encontrada</p>
+                  <p className="text-[11px] text-zinc-500 max-w-[200px] mx-auto leading-relaxed">As conversas ativas do WhatsApp sincronizam aqui automaticamente.</p>
+                </div>
               </div>
             ) : (
               filteredChats.map((c) => {
@@ -801,12 +805,12 @@ export const LiveChatManager: React.FC = () => {
                       setEditedName(c.leadName);
                       setIsEditingName(false);
                     }}
-                    className={`p-3.5 cursor-pointer transition-all flex flex-col gap-1.5 select-none relative group ${
-                      isSelected ? 'bg-purple-950/20 border-l-4 border-purple-500' : 'hover:bg-[#151824]/60'
+                    className={`p-3.5 cursor-pointer transition-all flex flex-col gap-1.5 select-none relative group border-b border-white/[0.04] ${
+                      isSelected ? 'bg-white/[0.04] border-l-2 border-indigo-500' : 'hover:bg-white/[0.02]'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs text-white truncate max-w-[140px]">
+                      <span className="font-semibold text-xs text-white truncate max-w-[140px] tracking-tight">
                         {c.leadName}
                       </span>
                       <div className="flex items-center gap-1.5">
@@ -822,7 +826,7 @@ export const LiveChatManager: React.FC = () => {
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <p className="text-[11px] text-slate-400 truncate max-w-[170px]">
+                      <p className="text-[11px] text-slate-400 truncate max-w-[170px] leading-snug">
                         {c.lastMessage}
                       </p>
                       {getTagBadge(c.tag)}
@@ -831,16 +835,16 @@ export const LiveChatManager: React.FC = () => {
                     {/* Exclusively show only ONE automation state badge */}
                     <div className="flex items-center gap-1.5 pt-1 text-[9px]">
                       {c.botFlowActive ? (
-                        <span className="flex items-center gap-1 text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                          <Workflow className="w-3 h-3" /> Bot Ativo
+                        <span className="flex items-center gap-1 text-amber-300 font-medium bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          <Workflow className="w-3 h-3 text-amber-400" /> Bot Fluxo
                         </span>
                       ) : c.aiAgentActive ? (
-                        <span className="flex items-center gap-1 text-purple-400 font-bold bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
-                          <Bot className="w-3 h-3" /> IA Ativa
+                        <span className="flex items-center gap-1 text-indigo-300 font-medium bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                          <Bot className="w-3 h-3 text-indigo-400" /> Agente IA
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                          <UserCheck className="w-3 h-3" /> Manual
+                        <span className="flex items-center gap-1 text-emerald-300 font-medium bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          <UserCheck className="w-3 h-3 text-emerald-400" /> Manual
                         </span>
                       )}
                     </div>
@@ -1319,10 +1323,10 @@ export const LiveChatManager: React.FC = () => {
           );
         })()
       ) : activeChat ? (
-        <div className="flex-1 flex flex-col bg-[#090a0f]">
-          <div className="p-3.5 border-b border-slate-800 bg-[#0f111a] flex items-center justify-between">
+        <div className="flex-1 flex flex-col bg-[#0B0C10]">
+          <div className="px-5 py-3.5 border-b border-white/[0.06] bg-[#0E1017] flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center font-bold text-white text-xs">
+              <div className="w-9 h-9 rounded-xl bg-surface-card border border-white/10 flex items-center justify-center font-semibold text-white text-xs shadow-subtle">
                 {activeChat.leadName.substring(0, 2).toUpperCase()}
               </div>
               <div>
@@ -1332,17 +1336,17 @@ export const LiveChatManager: React.FC = () => {
                       type="text"
                       value={editedName}
                       onChange={(e) => setEditedName(e.target.value)}
-                      className="bg-nyx-850 border border-purple-500 rounded px-2 py-0.5 text-xs text-white font-bold"
+                      className="bg-[#141622] border border-indigo-500/50 rounded-lg px-2.5 py-1 text-xs text-white font-semibold focus:outline-none"
                     />
-                    <button onClick={handleSaveName} className="text-xs text-emerald-400 font-bold">✓ Salvar</button>
-                    <button onClick={() => setIsEditingName(false)} className="text-xs text-slate-400">✕</button>
+                    <button onClick={handleSaveName} className="text-xs text-emerald-400 font-semibold px-1.5 py-0.5 hover:bg-emerald-500/10 rounded">✓ Salvar</button>
+                    <button onClick={() => setIsEditingName(false)} className="text-xs text-slate-400 hover:text-white px-1">✕</button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-white text-sm">{activeChat.leadName}</h3>
+                    <h3 className="font-semibold text-white text-sm tracking-tight">{activeChat.leadName}</h3>
                     <button 
                       onClick={() => { setEditedName(activeChat.leadName); setIsEditingName(true); }}
-                      className="text-slate-500 hover:text-purple-400 transition-colors"
+                      className="text-slate-500 hover:text-slate-300 transition-colors"
                       title="Mudar nome do cliente"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
@@ -1354,39 +1358,39 @@ export const LiveChatManager: React.FC = () => {
             </div>
 
             {/* Mutually exclusive 3-mode selector: Bot Fluxo OR Agente IA OR Manual */}
-            <div className="flex items-center gap-1.5 bg-[#151824] p-1 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-1 bg-[#12141D] p-1 rounded-xl border border-white/[0.06]">
               <button
                 onClick={() => setChatAutomationMode(activeChat.botFlowActive ? 'none' : 'flow')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
                   activeChat.botFlowActive
-                    ? 'bg-amber-600 text-white shadow-md shadow-amber-600/30'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                 }`}
                 title="Ativar Bot de Fluxo (desativa IA automaticamente)"
               >
                 <Workflow className="w-3.5 h-3.5" />
-                <span>{activeChat.botFlowActive ? '⚡ Bot Fluxo Ativo' : 'Bot Fluxo'}</span>
+                <span>{activeChat.botFlowActive ? 'Bot Fluxo Ativo' : 'Bot Fluxo'}</span>
               </button>
 
               <button
                 onClick={() => setChatAutomationMode(activeChat.aiAgentActive ? 'none' : 'ai')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
                   activeChat.aiAgentActive
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                 }`}
                 title="Ativar Agente IA (desativa Bot de Fluxo automaticamente)"
               >
                 <Bot className="w-3.5 h-3.5" />
-                <span>{activeChat.aiAgentActive ? '🤖 Agente IA Ativo' : 'Agente IA'}</span>
+                <span>{activeChat.aiAgentActive ? 'Agente IA Ativo' : 'Agente IA'}</span>
               </button>
 
               <button
                 onClick={() => setChatAutomationMode('none')}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
                   !activeChat.botFlowActive && !activeChat.aiAgentActive
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                 }`}
                 title="Atendimento manual (desativa Bot e IA)"
               >
@@ -1397,36 +1401,38 @@ export const LiveChatManager: React.FC = () => {
           </div>
 
           {!activeChat.aiAgentActive && !activeChat.botFlowActive && (
-            <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-4 py-1.5 flex items-center justify-between text-xs text-emerald-400 font-medium">
-              <span className="flex items-center gap-1.5">
-                <UserCheck className="w-3.5 h-3.5" />
+            <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-4 py-2 flex items-center justify-between text-xs text-emerald-300 font-medium">
+              <span className="flex items-center gap-2">
+                <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
                 Você está em modo Manual. O Bot de Fluxo e a IA estão pausados para esta conversa.
               </span>
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 overflow-y-auto p-5 space-y-3.5 bg-gradient-to-b from-[#0B0C10] to-[#0D0F15]">
             {activeChat.messages.map((m) => (
               <div
                 key={m.id}
                 className={`flex flex-col ${m.fromMe ? 'items-end' : 'items-start'}`}
               >
                 <div
-                  className={`max-w-[70%] p-3 rounded-2xl text-xs leading-relaxed ${
+                  className={`max-w-[70%] px-4 py-3 rounded-2xl text-xs leading-relaxed shadow-subtle ${
                     m.fromMe
                       ? m.isAiGenerated
-                        ? 'bg-purple-900/40 text-purple-100 border border-purple-500/30 rounded-tr-none'
-                        : 'bg-emerald-600 text-white rounded-tr-none'
-                      : 'bg-[#151824] text-slate-200 border border-slate-800 rounded-tl-none'
+                        ? 'bg-[#181B26] text-slate-100 border border-indigo-500/30 rounded-tr-sm'
+                        : 'bg-indigo-600 text-white rounded-tr-sm'
+                      : 'bg-[#151722] text-slate-200 border border-white/[0.06] rounded-tl-sm'
                   }`}
                 >
                   {m.fromMe && m.isAiGenerated && (
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-purple-300 mb-1 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" /> Resposta da IA (Gemini)
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300 mb-1 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-indigo-400" /> Resposta da IA (Gemini)
                     </div>
                   )}
-                  <p>{m.text}</p>
-                  <span className="text-[9px] text-slate-400/80 font-mono block text-right mt-1">
+                  <p className="whitespace-pre-wrap">{m.text}</p>
+                  <span className={`text-[9px] font-mono block text-right mt-1.5 ${
+                    m.fromMe ? (m.isAiGenerated ? 'text-slate-400' : 'text-indigo-200') : 'text-slate-400'
+                  }`}>
                     {m.timestamp}
                   </span>
                 </div>
@@ -1435,49 +1441,67 @@ export const LiveChatManager: React.FC = () => {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-3 border-t border-slate-800 bg-[#0f111a] flex items-center gap-2">
+          <div className="p-3.5 border-t border-white/[0.06] bg-[#0E1017] flex items-center gap-2.5">
             <input
               type="text"
               placeholder="Digite uma mensagem para o WhatsApp (assume atendimento manual)..."
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              className="flex-1 bg-[#151824] border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+              className="flex-1 bg-[#141622] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
             />
             <button
               onClick={handleSendMessage}
-              className="p-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-md shadow-emerald-600/30"
+              className="p-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-xl transition-all shadow-subtle flex items-center justify-center"
+              title="Enviar mensagem"
             >
               <Send className="w-4 h-4" />
             </button>
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
-          Selecione uma conversa ao lado para visualizar.
+        <div className="flex-1 flex flex-col items-center justify-center bg-[#0B0C10] bg-dot-grid relative p-8 select-none">
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-transparent to-[#0B0C10]/80 pointer-events-none" />
+          <div className="relative z-10 max-w-sm text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-[#141724] border border-white/[0.08] shadow-subtle flex items-center justify-center mx-auto text-indigo-400">
+              <MessageSquare className="w-6 h-6 stroke-[1.75]" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-semibold text-white tracking-tight">Nenhuma conversa selecionada</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Selecione um contato na lista à esquerda para visualizar o histórico de mensagens, acionar agentes de IA ou assumir o atendimento humano.
+              </p>
+            </div>
+            <div className="pt-2 flex items-center justify-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400 bg-white/[0.03] px-3 py-1.5 rounded-lg border border-white/[0.06]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Sincronização em tempo real
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 3. RIGHT SIDEBAR: LEAD CRM INFO */}
       {activeChat && (
-        <div className="w-72 border-l border-slate-800 bg-[#0c0d14] p-4 flex flex-col gap-4 shrink-0 overflow-y-auto">
-          <div className="border-b border-slate-800 pb-3">
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-purple-400" />
-              <span>Classificação do Lead (Tag)</span>
+        <div className="w-72 border-l border-white/[0.06] bg-[#0E1017] p-4 flex flex-col gap-4 shrink-0 overflow-y-auto">
+          <div className="border-b border-white/[0.06] pb-3">
+            <h4 className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Tag className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Classificação do Lead</span>
             </h4>
             <div className="grid grid-cols-2 gap-1.5 pt-2.5">
               {(['frio', 'morno', 'quente', 'comprou'] as LeadTag[]).map((tag) => (
                 <button
                   key={tag}
                   onClick={() => handleUpdateTag(tag)}
-                  className={`py-1.5 px-2 rounded-xl text-xs font-bold capitalize transition-all border ${
+                  className={`py-1.5 px-2 rounded-lg text-xs font-medium capitalize transition-all border ${
                     activeChat.tag === tag
-                      ? tag === 'quente' ? 'bg-rose-500/20 border-rose-500 text-rose-400 shadow'
-                      : tag === 'morno' ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow'
-                      : tag === 'frio' ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400 shadow'
-                      : 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow'
-                      : 'bg-[#151824] border-slate-800 text-slate-400 hover:text-white'
+                      ? tag === 'quente' ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                      : tag === 'morno' ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                      : tag === 'frio' ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                      : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                      : 'bg-[#141622] border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.04]'
                   }`}
                 >
                   {tag}
@@ -1486,20 +1510,20 @@ export const LiveChatManager: React.FC = () => {
             </div>
           </div>
 
-          <div className="border-b border-slate-800 pb-3.5 space-y-2.5">
+          <div className="border-b border-white/[0.06] pb-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+              <h4 className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-amber-400" />
                 <span>Follow-up Automático</span>
               </h4>
               {activeChat.followUpStatus === 'scheduled' && (
-                <span className="text-[10px] font-bold bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30">
-                  🕒 Agendado
+                <span className="text-[10px] font-medium bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
+                  Agendado
                 </span>
               )}
               {activeChat.followUpStatus === 'completed' && (
-                <span className="text-[10px] font-bold bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                  ✓ Concluído
+                <span className="text-[10px] font-medium bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                  Concluído
                 </span>
               )}
             </div>

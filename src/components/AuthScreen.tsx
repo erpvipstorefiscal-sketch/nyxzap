@@ -13,7 +13,8 @@ import {
   Sparkles, 
   ExternalLink,
   Eye,
-  EyeOff
+  EyeOff,
+  Zap
 } from 'lucide-react';
 import { UserAuth } from '../types';
 import { identifyUser, trackEvent } from '../lib/telemetry';
@@ -351,37 +352,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#090a0f] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Glows */}
-      <div className={`absolute top-1/4 left-1/3 w-96 h-96 rounded-full blur-3xl pointer-events-none ${
-        isPainelAdmin ? 'bg-indigo-600/15' : 'bg-purple-600/15'
-      }`}></div>
-      <div className="absolute bottom-1/4 right-1/3 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl pointer-events-none"></div>
-
-      <div className="w-full max-w-md bg-[#0f111a] border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-6 relative z-10">
+    <div className="min-h-screen bg-[#0B0C10] flex items-center justify-center p-4 relative overflow-hidden bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(99,102,241,0.12),rgba(255,255,255,0))]">
+      <div className="w-full max-w-[420px] bg-[#12141D] border border-white/[0.08] rounded-2xl p-7 sm:p-8 shadow-2xl shadow-black/80 space-y-6 relative z-10">
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-extrabold text-white text-2xl mx-auto shadow-lg ${
-            isPainelAdmin 
-              ? 'bg-gradient-to-tr from-indigo-600 to-cyan-500 shadow-indigo-600/30' 
-              : 'bg-gradient-to-tr from-purple-600 to-indigo-500 shadow-purple-600/30'
-          }`}>
-            {isPainelAdmin ? '🛡️' : '⚡'}
+        <div className="text-center space-y-3">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-b from-indigo-500/20 to-indigo-600/10 border border-indigo-500/30 flex items-center justify-center mx-auto text-indigo-400 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]">
+            <Zap className="w-5 h-5 text-indigo-400 fill-indigo-400/20" />
           </div>
           
-          <h1 className="text-2xl font-black text-white tracking-tight">NyxZap</h1>
-
-          <p className="text-xs text-slate-400">
-            {isPainelAdmin 
-              ? 'Painel Administrativo' 
-              : viewMode === 'login'
-              ? 'Plataforma de Automação & IA'
-              : 'Crie sua conta e ganhe 1 dia de teste grátis'}
-          </p>
+          <div>
+            <h1 className="text-xl font-bold text-white tracking-tight">NyxZap</h1>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              {isPainelAdmin 
+                ? 'Painel de Administração do Sistema' 
+                : viewMode === 'login'
+                ? 'Automação WhatsApp, IA & Atendimento'
+                : 'Crie sua conta e ganhe 1 dia de teste grátis'}
+            </p>
+          </div>
         </div>
 
         {loginNotice && (
-          <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fadeIn">
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-medium flex items-center gap-2 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
             <span>{loginNotice}</span>
           </div>
@@ -391,7 +383,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
         {viewMode === 'login' && (
           <div className="space-y-4">
             {error && (
-              <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fadeIn">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-xs font-medium flex items-center gap-2 animate-fadeIn">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span>{error}</span>
               </div>
@@ -404,7 +396,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                   type="button"
                   onClick={handleGoogleAuth}
                   disabled={googleLoading}
-                  className="w-full py-3 bg-[#151824] hover:bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-white transition-all flex items-center justify-center gap-2.5 shadow-sm"
+                  className="w-full py-2.5 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.15] rounded-xl text-xs font-medium text-zinc-200 transition-all flex items-center justify-center gap-2.5 shadow-sm active:scale-[0.99]"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -415,36 +407,36 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                   <span>{googleLoading ? 'Conectando...' : 'Entrar com o Google'}</span>
                 </button>
 
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 h-px bg-slate-800"></div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">ou com seu e-mail</span>
-                  <div className="flex-1 h-px bg-slate-800"></div>
+                <div className="flex items-center gap-3 pt-1">
+                  <div className="flex-1 h-px bg-white/[0.06]"></div>
+                  <span className="text-[10px] uppercase font-semibold text-zinc-500 tracking-wider">ou com seu e-mail</span>
+                  <div className="flex-1 h-px bg-white/[0.06]"></div>
                 </div>
               </>
             )}
 
             {/* Login Form */}
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
+            <form onSubmit={handleLoginSubmit} className="space-y-3.5">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                <label className="text-[11px] font-medium text-zinc-300 block">
                   E-mail
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="email"
                     required
                     placeholder="seuemail@empresa.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-[#151824] border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white focus:outline-none focus:border-purple-500 font-medium transition-colors"
+                    className="w-full bg-[#0B0C10] border border-white/[0.09] focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-zinc-600 font-normal transition-all outline-none"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                  <label className="text-[11px] font-medium text-zinc-300 block">
                     Senha
                   </label>
                   <button
@@ -456,25 +448,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                       setRecoveryStep('request');
                       setShowForgotModal(true);
                     }}
-                    className="text-[11px] font-semibold text-purple-400 hover:text-purple-300 transition-colors"
+                    className="text-[11px] font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
                   >
-                    Esqueci minha senha
+                    Esqueceu a senha?
                   </button>
                 </div>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Lock className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
                     placeholder="••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-[#151824] border border-slate-700 rounded-xl pl-10 pr-10 py-3 text-xs text-white focus:outline-none focus:border-purple-500 font-medium transition-colors"
+                    onChange={(e) => setEmail ? setPassword(e.target.value) : null}
+                    className="w-full bg-[#0B0C10] border border-white/[0.09] focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder:text-zinc-600 font-normal transition-all outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -484,23 +476,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className={`w-full py-3.5 rounded-xl text-xs font-bold text-white transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 ${
-                  isPainelAdmin
-                    ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
-                    : 'bg-purple-600 hover:bg-purple-500 shadow-purple-600/30'
-                }`}
+                className="w-full py-2.5 mt-2 rounded-xl text-xs font-semibold text-white transition-all flex items-center justify-center gap-2 disabled:opacity-50 btn-primary"
               >
-                <span>{loading ? 'Acessando...' : 'Entrar'}</span>
+                <span>{loading ? 'Acessando...' : 'Entrar no NyxZap'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
 
-            {/* Links de Cadastro e Assinatura (Apenas no Portal do Cliente) */}
+            {/* Links de Cadastro e Assinatura */}
             {!isPainelAdmin && (
-              <div className="pt-3 border-t border-slate-800 space-y-2.5 text-center">
-                {/* Ainda não tem conta? Criar conta grátis */}
-                <div className="text-xs text-slate-400">
-                  <span>Ainda não tem conta? </span>
+              <div className="pt-3 border-t border-white/[0.06] space-y-2.5 text-center">
+                <div className="text-xs text-zinc-400">
+                  <span>Ainda não possui uma conta? </span>
                   <button
                     type="button"
                     onClick={() => {
@@ -508,25 +495,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
                       setRegError('');
                       trackEvent('switch_to_register', 'auth');
                     }}
-                    className="font-bold text-purple-400 hover:text-purple-300 underline transition-colors"
+                    className="font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
                   >
-                    Criar conta grátis (1 dia de teste)
+                    Criar conta grátis
                   </button>
                 </div>
 
-                {/* Não possui o NyxZap ainda? Adquira aqui */}
-                <div className="p-3 bg-purple-950/20 border border-purple-500/20 rounded-xl text-xs flex items-center justify-between">
-                  <span className="text-slate-300 flex items-center gap-1.5 font-medium">
-                    <Sparkles className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
-                    Não possui o NyxZap ainda?
+                <div className="p-2.5 bg-white/[0.02] border border-white/[0.06] rounded-xl text-xs flex items-center justify-between">
+                  <span className="text-zinc-400 flex items-center gap-1.5 text-[11px]">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                    Plano empresarial ou conexões extras
                   </span>
                   <a
                     href="https://pay.cakto.com.br/87jcu5r_1192138"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors underline"
+                    className="font-medium text-indigo-400 hover:text-indigo-300 flex items-center gap-1 text-[11px] transition-colors"
                   >
-                    <span>Adquira aqui</span>
+                    <span>Assinar</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>

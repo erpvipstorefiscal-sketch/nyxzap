@@ -230,28 +230,28 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header with Plan Limit Stats */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-nyx-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface-card border border-white/[0.08] p-6 rounded-2xl shadow-subtle">
         <div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            <Smartphone className="w-6 h-6 text-emerald-400" />
+          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <Smartphone className="w-5 h-5 text-emerald-400" />
             <span>Conexões de WhatsApp</span>
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             Conecte seus números para rodar Agentes de IA simultâneos e fluxos visuais automáticos.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           {/* Plan Limit Badge */}
-          <div className="bg-[#151824] border border-slate-800 px-4 py-2.5 rounded-xl text-right">
+          <div className="bg-[#10121A] border border-white/[0.06] px-4 py-2 rounded-xl text-right">
             <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
               Limite do seu Plano
             </span>
-            <div className="text-sm font-bold text-white flex items-center gap-2">
-              <span className={`font-mono ${sessions.length >= currentLimit ? 'text-amber-400 font-extrabold' : 'text-emerald-400'}`}>
+            <div className="text-xs font-semibold text-white flex items-center gap-1.5 mt-0.5">
+              <span className={`font-mono ${sessions.length >= currentLimit ? 'text-amber-400 font-bold' : 'text-emerald-400'}`}>
                 {sessions.length} / {currentLimit}
               </span>
-              <span className="text-xs text-slate-400 font-normal">números ativos</span>
+              <span className="text-[11px] text-slate-400 font-normal">números ativos</span>
             </div>
           </div>
 
@@ -259,7 +259,7 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
           {sessions.length < currentLimit ? (
             <button
               onClick={() => setShowNewModal(true)}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/30 flex items-center gap-2"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white rounded-xl text-xs font-semibold transition-all shadow-subtle flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
               <span>Adicionar WhatsApp</span>
@@ -267,9 +267,9 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
           ) : (
             <button
               onClick={() => setShowBuyModal(true)}
-              className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-purple-600/30 flex items-center gap-2"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white rounded-xl text-xs font-semibold transition-all shadow-subtle flex items-center gap-2"
             >
-              <Sparkles className="w-4 h-4 text-amber-300" />
+              <Sparkles className="w-4 h-4 text-indigo-200" />
               <span>Contratar Conexões Extras</span>
             </button>
           )}
@@ -279,8 +279,8 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
       {/* Grid of WhatsApp Sessions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {sessions.map(session => (
-          <div key={session.id} className="p-6 rounded-2xl bg-nyx-900 border border-slate-800 shadow-xl space-y-5 relative">
-            <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+          <div key={session.id} className="p-6 rounded-2xl bg-surface-card border border-white/[0.08] shadow-subtle space-y-5 relative">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
               <div className="flex-1 mr-2">
                 {renamingId === session.id ? (
                   <div className="flex items-center gap-2">
@@ -289,13 +289,13 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
                       value={renameValue}
                       onChange={(e) => setRenameValue(e.target.value)}
                       placeholder="Nome da instância"
-                      className="bg-[#151824] border border-purple-500 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none font-semibold w-full max-w-[180px]"
+                      className="bg-[#141622] border border-indigo-500 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none font-semibold w-full max-w-[180px]"
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={() => handleSaveRename(session.id)}
-                      className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-colors"
+                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-colors"
                     >
                       Salvar
                     </button>
@@ -309,14 +309,14 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-white text-base">{session.name}</h3>
+                    <h3 className="font-semibold text-white text-base tracking-tight">{session.name}</h3>
                     <button
                       type="button"
                       onClick={() => {
                         setRenamingId(session.id);
                         setRenameValue(session.name);
                       }}
-                      className="p-1 rounded-md text-slate-400 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                      className="p-1 rounded-md text-slate-400 hover:text-slate-200 transition-colors"
                       title="Mudar nome da conexão"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
@@ -327,7 +327,7 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
               </div>
 
               <div className="flex items-center gap-2">
-                <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${
+                <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 ${
                   session.status === 'connected'
                     ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                     : session.status === 'connecting'
@@ -378,19 +378,19 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
             )}
 
             {/* Modo de Automação Exclusivo (Bot de Fluxo OU Agente de IA) */}
-            <div className="bg-[#141624] border border-slate-800 rounded-xl p-3 space-y-2">
+            <div className="bg-[#10121A] border border-white/[0.06] rounded-xl p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-300">Modo de Automação:</span>
-                <span className="text-[10px] text-amber-400 font-semibold">Exclusivo (1 por conexão)</span>
+                <span className="text-[11px] font-semibold text-slate-300">Modo de Automação:</span>
+                <span className="text-[10px] text-indigo-300 font-medium bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">Exclusivo (1 por conexão)</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => handleUpdateAutomationMode(session.id, 'flow')}
-                  className={`py-2 px-2 rounded-lg text-[11px] font-bold flex flex-col items-center gap-1 border transition-all ${
+                  className={`py-2 px-2 rounded-lg text-xs font-medium flex flex-col items-center gap-1 border transition-all ${
                     (session.automationMode || 'flow') === 'flow'
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md shadow-amber-900/20'
-                      : 'bg-[#10111a] text-slate-400 border-slate-800 hover:text-white'
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 shadow-sm'
+                      : 'bg-[#141622] text-slate-400 border-white/[0.04] hover:text-white hover:bg-white/[0.02]'
                   }`}
                 >
                   <Workflow className="w-4 h-4 text-amber-400" />
@@ -400,33 +400,33 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
                 <button
                   type="button"
                   onClick={() => handleUpdateAutomationMode(session.id, 'ai')}
-                  className={`py-2 px-2 rounded-lg text-[11px] font-bold flex flex-col items-center gap-1 border transition-all ${
+                  className={`py-2 px-2 rounded-lg text-xs font-medium flex flex-col items-center gap-1 border transition-all ${
                     session.automationMode === 'ai'
-                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-md shadow-purple-900/20'
-                      : 'bg-[#10111a] text-slate-400 border-slate-800 hover:text-white'
+                      ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40 shadow-sm'
+                      : 'bg-[#141622] text-slate-400 border-white/[0.04] hover:text-white hover:bg-white/[0.02]'
                   }`}
                 >
-                  <Bot className="w-4 h-4 text-purple-400" />
+                  <Bot className="w-4 h-4 text-indigo-400" />
                   <span>Agente IA</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateAutomationMode(session.id, 'none')}
-                  className={`py-2 px-2 rounded-lg text-[11px] font-bold flex flex-col items-center gap-1 border transition-all ${
+                  className={`py-2 px-2 rounded-lg text-xs font-medium flex flex-col items-center gap-1 border transition-all ${
                     session.automationMode === 'none'
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-md shadow-emerald-900/20'
-                      : 'bg-[#10111a] text-slate-400 border-slate-800 hover:text-white'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 shadow-sm'
+                      : 'bg-[#141622] text-slate-400 border-white/[0.04] hover:text-white hover:bg-white/[0.02]'
                   }`}
                 >
                   <UserCheck className="w-4 h-4 text-emerald-400" />
                   <span>Manual</span>
                 </button>
               </div>
-              <p className="text-[10px] text-slate-500 text-center">
-                {(session.automationMode || 'flow') === 'flow' && '⚡ Esta conexão responderá exclusivamente pelos funis do Fluxo Builder.'}
-                {session.automationMode === 'ai' && '🤖 Esta conexão responderá exclusivamente com o Agente de IA Gemini Concierge.'}
-                {session.automationMode === 'none' && '👤 Automações pausadas nesta conexão. Somente respostas manuais no chat.'}
+              <p className="text-[10px] text-slate-400 text-center leading-normal">
+                {(session.automationMode || 'flow') === 'flow' && 'Esta conexão responderá exclusivamente pelos funis do Fluxo Builder.'}
+                {session.automationMode === 'ai' && 'Esta conexão responderá exclusivamente com o Agente de IA Gemini Concierge.'}
+                {session.automationMode === 'none' && 'Automações pausadas nesta conexão. Somente respostas manuais no chat.'}
               </p>
             </div>
 
@@ -436,7 +436,7 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
                 <button
                   onClick={() => handleConnect(session.id)}
                   disabled={loading}
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white rounded-xl text-xs font-semibold transition-all shadow-subtle flex items-center justify-center gap-2"
                 >
                   <QrCode className="w-4 h-4" />
                   <span>Conectar WhatsApp</span>
@@ -444,7 +444,7 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
               ) : (
                 <button
                   onClick={() => handleDisconnect(session.id)}
-                  className="flex-1 py-3 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+                  className="flex-1 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 active:scale-[0.98] text-rose-300 border border-rose-500/20 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2"
                 >
                   <WifiOff className="w-4 h-4" />
                   <span>Desconectar Sessão</span>
@@ -453,6 +453,27 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
             </div>
           </div>
         ))}
+
+        {sessions.length === 0 && (
+          <div className="col-span-full p-12 text-center bg-surface-card border border-white/[0.08] rounded-2xl space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center mx-auto text-indigo-400">
+              <Smartphone className="w-6 h-6 stroke-[1.75]" />
+            </div>
+            <div className="space-y-1.5 max-w-sm mx-auto">
+              <h3 className="text-sm font-semibold text-white tracking-tight">Nenhuma conexão de WhatsApp criada</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Adicione seu primeiro número do WhatsApp para iniciar o pareamento via QR Code e automatizar seus atendimentos.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="btn-primary px-4 py-2 rounded-xl text-xs font-semibold text-white inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Conectar meu WhatsApp agora</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* New Session Modal */}

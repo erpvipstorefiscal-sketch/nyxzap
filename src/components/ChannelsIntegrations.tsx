@@ -206,45 +206,45 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
   return (
     <div className="space-y-6 animate-fadeIn max-w-6xl mx-auto pb-16">
       {/* Page Header */}
-      <div className="bg-[#0e101a] border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-[#12141F] border border-white/[0.06] rounded-2xl p-6 shadow-subtle flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-600/30">
-            <Radio className="w-6 h-6 text-white" />
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+            <Radio className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-white flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-white tracking-tight">
               Canais & Integrações
             </h1>
             <p className="text-xs text-slate-400">
-              Conecte plataformas de pagamento, e-commerce e SMTP para alimentar automaticamente seus fluxos e funis de venda.
+              Conecte plataformas de pagamento, e-commerce e SMTP para alimentar seus fluxos e funis em tempo real.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-mono bg-[#141624] px-3.5 py-2 rounded-xl border border-slate-800">
-          <span className="text-slate-400">Token de Integração:</span>
-          <span className="text-purple-400 font-bold">{userToken}</span>
+        <div className="flex items-center gap-2 text-xs font-mono bg-[#0B0D14] px-3.5 py-1.5 rounded-xl border border-white/[0.06]">
+          <span className="text-slate-400">Token:</span>
+          <span className="text-indigo-400 font-medium">{userToken}</span>
         </div>
       </div>
 
       {/* 1. SEÇÃO E-MAIL SMTP */}
-      <div className="bg-[#0e101a] border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-        <div className="flex items-center gap-2 text-slate-300 font-bold text-sm">
-          <Mail className="w-4 h-4 text-purple-400" />
+      <div className="bg-[#12141F] border border-white/[0.06] rounded-2xl p-6 shadow-subtle space-y-4">
+        <div className="flex items-center gap-2 text-slate-300 font-semibold text-xs tracking-wider uppercase">
+          <Mail className="w-4 h-4 text-indigo-400" />
           <span>E-mail SMTP</span>
         </div>
 
-        <div className="bg-[#141624] border border-purple-500/20 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="bg-[#171926] border border-white/[0.06] rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-600/30">
-              <Mail className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+              <Mail className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">E-mail SMTP</h3>
-              <p className="text-xs text-slate-400">Configure seu servidor de e-mail para envio de notificações e mensagens de funil.</p>
+              <h3 className="text-sm font-semibold text-white">E-mail SMTP Notificações</h3>
+              <p className="text-xs text-slate-400">Servidor para envio automático de e-mails transacionais e atualizações de pedidos.</p>
               <div className="flex items-center gap-2 mt-2">
                 {smtpConnected ? (
-                  <span className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
+                  <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
                     <Check className="w-3.5 h-3.5" /> Conectado ({smtpSender})
                   </span>
                 ) : (
@@ -257,15 +257,15 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowSmtpModal(true)}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition-colors"
+              className="px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 text-xs font-medium border border-white/[0.08] transition-colors"
             >
               Configurar Servidor
             </button>
             <button
               onClick={() => setSmtpConnected(!smtpConnected)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
                 smtpConnected 
-                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30' 
+                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20' 
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white'
               }`}
             >
@@ -276,10 +276,10 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
       </div>
 
       {/* 2. SEÇÃO WEBHOOKS */}
-      <div className="bg-[#0e101a] border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
+      <div className="bg-[#12141F] border border-white/[0.06] rounded-2xl p-6 shadow-subtle space-y-5">
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-white font-bold text-sm">
-            <Zap className="w-4 h-4 text-purple-400" />
+          <div className="flex items-center gap-2 text-white font-semibold text-xs tracking-wider uppercase">
+            <Zap className="w-4 h-4 text-indigo-400" />
             <span>Webhooks de Vendas & Pagamentos</span>
           </div>
           <p className="text-xs text-slate-400">
@@ -298,15 +298,15 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
             return (
               <div 
                 key={platform.id}
-                className="bg-[#141624] border border-slate-800/90 hover:border-slate-700 rounded-2xl p-5 space-y-4 transition-all shadow-md flex flex-col justify-between"
+                className="bg-[#171926] border border-white/[0.06] hover:border-white/[0.12] rounded-xl p-5 space-y-4 transition-all shadow-subtle flex flex-col justify-between"
               >
                 {/* Header da Plataforma */}
                 <div className="flex items-start gap-3.5">
-                  <div className={`w-11 h-11 rounded-xl ${platform.iconBg} flex items-center justify-center text-white font-black text-xs shrink-0 shadow-md`}>
+                  <div className={`w-10 h-10 rounded-xl ${platform.iconBg} flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm`}>
                     {platform.iconText}
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">{platform.name}</h3>
+                    <h3 className="text-sm font-semibold text-white">{platform.name}</h3>
                     <p className="text-[11px] text-slate-400 leading-snug mt-0.5">{platform.description}</p>
                   </div>
                 </div>
@@ -314,17 +314,17 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
                 {/* Bloco URL de Postback */}
                 <div className="space-y-1.5 pt-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-300">
+                    <span className="text-[11px] font-medium text-slate-300">
                       Sua URL de Postback (cole na plataforma)
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-[10px] text-amber-400">
+                  <div className="flex items-center gap-1.5 text-[10px] text-amber-400/90">
                     <ShieldAlert className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span>Mantenha esta URL secreta — ela permite acionar seus fluxos.</span>
+                    <span>Mantenha esta URL confidencial para proteger seus funis.</span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 bg-[#0b0c14] border border-slate-800 rounded-xl p-1.5 px-3">
+                  <div className="flex items-center gap-1.5 bg-[#0B0D14] border border-white/[0.06] rounded-xl p-1.5 px-3">
                     <span className="text-xs font-mono text-slate-300 flex-1 truncate select-all">
                       {isVisible ? postbackUrl : '••••••••••••••••••••••••••••••••••••••••••••••••••'}
                     </span>
@@ -340,10 +340,10 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
                     <button
                       onClick={() => handleCopy(platform.id)}
                       title="Copiar URL de Postback"
-                      className={`p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                      className={`p-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
                         isCopied 
-                          ? 'bg-emerald-500/20 text-emerald-400' 
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          ? 'bg-emerald-500/10 text-emerald-400' 
+                          : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                       }`}
                     >
                       {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -353,8 +353,8 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
 
                 {/* Bloco URL do Webhook Opcional */}
                 <div className="space-y-1 pt-1">
-                  <span className="text-[11px] font-bold text-slate-400">
-                    URL do Webhook (opcional)
+                  <span className="text-[11px] font-medium text-slate-400">
+                    URL do Webhook de Retorno (opcional)
                   </span>
                   <div className="flex items-center gap-2">
                     <input
@@ -362,14 +362,14 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
                       placeholder="https://..."
                       value={customUrls[platform.id] || ''}
                       onChange={(e) => setCustomUrls({ ...customUrls, [platform.id]: e.target.value })}
-                      className="flex-1 bg-[#0b0c14] border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+                      className="flex-1 bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
                     />
                     <button
                       onClick={() => handleSaveCustomUrl(platform.id)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                      className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
                         isSaved 
                           ? 'bg-emerald-600 text-white' 
-                          : 'bg-purple-600 hover:bg-purple-500 text-white'
+                          : 'bg-indigo-600 hover:bg-indigo-500 text-white'
                       }`}
                     >
                       {isSaved ? 'Salvo!' : 'Salvar'}
@@ -384,16 +384,16 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
 
       {/* MODAL CONFIGURAÇÃO SMTP */}
       {showSmtpModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#12131f] border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Server className="w-5 h-5 text-purple-400" />
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12141F] border border-white/[0.08] rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Server className="w-4 h-4 text-indigo-400" />
                 Configurar Servidor E-mail SMTP
               </h3>
               <button 
                 onClick={() => setShowSmtpModal(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
               >
                 ✕
               </button>
@@ -401,28 +401,28 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
 
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Host SMTP</label>
+                <label className="text-xs font-medium text-slate-300 block mb-1">Host SMTP</label>
                 <input
                   type="text"
                   value={smtpHost}
                   onChange={(e) => setSmtpHost(e.target.value)}
-                  className="w-full bg-[#181a28] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">Porta</label>
+                  <label className="text-xs font-medium text-slate-300 block mb-1">Porta</label>
                   <input
                     type="text"
                     value={smtpPort}
                     onChange={(e) => setSmtpPort(e.target.value)}
-                    className="w-full bg-[#181a28] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                    className="w-full bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">Segurança</label>
-                  <select className="w-full bg-[#181a28] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                  <label className="text-xs font-medium text-slate-300 block mb-1">Segurança</label>
+                  <select className="w-full bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
                     <option>TLS / STARTTLS</option>
                     <option>SSL</option>
                     <option>Nenhuma</option>
@@ -431,32 +431,32 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Usuário / E-mail</label>
+                <label className="text-xs font-medium text-slate-300 block mb-1">Usuário / E-mail</label>
                 <input
                   type="text"
                   value={smtpUser}
                   onChange={(e) => setSmtpUser(e.target.value)}
-                  className="w-full bg-[#181a28] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Senha SMTP</label>
+                <label className="text-xs font-medium text-slate-300 block mb-1">Senha SMTP</label>
                 <input
                   type="password"
                   value={smtpPass}
                   onChange={(e) => setSmtpPass(e.target.value)}
-                  className="w-full bg-[#181a28] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Nome do Remetente</label>
+                <label className="text-xs font-medium text-slate-300 block mb-1">Nome do Remetente</label>
                 <input
                   type="text"
                   value={smtpSender}
                   onChange={(e) => setSmtpSender(e.target.value)}
-                  className="w-full bg-[#181a28] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
             </div>
@@ -464,7 +464,7 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
             <div className="pt-2 flex justify-end gap-2">
               <button
                 onClick={() => setShowSmtpModal(false)}
-                className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-700"
+                className="px-4 py-2 bg-white/[0.04] text-slate-300 rounded-xl text-xs font-medium hover:bg-white/[0.08] border border-white/[0.06]"
               >
                 Cancelar
               </button>
@@ -473,7 +473,7 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
                   setSmtpConnected(true);
                   setShowSmtpModal(false);
                 }}
-                className="px-4 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-500"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-medium hover:bg-indigo-500 transition-colors"
               >
                 Salvar Configurações
               </button>

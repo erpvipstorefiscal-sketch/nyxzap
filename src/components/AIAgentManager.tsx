@@ -96,59 +96,59 @@ export const AIAgentManager: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            <Bot className="w-6 h-6 text-purple-400" />
-            <span>Agente de IA Multimodal (Gemini, GPT & Claude)</span>
+          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <Bot className="w-5 h-5 text-indigo-400" />
+            <span>Agente de IA Multimodal</span>
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             Configure inteligência avançada com raciocínio profundo, RAG, pesquisa web e transbordo humano.
           </p>
         </div>
 
         <button
           onClick={handleSave}
-          className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-purple-600/30 flex items-center gap-2 self-start"
+          className="btn-primary px-4 py-2 text-white rounded-xl text-xs font-semibold flex items-center gap-2 self-start"
         >
-          <Save className="w-4 h-4" />
+          <Save className="w-3.5 h-3.5" />
           <span>{saveToast ? 'Configurações Salvas!' : 'Salvar Alterações'}</span>
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 text-xs font-bold">
+      <div className="flex items-center gap-1 border-b border-white/[0.06] text-xs font-medium pb-px">
         <button
           onClick={() => setActiveTab('config')}
-          className={`py-3 px-4 border-b-2 transition-colors flex items-center gap-2 ${
+          className={`py-2.5 px-3.5 border-b-2 transition-all flex items-center gap-2 ${
             activeTab === 'config'
-              ? 'border-purple-500 text-purple-300'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-indigo-500 text-white font-semibold'
+              : 'border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]'
           }`}
         >
-          <Cpu className="w-4 h-4" />
+          <Cpu className="w-4 h-4 text-indigo-400" />
           <span>Modelos & Comportamento</span>
         </button>
 
         <button
           onClick={() => setActiveTab('knowledge')}
-          className={`py-3 px-4 border-b-2 transition-colors flex items-center gap-2 ${
+          className={`py-2.5 px-3.5 border-b-2 transition-all flex items-center gap-2 ${
             activeTab === 'knowledge'
-              ? 'border-cyan-500 text-cyan-300'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-indigo-500 text-white font-semibold'
+              : 'border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]'
           }`}
         >
-          <FileText className="w-4 h-4" />
+          <FileText className="w-4 h-4 text-zinc-400" />
           <span>Base de Conhecimento ({config.knowledgeDocs.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('playground')}
-          className={`py-3 px-4 border-b-2 transition-colors flex items-center gap-2 ${
+          className={`py-2.5 px-3.5 border-b-2 transition-all flex items-center gap-2 ${
             activeTab === 'playground'
-              ? 'border-emerald-500 text-emerald-300'
-              : 'border-transparent text-slate-400 hover:text-white'
+              ? 'border-indigo-500 text-white font-semibold'
+              : 'border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]'
           }`}
         >
-          <Sparkles className="w-4 h-4" />
+          <Sparkles className="w-4 h-4 text-emerald-400" />
           <span>Playground de Teste em Tempo Real</span>
         </button>
       </div>
@@ -162,19 +162,19 @@ export const AIAgentManager: React.FC = () => {
               onClick={() => setConfig({ ...config, provider: 'gemini', model: 'gemini-3.8-flash' })}
               className={`p-5 rounded-2xl border cursor-pointer transition-all ${
                 config.provider === 'gemini'
-                  ? 'bg-purple-950/20 border-purple-500 ring-2 ring-purple-500/40'
-                  : 'bg-nyx-900 border-slate-800 hover:border-slate-700'
+                  ? 'bg-surface-card border-indigo-500/80 shadow-subtle'
+                  : 'bg-surface-card border-white/[0.08] hover:border-white/20'
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-white flex items-center gap-2 text-sm">
-                  <Sparkles className="w-4 h-4 text-purple-400" /> Google Gemini
+                <span className="font-semibold text-white flex items-center gap-2 text-xs">
+                  <Sparkles className="w-4 h-4 text-indigo-400" /> Google Gemini
                 </span>
-                <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-bold">
+                <span className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded font-medium">
                   Recomendado
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 leading-relaxed">
                 Suporte nativo a raciocínio interno, pesquisa Google Grounding e alta resolução visual.
               </p>
             </div>
@@ -183,19 +183,19 @@ export const AIAgentManager: React.FC = () => {
               onClick={() => setConfig({ ...config, provider: 'openai', model: 'gpt-4o' })}
               className={`p-5 rounded-2xl border cursor-pointer transition-all ${
                 config.provider === 'openai'
-                  ? 'bg-emerald-950/20 border-emerald-500 ring-2 ring-emerald-500/40'
-                  : 'bg-nyx-900 border-slate-800 hover:border-slate-700'
+                  ? 'bg-surface-card border-indigo-500/80 shadow-subtle'
+                  : 'bg-surface-card border-white/[0.08] hover:border-white/20'
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-white flex items-center gap-2 text-sm">
+                <span className="font-semibold text-white flex items-center gap-2 text-xs">
                   <Brain className="w-4 h-4 text-emerald-400" /> OpenAI GPT
                 </span>
-                <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-bold">
+                <span className="text-[10px] bg-white/[0.05] text-zinc-300 border border-white/10 px-2 py-0.5 rounded font-mono">
                   GPT-4o
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 leading-relaxed">
                 Atendimento rápido para WhatsApp com grande repertório de respostas.
               </p>
             </div>
@@ -204,27 +204,27 @@ export const AIAgentManager: React.FC = () => {
               onClick={() => setConfig({ ...config, provider: 'claude', model: 'claude-3-7-sonnet' })}
               className={`p-5 rounded-2xl border cursor-pointer transition-all ${
                 config.provider === 'claude'
-                  ? 'bg-cyan-950/20 border-cyan-500 ring-2 ring-cyan-500/40'
-                  : 'bg-nyx-900 border-slate-800 hover:border-slate-700'
+                  ? 'bg-surface-card border-indigo-500/80 shadow-subtle'
+                  : 'bg-surface-card border-white/[0.08] hover:border-white/20'
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-white flex items-center gap-2 text-sm">
+                <span className="font-semibold text-white flex items-center gap-2 text-xs">
                   <Layers className="w-4 h-4 text-cyan-400" /> Anthropic Claude
                 </span>
-                <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-bold">
+                <span className="text-[10px] bg-white/[0.05] text-zinc-300 border border-white/10 px-2 py-0.5 rounded font-mono">
                   Claude 3.7
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 leading-relaxed">
                 Alta capacidade de negociação e nuance para fechar vendas complexas.
               </p>
             </div>
           </div>
 
           {/* API Key Input */}
-          <div className="p-5 rounded-2xl bg-nyx-900 border border-slate-800 space-y-2">
-            <label className="text-xs font-bold text-white uppercase tracking-wider block">
+          <div className="p-5 rounded-2xl bg-surface-card border border-white/[0.08] space-y-2">
+            <label className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider block">
               Chave da API ({config.provider.toUpperCase()})
             </label>
             <input
@@ -232,26 +232,26 @@ export const AIAgentManager: React.FC = () => {
               placeholder={`Cole sua API Key do ${config.provider.toUpperCase()} aqui...`}
               value={config.apiKey || ''}
               onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-              className="w-full bg-nyx-850 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+              className="w-full bg-[#141622] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition-all placeholder:text-zinc-600"
             />
             <span className="text-[11px] text-slate-500 block">
               Sua chave fica protegida localmente no seu servidor VPS.
             </span>
           </div>
 
-          {/* Gemini 3 Exclusive Controls */}
-          <div className="p-6 rounded-2xl bg-nyx-900 border border-purple-500/30 space-y-5">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
-              <Sparkles className="w-4 h-4 text-purple-400" />
+          {/* Controls */}
+          <div className="p-6 rounded-2xl bg-surface-card border border-white/[0.08] space-y-5">
+            <h3 className="text-xs font-semibold text-white flex items-center gap-2 border-b border-white/[0.06] pb-3 uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
               <span>Controles Especiais da IA</span>
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Nível de Raciocínio */}
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
                   <span>Nível de Raciocínio da IA</span>
-                  <span className="text-purple-400 font-mono text-[10px]">{config.reasoningLevel.toUpperCase()}</span>
+                  <span className="text-indigo-400 font-mono text-[10px]">{config.reasoningLevel.toUpperCase()}</span>
                 </label>
                 <p className="text-[11px] text-slate-400">
                   Controla a profundidade do raciocínio interno do modelo antes de formular a resposta.
@@ -262,10 +262,10 @@ export const AIAgentManager: React.FC = () => {
                       key={lvl}
                       type="button"
                       onClick={() => setConfig({ ...config, reasoningLevel: lvl })}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      className={`py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
                         config.reasoningLevel === lvl
-                          ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-600/30'
-                          : 'bg-nyx-850 border-slate-800 text-slate-400 hover:text-white'
+                          ? 'bg-indigo-600 border-indigo-500 text-white shadow-subtle'
+                          : 'bg-[#141622] border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.02]'
                       }`}
                     >
                       {lvl.toUpperCase()}
@@ -276,7 +276,7 @@ export const AIAgentManager: React.FC = () => {
 
               {/* Resolução de Mídia */}
               <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
                   <span>Resolução de Mídia (Imagens & Comprovantes)</span>
                   <span className="text-cyan-400 font-mono text-[10px]">{config.mediaResolution.toUpperCase()}</span>
                 </label>
@@ -284,15 +284,15 @@ export const AIAgentManager: React.FC = () => {
                   Controla a qualidade do processamento visual de imagens e comprovantes recebidos pelo WhatsApp.
                 </p>
                 <div className="grid grid-cols-3 gap-2 pt-1">
-                  {(['baixo', 'medium', 'maximo'] as const).map(res => (
+                  {(['baixo', 'medio', 'maximo'] as const).map(res => (
                     <button
                       key={res}
                       type="button"
                       onClick={() => setConfig({ ...config, mediaResolution: res })}
-                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      className={`py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
                         config.mediaResolution === res
-                          ? 'bg-cyan-600 border-cyan-500 text-white shadow-lg shadow-cyan-600/30'
-                          : 'bg-nyx-850 border-slate-800 text-slate-400 hover:text-white'
+                          ? 'bg-cyan-600/80 border-cyan-500 text-white shadow-subtle'
+                          : 'bg-[#141622] border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.02]'
                       }`}
                     >
                       {res.toUpperCase()}

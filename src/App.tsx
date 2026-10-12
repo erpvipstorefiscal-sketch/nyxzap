@@ -65,9 +65,6 @@ export function App() {
 
   const handleSelectClientTab = (tab: 'chat' | 'whatsapp' | 'flow' | 'integrations' | 'ai') => {
     setActiveClientTab(tab);
-    if (tab === 'flow') {
-      setIsSidebarCollapsed(true);
-    }
   };
 
   // Modals state
@@ -237,30 +234,30 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#090a0f] text-slate-100 flex flex-col md:flex-row font-sans">
+    <div className="min-h-screen bg-[#0B0C10] text-zinc-100 flex flex-col md:flex-row font-sans">
       {/* LEFT SIDEBAR NAVIGATION */}
-      <aside className={`transition-all duration-300 ease-in-out bg-[#0d0f18] border-r border-slate-800/80 flex flex-col justify-between shrink-0 z-40 ${
+      <aside className={`transition-all duration-300 ease-in-out bg-[#0E1017] border-r border-white/[0.06] flex flex-col justify-between shrink-0 z-40 ${
         isSidebarCollapsed ? 'w-0 hidden md:hidden overflow-hidden' : 'w-full md:w-64'
       }`}>
         {/* Brand Logo & Status */}
         <div>
-          <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
+          <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-extrabold text-white text-lg shadow-lg shadow-purple-600/30">
-                ⚡
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-b from-indigo-500/20 to-indigo-600/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]">
+                <Zap className="w-4 h-4 text-indigo-400 fill-indigo-400/20" />
               </div>
               <div>
-                <div className="flex items-center gap-1.5">
-                  <h1 className="text-base font-extrabold text-white tracking-tight">NyxZap</h1>
-                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border ${
+                <div className="flex items-center gap-2">
+                  <h1 className="text-sm font-bold text-white tracking-tight">NyxZap</h1>
+                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-medium border ${
                     user.role === 'admin' 
-                      ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' 
-                      : 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                      ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' 
+                      : 'bg-white/[0.05] text-zinc-300 border-white/[0.08]'
                   }`}>
-                    {user.role === 'admin' ? 'ADMIN' : 'CLIENTE'}
+                    {user.role === 'admin' ? 'ADMIN' : 'PRO'}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400 truncate max-w-[130px]">
+                <p className="text-[11px] text-zinc-500 truncate max-w-[130px]">
                   {user.role === 'admin' ? 'SuperAdmin MRR' : (user.planName || 'Plano Pro')}
                 </p>
               </div>
@@ -269,91 +266,54 @@ export function App() {
 
           {/* Subscription Validity Badge with Days Countdown */}
           {user.role === 'client' && (
-            <div className="m-3 p-3.5 rounded-2xl bg-[#131622] border border-slate-800/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Validade da Licença</span>
-                </span>
-                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                  subInfo.daysRemaining <= 3 
-                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'
-                    : subInfo.daysRemaining <= 7
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                }`}>
-                  {subInfo.daysRemaining === 0 
-                    ? 'Vence Hoje' 
-                    : subInfo.daysRemaining === 1 
-                    ? 'Falta 1 dia' 
-                    : `Faltam ${subInfo.daysRemaining} dias`}
-                </span>
+            <div className="mx-3 my-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full ${subInfo.daysRemaining <= 3 ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+                <span className="text-zinc-400 text-[11px] font-medium">Licença Ativa</span>
               </div>
-
-              <div className="text-[11px] text-slate-400 font-mono flex items-center justify-between">
-                <span>Expira em:</span>
-                <span className="text-white font-bold">{subInfo.validUntilStr}</span>
-              </div>
-
-              {/* Progress bar of validity / warning */}
-              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                <div 
-                  className={`h-full rounded-full transition-all ${
-                    subInfo.daysRemaining <= 3 ? 'bg-rose-500' : subInfo.daysRemaining <= 7 ? 'bg-amber-400' : 'bg-gradient-to-r from-purple-500 to-indigo-500'
-                  }`}
-                  style={{ width: `${Math.min(100, Math.max(10, (subInfo.daysRemaining / 30) * 100))}%` }}
-                />
-              </div>
-
-              {subInfo.daysRemaining <= 5 && (
-                <button
-                  onClick={() => setShowManagePlanModal(true)}
-                  className="w-full mt-1 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-[10px] font-extrabold flex items-center justify-center gap-1 shadow-sm transition-all"
-                >
-                  <CreditCard className="w-3 h-3" />
-                  <span>Renovar / Antecipar</span>
-                </button>
-              )}
+              <span className="font-mono text-zinc-300 text-[11px]">
+                {subInfo.daysRemaining === 0 ? 'Expira hoje' : `${subInfo.daysRemaining}d restantes`}
+              </span>
             </div>
           )}
 
           {/* Client Left Navigation Menu Items */}
           {user.role === 'client' && (
-            <nav className="p-3 space-y-1.5">
-              <span className="px-3 text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                Módulos Principais
+            <nav className="p-3 space-y-1">
+              <span className="px-3 text-[10px] font-semibold uppercase text-zinc-500 tracking-wider">
+                Módulos
               </span>
 
               {/* 1. CHAT AO VIVO */}
               <button
                 onClick={() => handleSelectClientTab('chat')}
-                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
+                className={`w-full px-3 py-2.5 rounded-xl transition-all flex items-center justify-between text-xs font-medium ${
                   activeClientTab === 'chat'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    ? 'bg-white/[0.08] text-white border border-white/[0.1] shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <MessageSquare className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <MessageSquare className={`w-4 h-4 ${activeClientTab === 'chat' ? 'text-indigo-400' : 'text-zinc-500'}`} />
                   <span>Chat ao Vivo</span>
                 </div>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
               </button>
 
               {/* 2. CONEXÃO WHATSAPP */}
               <button
                 onClick={() => handleSelectClientTab('whatsapp')}
-                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
+                className={`w-full px-3 py-2.5 rounded-xl transition-all flex items-center justify-between text-xs font-medium ${
                   activeClientTab === 'whatsapp'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    ? 'bg-white/[0.08] text-white border border-white/[0.1] shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <Smartphone className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <Smartphone className={`w-4 h-4 ${activeClientTab === 'whatsapp' ? 'text-indigo-400' : 'text-zinc-500'}`} />
                   <span>Conexão WhatsApp</span>
                 </div>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-300 font-normal">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 border border-white/[0.06]">
                   {user.instancesLimit || 1}x
                 </span>
               </button>
@@ -361,43 +321,43 @@ export function App() {
               {/* 3. FLUXO */}
               <button
                 onClick={() => handleSelectClientTab('flow')}
-                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-xs font-bold ${
+                className={`w-full px-3 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-xs font-medium ${
                   activeClientTab === 'flow'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    ? 'bg-white/[0.08] text-white border border-white/[0.1] shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
                 }`}
               >
-                <Workflow className="w-4 h-4" />
+                <Workflow className={`w-4 h-4 ${activeClientTab === 'flow' ? 'text-indigo-400' : 'text-zinc-500'}`} />
                 <span>Fluxo</span>
               </button>
 
               {/* CANAIS & INTEGRAÇÕES */}
               <button
                 onClick={() => handleSelectClientTab('integrations')}
-                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center gap-3 text-xs font-bold ${
+                className={`w-full px-3 py-2.5 rounded-xl transition-all flex items-center gap-2.5 text-xs font-medium ${
                   activeClientTab === 'integrations'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    ? 'bg-white/[0.08] text-white border border-white/[0.1] shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
                 }`}
               >
-                <Radio className="w-4 h-4 text-cyan-400" />
+                <Radio className={`w-4 h-4 ${activeClientTab === 'integrations' ? 'text-indigo-400' : 'text-zinc-500'}`} />
                 <span>Canais & Integrações</span>
               </button>
 
               {/* 4. AGENTE DE IA */}
               <button
                 onClick={() => handleSelectClientTab('ai')}
-                className={`w-full px-3.5 py-3 rounded-xl transition-all flex items-center justify-between text-xs font-bold ${
+                className={`w-full px-3 py-2.5 rounded-xl transition-all flex items-center justify-between text-xs font-medium ${
                   activeClientTab === 'ai'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    ? 'bg-white/[0.08] text-white border border-white/[0.1] shadow-sm'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <Bot className="w-4 h-4" />
+                <div className="flex items-center gap-2.5">
+                  <Bot className={`w-4 h-4 ${activeClientTab === 'ai' ? 'text-indigo-400' : 'text-zinc-500'}`} />
                   <span>Agente de IA</span>
                 </div>
-                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold uppercase">
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 uppercase">
                   Gemini
                 </span>
               </button>
@@ -406,14 +366,14 @@ export function App() {
         </div>
 
         {/* Bottom Sidebar: Suporte, Novidades, Profile */}
-        <div className="p-3 border-t border-slate-800/80 space-y-2 bg-[#0a0b12]">
+        <div className="p-3 border-t border-white/[0.06] space-y-2 bg-[#090A0F]">
           <div className="grid grid-cols-2 gap-1.5">
             {/* Suporte Button */}
             <button
               onClick={() => setShowSupportModal(true)}
-              className="p-2.5 bg-[#131622] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              className="p-2 bg-white/[0.02] hover:bg-white/[0.05] text-zinc-400 hover:text-white border border-white/[0.06] rounded-xl text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
             >
-              <LifeBuoy className="w-3.5 h-3.5 text-cyan-400" />
+              <LifeBuoy className="w-3.5 h-3.5 text-zinc-400" />
               <span>Suporte</span>
             </button>
 
@@ -423,57 +383,57 @@ export function App() {
                 fetchUpdates();
                 setShowUpdatesModal(true);
               }}
-              className="p-2.5 bg-[#131622] hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors relative"
+              className="p-2 bg-white/[0.02] hover:bg-white/[0.05] text-zinc-400 hover:text-white border border-white/[0.06] rounded-xl text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors relative"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
               <span>Novidades</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
             </button>
           </div>
 
           {/* User Profile Card */}
           <button
             onClick={() => setShowProfileModal(true)}
-            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[#131622] hover:bg-slate-800 border border-slate-800 transition-colors text-left"
+            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.06] transition-colors text-left"
           >
             <div className="flex items-center gap-2.5 truncate">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-sm">
+              <div className="w-7 h-7 rounded-lg bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center justify-center shrink-0">
                 {user.name.charAt(0).toUpperCase()}
               </div>
               <div className="truncate">
-                <span className="text-xs font-bold text-white block leading-tight truncate">{user.name}</span>
-                <span className="text-[10px] text-purple-300 font-mono block leading-tight truncate">{user.planName || 'Plano Pro'}</span>
+                <span className="text-xs font-medium text-zinc-200 block leading-tight truncate">{user.name}</span>
+                <span className="text-[10px] text-zinc-500 font-mono block leading-tight truncate">{user.planName || 'Plano Pro'}</span>
               </div>
             </div>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
           </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#090a0f]">
-        {/* Top bar for mobile or extra status */}
-        <header className="border-b border-slate-800/80 bg-[#0d0f18]/90 backdrop-blur-md px-4 sm:px-6 py-3 flex items-center justify-between shrink-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0B0C10]">
+        {/* Top bar */}
+        <header className="border-b border-white/[0.06] bg-[#0E1017]/80 backdrop-blur-md px-4 sm:px-6 py-2.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSidebarCollapsed(prev => !prev)}
-              className="p-1.5 sm:p-2 rounded-xl bg-[#131622] hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-all flex items-center gap-1.5 text-xs shadow-sm"
-              title={isSidebarCollapsed ? "Expandir menu lateral" : "Retrair menu lateral (Tela cheia para fluxo)"}
+              className="p-1.5 sm:p-2 rounded-lg bg-white/[0.02] hover:bg-white/[0.06] text-zinc-400 hover:text-white border border-white/[0.06] transition-all flex items-center gap-1.5 text-xs shadow-sm"
+              title={isSidebarCollapsed ? "Expandir menu lateral" : "Retrair menu lateral"}
             >
               {isSidebarCollapsed ? (
                 <>
-                  <PanelLeftOpen className="w-4 h-4 text-purple-400" />
-                  <span className="hidden sm:inline text-[11px] font-semibold text-purple-300">Mostrar Menu</span>
+                  <PanelLeftOpen className="w-4 h-4 text-indigo-400" />
+                  <span className="hidden sm:inline text-[11px] font-medium text-zinc-300">Mostrar Menu</span>
                 </>
               ) : (
                 <>
-                  <PanelLeftClose className="w-4 h-4 text-slate-400" />
-                  <span className="hidden sm:inline text-[11px] font-semibold text-slate-400">Recolher Menu</span>
+                  <PanelLeftClose className="w-4 h-4 text-zinc-400" />
+                  <span className="hidden sm:inline text-[11px] font-medium text-zinc-400">Recolher Menu</span>
                 </>
               )}
             </button>
 
-            <h2 className="text-sm font-bold text-white capitalize">
+            <h2 className="text-xs sm:text-sm font-semibold text-white tracking-tight">
               {user.role === 'admin' 
                 ? 'Painel SuperAdmin' 
                 : activeClientTab === 'chat' 
@@ -490,11 +450,11 @@ export function App() {
 
           <div className="flex items-center gap-3">
             {user.role === 'client' && (
-              <div className="flex items-center gap-2 text-xs font-mono bg-[#131622] px-3 py-1.5 rounded-xl border border-slate-800">
-                <span className="text-slate-400">Validade:</span>
-                <span className="text-white font-bold">{subInfo.validUntilStr}</span>
-                <span className="text-slate-600">•</span>
-                <span className={subInfo.daysRemaining <= 3 ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+              <div className="flex items-center gap-2 text-xs font-mono bg-white/[0.02] px-3 py-1 rounded-lg border border-white/[0.06]">
+                <span className="text-zinc-500">Validade:</span>
+                <span className="text-zinc-200 font-medium">{subInfo.validUntilStr}</span>
+                <span className="text-zinc-600">•</span>
+                <span className={subInfo.daysRemaining <= 3 ? 'text-rose-400 font-medium' : 'text-emerald-400 font-medium'}>
                   {subInfo.daysRemaining === 0 ? 'Expira Hoje' : `${subInfo.daysRemaining}d restantes`}
                 </span>
               </div>
@@ -503,15 +463,15 @@ export function App() {
         </header>
 
         {/* Main View Container */}
-        <main className={`flex-1 w-full ${
-          activeClientTab === 'flow' 
-            ? 'p-0 max-w-none h-[calc(100vh-57px)] overflow-hidden flex flex-col' 
+        <main className={`flex-1 w-full min-h-0 ${
+          activeClientTab === 'flow' || activeClientTab === 'chat'
+            ? 'p-0 max-w-none h-[calc(100vh-53px)] overflow-hidden flex flex-col' 
             : 'p-6 max-w-7xl mx-auto overflow-y-auto'
         }`}>
           {user.role === 'admin' ? (
             <AdminDashboard />
           ) : (
-            <div className={`flex-1 w-full flex flex-col min-h-0 ${activeClientTab === 'flow' ? 'h-full' : ''}`}>
+            <div className={`flex-1 w-full flex flex-col min-h-0 ${activeClientTab === 'flow' || activeClientTab === 'chat' ? 'h-full' : ''}`}>
               {activeClientTab === 'chat' && <LiveChatManager />}
               {activeClientTab === 'whatsapp' && (
                 <WhatsAppManager 

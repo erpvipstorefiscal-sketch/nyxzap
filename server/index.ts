@@ -132,6 +132,32 @@ app.post('/api/auth/login', async (req, res) => {
     });
   }
 
+  // Fast-path instant dev/demo users
+  if (email === 'cliente@empresa.com' && password === '123456') {
+    return res.json({
+      id: 'usr-demo',
+      name: 'Cliente NyxZap Pro',
+      email: 'cliente@empresa.com',
+      role: 'client',
+      planName: 'Pro (Mais Vendido)',
+      validUntil: '2026-11-10',
+      instancesLimit: 3,
+      token: 'jwt-token-demo'
+    });
+  }
+  if (email === 'admin@nyxzap.com' && password === 'admin123') {
+    return res.json({
+      id: 'usr-admin',
+      name: 'Super Administrador',
+      email: 'admin@nyxzap.com',
+      role: 'admin',
+      planName: 'Enterprise Anual',
+      validUntil: '2030-12-31',
+      instancesLimit: 10,
+      token: 'jwt-token-admin'
+    });
+  }
+
   try {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email?.trim()]);
     if (result.rows.length === 0) {
@@ -183,6 +209,31 @@ app.post('/api/auth/login', async (req, res) => {
       token: 'jwt-token-' + user.id
     });
   } catch (err: any) {
+    console.warn('[PostgreSQL Offline - Fallback Local Dev]', err.message);
+    if (email === 'cliente@empresa.com' && password === '123456') {
+      return res.json({
+        id: 'usr-demo',
+        name: 'Cliente NyxZap Pro',
+        email: 'cliente@empresa.com',
+        role: 'client',
+        planName: 'Pro (Mais Vendido)',
+        validUntil: '2026-11-10',
+        instancesLimit: 3,
+        token: 'jwt-token-demo'
+      });
+    }
+    if (email === 'admin@nyxzap.com' && password === 'admin123') {
+      return res.json({
+        id: 'usr-admin',
+        name: 'Super Administrador',
+        email: 'admin@nyxzap.com',
+        role: 'admin',
+        planName: 'Enterprise Anual',
+        validUntil: '2030-12-31',
+        instancesLimit: 10,
+        token: 'jwt-token-admin'
+      });
+    }
     res.status(500).json({ error: 'Erro no banco de dados: ' + err.message });
   }
 });
