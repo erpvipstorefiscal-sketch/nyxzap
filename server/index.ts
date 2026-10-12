@@ -6,7 +6,9 @@ import pino from 'pino';
 import makeWASocket, { 
   DisconnectReason, 
   useMultiFileAuthState,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  generateProfilePicture,
+  S_WHATSAPP_NET
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import fs from 'fs';
@@ -1632,26 +1634,60 @@ async function executeNodeAction(
                   }
                 }
 
-                if (photoBuffer && targetSock.updateProfilePicture) {
-                  // Aguarda 1.5s para garantir que os servidores do WhatsApp propaguem os direitos de admin no grupo recém-criado
-                  await new Promise(r => setTimeout(r, 1500));
-                  await targetSock.updateProfilePicture(groupRes.id, photoBuffer);
-                  console.log(`[Flow Engine] Foto de perfil do grupo '${groupSubject}' aplicada com sucesso!`);
+                if (photoBuffer) {
+                  // Aguarda 1.8s para garantir que os servidores do WhatsApp propaguem a criação do grupo e os privilégios de admin
+                  await new Promise(r => setTimeout(r, 1800));
+
+                  const applyPhoto = async (targetJid: string, buf: Buffer) => {
+                    // 1. Tentar via helper oficial do Baileys
+                    if (targetSock.updateProfilePicture) {
+                      try {
+                        await targetSock.updateProfilePicture(targetJid, buf);
+                        return true;
+                      } catch (e: any) {
+                        console.warn(`[Flow Engine] updateProfilePicture nativo falhou (${e.message}), tentando envio direto via query IQ...`);
+                      }
+                    }
+
+                    // 2. Fallback de alta precisão: processa imagem e envia IQ direto para o grupo
+                    const { img } = await generateProfilePicture(buf);
+                    await targetSock.query({
+                      tag: 'iq',
+                      attrs: {
+                        to: targetJid,
+                        type: 'set',
+                        xmlns: 'w:profile:picture'
+                      },
+                      content: [
+                        {
+                          tag: 'picture',
+                          attrs: { type: 'image' },
+                          content: img
+                        }
+                      ]
+                    });
+                    return true;
+                  };
+
+                  try {
+                    await applyPhoto(groupRes.id, photoBuffer);
+                    console.log(`[Flow Engine] Foto de perfil do grupo '${groupSubject}' aplicada com sucesso!`);
+                  } catch (photoErr: any) {
+                    console.error('[Flow Engine] Erro ao aplicar foto do grupo (1ª tentativa):', photoErr.message);
+                    // Segunda tentativa após 2.5s caso a criação do grupo ainda estivesse sincronizando no WhatsApp
+                    try {
+                      await new Promise(r => setTimeout(r, 2500));
+                      await applyPhoto(groupRes.id, photoBuffer);
+                      console.log(`[Flow Engine] Foto de perfil do grupo '${groupSubject}' aplicada com sucesso na 2ª tentativa!`);
+                    } catch (retryErr: any) {
+                      console.error('[Flow Engine] Erro ao aplicar foto do grupo (2ª tentativa):', retryErr.message);
+                    }
+                  }
                 } else {
                   console.warn('[Flow Engine] Buffer da foto não pôde ser gerado para a foto informada:', photoRaw.slice(0, 50));
                 }
               } catch (photoErr: any) {
-                console.error('[Flow Engine] Erro ao aplicar foto do grupo (1ª tentativa):', photoErr.message);
-                // Segunda tentativa após 2.5s caso a criação do grupo ainda estivesse sincronizando no WhatsApp
-                try {
-                  if (photoBuffer && targetSock.updateProfilePicture) {
-                    await new Promise(r => setTimeout(r, 2500));
-                    await targetSock.updateProfilePicture(groupRes.id, photoBuffer);
-                    console.log(`[Flow Engine] Foto de perfil do grupo '${groupSubject}' aplicada com sucesso na 2ª tentativa!`);
-                  }
-                } catch (retryErr: any) {
-                  console.error('[Flow Engine] Erro ao aplicar foto do grupo (2ª tentativa):', retryErr.message);
-                }
+                console.error('[Flow Engine] Erro inesperado ao processar foto do grupo:', photoErr.message);
               }
             }
 
@@ -1666,7 +1702,7 @@ async function executeNodeAction(
             recordFlowMessageInChat(remoteJid, `⚠️ [Não foi possível criar o grupo WhatsApp]`);
           }
         } else if (action === 'adicionar') {
-          const groupId = node.data?.groupId;
+          let groupId = (node.data?.groupId || '').trim();
           const groupName = node.data?.groupName || groupId;
           if (!groupId) {
             console.warn('[Flow Engine] groupId não configurado para ação adicionar');
@@ -1674,13 +1710,20 @@ async function executeNodeAction(
             return;
           }
 
+          // Garantir sufixo @g.us se o usuário colou apenas o ID numérico
+          if (!groupId.includes('@')) {
+            groupId = `${groupId}@g.us`;
+          }
+
           console.log(`[Flow Engine] Adicionando participante ${participantJid} ao grupo ${groupId}...`);
           try {
-            const updateRes = await targetSock.groupParticipantsUpdate(groupId, [participantJid], 'add');
+            // Tenta adicionar usando participantJid limpo e, se necessário, remoteJid original
+            let updateRes = await targetSock.groupParticipantsUpdate(groupId, [participantJid], 'add');
             console.log('[Flow Engine] Resultado adicionar ao grupo:', updateRes);
 
             const isRestricted = Array.isArray(updateRes) && updateRes.some((r: any) => r.status === '403' || r.status === 403);
             const isAlreadyIn = Array.isArray(updateRes) && updateRes.some((r: any) => r.status === '409' || r.status === 409);
+            const isFailed = Array.isArray(updateRes) && updateRes.some((r: any) => r.status && r.status !== '200' && r.status !== 200 && r.status !== '409' && r.status !== 409 && r.status !== '403' && r.status !== 403);
 
             if (isRestricted) {
               // Lead tem restrição de privacidade no WhatsApp -> Gerar link de convite e enviar
@@ -1700,6 +1743,16 @@ async function executeNodeAction(
               }
             } else if (isAlreadyIn) {
               recordFlowMessageInChat(remoteJid, `👥 [Lead já faz parte do grupo '${groupName}']`);
+            } else if (isFailed) {
+              // Tenta fallback com remoteJid original (caso o WhatsApp necessite do identificador exato)
+              try {
+                const fallbackRes = await targetSock.groupParticipantsUpdate(groupId, [remoteJid], 'add');
+                console.log('[Flow Engine] Resultado fallback adicionar ao grupo:', fallbackRes);
+                recordFlowMessageInChat(remoteJid, `👥 [Lead adicionado com sucesso ao grupo '${groupName}']`);
+              } catch (fbErr: any) {
+                console.warn('[Flow Engine] Fallback adicionar falhou:', fbErr.message);
+                recordFlowMessageInChat(remoteJid, `⚠️ [Não foi possível adicionar o lead diretamente ao grupo '${groupName}']`);
+              }
             } else {
               recordFlowMessageInChat(remoteJid, `👥 [Lead adicionado com sucesso ao grupo '${groupName}']`);
             }
@@ -1718,7 +1771,7 @@ async function executeNodeAction(
             }
           }
         } else if (action === 'remover') {
-          const groupId = node.data?.groupId;
+          let groupId = (node.data?.groupId || '').trim();
           const groupName = node.data?.groupName || groupId;
           if (!groupId) {
             console.warn('[Flow Engine] groupId não configurado para ação remover');
@@ -1726,9 +1779,15 @@ async function executeNodeAction(
             return;
           }
 
-          console.log(`[Flow Engine] Removendo participante ${participantJid} do grupo ${groupId}...`);
+          if (!groupId.includes('@')) {
+            groupId = `${groupId}@g.us`;
+          }
+
+          console.log(`[Flow Engine] Removendo participante ${participantJid} (e ${remoteJid}) do grupo ${groupId}...`);
           try {
-            const updateRes = await targetSock.groupParticipantsUpdate(groupId, [participantJid], 'remove');
+            // Tenta remover com participantJid formatado e com remoteJid para cobrir tanto @s.whatsapp.net quanto @lid
+            const participantsToRemove = Array.from(new Set([participantJid, remoteJid].filter(Boolean)));
+            const updateRes = await targetSock.groupParticipantsUpdate(groupId, participantsToRemove, 'remove');
             console.log('[Flow Engine] Resultado remover do grupo:', updateRes);
             recordFlowMessageInChat(remoteJid, `👥 [Lead removido do grupo '${groupName}']`);
           } catch (remErr: any) {

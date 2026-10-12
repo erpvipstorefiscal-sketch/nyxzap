@@ -2637,7 +2637,7 @@ export const FlowBuilder: React.FC = () => {
                                   }}
                                   className="w-full bg-[#1c1d29] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
                                 >
-                                  <option value="">Selecione um grupo...</option>
+                                  <option value="">Selecione um grupo da lista...</option>
                                   {groupsList.map(g => (
                                     <option key={g.id} value={g.id}>
                                       {g.name} ({g.participantsCount} membros)
@@ -2652,12 +2652,23 @@ export const FlowBuilder: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => fetchGroups(node.data.instance || 'Inst. 1')}
-                                    className="text-[10px] text-emerald-400 font-bold hover:underline"
+                                    className="text-[10px] text-emerald-400 font-bold hover:underline cursor-pointer"
                                   >
                                     Clique aqui para sincronizar agora
                                   </button>
                                 </div>
                               )}
+
+                              <div className="pt-1">
+                                <span className="text-[9px] text-slate-400 block mb-1">Ou informe o ID do Grupo manualmente:</span>
+                                <input
+                                  type="text"
+                                  value={node.data.groupId || ''}
+                                  onChange={(e) => updateNodeData(node.id, { groupId: e.target.value.trim() })}
+                                  placeholder="Ex: 120363028391029381@g.us"
+                                  className="w-full bg-[#1c1d29] border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-[11px] font-mono text-white focus:outline-none focus:border-emerald-500"
+                                />
+                              </div>
                             </div>
                           )}
 
