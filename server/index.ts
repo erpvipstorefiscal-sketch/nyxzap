@@ -1037,7 +1037,7 @@ async function loadSavedChats() {
   try {
     const chatsResult = await pool.query('SELECT * FROM chats ORDER BY updated_at DESC');
     for (const row of chatsResult.rows) {
-      if (!row.id || row.id.includes('broadcast') || row.id.includes('@newsletter') || row.id.includes('@lid')) continue;
+      if (!row.id || row.id.includes('broadcast') || row.id.includes('@newsletter')) continue;
       const msgsResult = await pool.query('SELECT * FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC', [row.id]);
       const messages: ChatMessage[] = msgsResult.rows.map(m => ({
         id: m.id,
@@ -1054,8 +1054,8 @@ async function loadSavedChats() {
         tag: row.tag || 'morno',
         followUpDate: row.follow_up_date,
         internalNotes: row.internal_notes || '',
-        aiAgentActive: row.ai_agent_active !== false,
-        botFlowActive: Boolean(row.bot_flow_active),
+        aiAgentActive: row.ai_agent_active === true,
+        botFlowActive: row.bot_flow_active !== false,
         unreadCount: row.unread_count || 0,
         lastMessage: row.last_message || '',
         lastMessageTime: row.last_message_time || '',
@@ -1234,7 +1234,7 @@ async function executeFlowForMessage(
 
       // Check instance filter if specified
       const targetInst = n.data?.instance;
-      if (targetInst && targetInst !== 'Todas') {
+      if (targetInst && targetInst !== 'Todas' && sessions.size > 1) {
         const cleanInstNum = targetInst.replace(/[^0-9]/g, '');
         const cleanSessionNum = sessionId.replace(/[^0-9]/g, '');
         const session = sessions.get(sessionId);
@@ -1251,10 +1251,18 @@ async function executeFlowForMessage(
         return true;
       }
 
-      const keywords: string[] = n.data?.keywords || [];
-      if (keywords.length === 0) return false;
+      let keywordsList: string[] = [];
+      if (Array.isArray(n.data?.keywords)) {
+        keywordsList = n.data.keywords;
+      } else if (typeof n.data?.keywords === 'string') {
+        keywordsList = n.data.keywords.split(/[\n,]+/).map((s: string) => s.trim());
+      } else if (typeof n.data?.keyword === 'string') {
+        keywordsList = [n.data.keyword];
+      }
 
-      return keywords.some(kw => {
+      if (keywordsList.length === 0) return false;
+
+      return keywordsList.some(kw => {
         const normKw = normalizeText(kw);
         if (!normKw) return false;
         return normIncoming.includes(normKw) || normKw.includes(normIncoming);
@@ -1545,8 +1553,8 @@ async function startWhatsAppSession(sessionId: string) {
       if (Array.isArray(histChats)) {
         for (const c of histChats) {
           const jid = c.id;
-          if (!jid || jid.includes('@g.us') || jid.includes('broadcast') || jid.includes('status@') || jid.includes('@newsletter') || jid.includes('@lid')) continue;
-          const cleanPhone = jid.replace('@s.whatsapp.net', '');
+          if (!jid || jid.includes('@g.us') || jid.includes('broadcast') || jid.includes('status@') || jid.includes('@newsletter')) continue;
+          const cleanPhone = jid.replace('@s.whatsapp.net', '').replace('@lid', '');
           let chat = liveChats.get(jid);
           if (!chat) {
             chat = {
@@ -1577,17 +1585,25 @@ async function startWhatsAppSession(sessionId: string) {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
       if (!msg.message) continue;
-      const remoteJid = msg.key.remoteJid;
-      // IGNORE groups, status stories, broadcasts, newsletters and system broadcasts
+      let remoteJid = msg.key.remoteJid;
+      if (!remoteJid) continue;
+
+      // IGNORE groups, status stories, broadcasts, newsletters
       if (
-        !remoteJid || 
         remoteJid.includes('@g.us') || 
         remoteJid.includes('broadcast') || 
         remoteJid.includes('status@') || 
-        remoteJid.includes('@newsletter') || 
-        remoteJid.includes('@lid')
+        remoteJid.includes('@newsletter')
       ) {
         continue;
+      }
+
+      // If remoteJid is @lid, resolve to phone JID if available
+      if (remoteJid.includes('@lid')) {
+        const altJid = (msg.key as any).remoteJidAlt || (msg.key as any).participant;
+        if (altJid && altJid.includes('@s.whatsapp.net')) {
+          remoteJid = altJid;
+        }
       }
 
       // Unwrap ephemeral, viewOnce, and document-with-caption wrappers
@@ -2007,7 +2023,6 @@ app.get('/api/chats', (req, res) => {
     c.id && 
     !c.id.includes('broadcast') && 
     !c.id.includes('@newsletter') && 
-    !c.id.includes('@lid') &&
     !c.leadPhone.includes('broadcast')
   );
   res.json(validChats);
@@ -2621,9 +2636,53 @@ if (fs.existsSync(distPath)) {
   });
 }
 
+// Auto-reconnect all existing WhatsApp sessions on startup/deploy
+async function autoReconnectAllSessions() {
+  console.log('[NyxZap] Verificando instâncias do WhatsApp para reconexão automática...');
+  try {
+    const dbInsts = await pool.query('SELECT id, name, automation_mode FROM whatsapp_instances');
+    for (const r of dbInsts.rows) {
+      if (!sessions.has(r.id)) {
+        sessions.set(r.id, {
+          id: r.id,
+          name: r.name || `WhatsApp ${r.id}`,
+          status: 'disconnected',
+          automationMode: r.automation_mode || 'flow'
+        });
+      }
+    }
+  } catch (e) {}
+
+  const authDir = path.join(process.cwd(), 'whatsapp_auth');
+  if (fs.existsSync(authDir)) {
+    const dirs = fs.readdirSync(authDir);
+    for (const dir of dirs) {
+      const credsPath = path.join(authDir, dir, 'creds.json');
+      if (fs.existsSync(credsPath)) {
+        console.log(`[Auto Reconnect] Restaurando WhatsApp '${dir}' automaticamente após deploy/início...`);
+        try {
+          await startWhatsAppSession(dir);
+        } catch (err) {
+          console.error(`[Auto Reconnect Error] Erro ao reconectar sessão ${dir}:`, err);
+        }
+      }
+    }
+  }
+
+  if (!sessions.has('inst-1')) {
+    sessions.set('inst-1', {
+      id: 'inst-1',
+      name: 'WhatsApp Principal',
+      status: 'disconnected',
+      automationMode: 'flow'
+    });
+  }
+}
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`[NyxZap Backend] Servidor rodando na porta ${PORT}`);
+  autoReconnectAllSessions().catch(err => console.error('[Auto Reconnect Startup Error]', err));
 });
 
 

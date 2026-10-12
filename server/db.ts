@@ -162,14 +162,16 @@ export async function initDatabase() {
         tag VARCHAR(50) DEFAULT 'quente',
         follow_up_date VARCHAR(50),
         internal_notes TEXT DEFAULT '',
-        ai_agent_active BOOLEAN DEFAULT true,
-        bot_flow_active BOOLEAN DEFAULT false,
+        ai_agent_active BOOLEAN DEFAULT false,
+        bot_flow_active BOOLEAN DEFAULT true,
         unread_count INT DEFAULT 0,
         last_message TEXT DEFAULT '',
         last_message_time VARCHAR(50) DEFAULT '',
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
       ALTER TABLE chats DROP CONSTRAINT IF EXISTS chats_user_id_fkey;
+      ALTER TABLE chats ALTER COLUMN bot_flow_active SET DEFAULT true;
+      UPDATE chats SET bot_flow_active = true WHERE bot_flow_active IS NULL;
       DELETE FROM chats WHERE id LIKE '%broadcast%' OR lead_phone LIKE '%broadcast%';
     `);
 
