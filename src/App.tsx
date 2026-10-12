@@ -37,6 +37,7 @@ import { FlowBuilder } from './components/FlowBuilder';
 import { LiveChatManager } from './components/LiveChatManager';
 import { RenewSubscriptionScreen } from './components/RenewSubscriptionScreen';
 import { ChannelsIntegrations } from './components/ChannelsIntegrations';
+import { ModalConfirmHost } from './components/ModalConfirm';
 
 export function App() {
   const [user, setUser] = useState<UserAuth | null>(() => {
@@ -1020,6 +1021,9 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* Global Application Modal / Dialog Host */}
+      <ModalConfirmHost />
     </div>
   );
 }

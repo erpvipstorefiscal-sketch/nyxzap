@@ -53,6 +53,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { FlowNode, FlowEdge, WhatsAppGroup } from '../types';
+import { confirmDialog, alertDialog } from './ModalConfirm';
 
 // Standard dimensions for calculating port positions precisely
 const getNodeDimensions = (type: FlowNode['type'], waitForResponse?: boolean) => {
@@ -642,7 +643,15 @@ export const FlowBuilder: React.FC = () => {
   // Delete flow
   const handleDeleteFlow = async (flowId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Tem certeza que deseja excluir este fluxo?')) return;
+    const confirmed = await confirmDialog({
+      title: 'Excluir Fluxo de Automação',
+      message: 'Tem certeza que deseja excluir este fluxo? Todos os cards, conexões e automações deste funil serão apagados permanentemente.',
+      variant: 'danger',
+      confirmText: 'Sim, Excluir',
+      cancelText: 'Cancelar'
+    });
+    if (!confirmed) return;
+
     try {
       await fetch(`/api/flows/${flowId}`, { method: 'DELETE' });
       await fetchFlows();
@@ -762,8 +771,15 @@ export const FlowBuilder: React.FC = () => {
   };
 
   // Reset to default
-  const handleResetFlow = () => {
-    if (confirm('Deseja restaurar o fluxo para a configuração inicial padrão?')) {
+  const handleResetFlow = async () => {
+    const confirmed = await confirmDialog({
+      title: 'Restaurar Configuração Padrão',
+      message: 'Deseja restaurar o fluxo para a configuração inicial padrão? Quaisquer alterações não salvas no canvas atual serão descartadas.',
+      variant: 'warning',
+      confirmText: 'Restaurar Padrão',
+      cancelText: 'Cancelar'
+    });
+    if (confirmed) {
       setNodes(INITIAL_NODES);
       setEdges(INITIAL_EDGES);
       setZoom(1.05);
@@ -830,7 +846,12 @@ export const FlowBuilder: React.FC = () => {
 
     // Validation for Video: max 50MB
     if (node.type === 'video' && file.size > 50 * 1024 * 1024) {
-      alert('Erro: O vídeo excede o tamanho máximo de 50MB.');
+      await alertDialog({
+        title: 'Limite de Tamanho Excedido',
+        message: 'O vídeo selecionado excede o tamanho máximo permitido de 50MB. Selecione um arquivo de vídeo menor ou comprima o arquivo.',
+        variant: 'warning',
+        confirmText: 'Entendido'
+      });
       return;
     }
 

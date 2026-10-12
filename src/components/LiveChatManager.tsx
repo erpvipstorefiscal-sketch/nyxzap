@@ -19,6 +19,7 @@ import {
   Users
 } from 'lucide-react';
 import { ChatConversation, LeadTag, ChatMessage, WhatsAppGroup } from '../types';
+import { confirmDialog, alertDialog } from './ModalConfirm';
 
 export const LiveChatManager: React.FC = () => {
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
@@ -131,7 +132,14 @@ export const LiveChatManager: React.FC = () => {
 
   const handleDeleteChat = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Deseja realmente excluir esta conversa?')) return;
+    const confirmed = await confirmDialog({
+      title: 'Excluir Conversa',
+      message: 'Deseja realmente excluir esta conversa do histórico? Todas as mensagens desta conversa serão removidas.',
+      variant: 'danger',
+      confirmText: 'Sim, Excluir',
+      cancelText: 'Cancelar'
+    });
+    if (!confirmed) return;
 
     try {
       await fetch(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -230,7 +238,12 @@ export const LiveChatManager: React.FC = () => {
         body: JSON.stringify({ text: groupMessageText.trim() })
       });
       setGroupMessageText('');
-      alert('Mensagem enviada com sucesso para o grupo do WhatsApp!');
+      await alertDialog({
+        title: 'Comunicado Enviado',
+        message: 'Sua mensagem foi transmitida com sucesso para todos os membros do grupo no WhatsApp.',
+        variant: 'success',
+        confirmText: 'OK'
+      });
     } catch (err) {
       console.error('Erro ao enviar mensagem para o grupo:', err);
     } finally {

@@ -29,6 +29,7 @@ import {
   Globe
 } from 'lucide-react';
 import { trackEvent } from '../lib/telemetry';
+import { confirmDialog, alertDialog } from './ModalConfirm';
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'subscribers' | 'updates' | 'telemetry' | 'cakto'>('subscribers');
@@ -287,7 +288,14 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleDeleteClient = async (id: string, name: string) => {
-    if (!confirm(`Tem certeza que deseja apagar o cliente "${name}" permanentemente do banco de dados?`)) return;
+    const confirmed = await confirmDialog({
+      title: 'Excluir Assinante',
+      message: `Tem certeza que deseja apagar o cliente "${name}" permanentemente do banco de dados? O acesso do usuário será revogado.`,
+      variant: 'danger',
+      confirmText: 'Sim, Apagar',
+      cancelText: 'Cancelar'
+    });
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/admin/subscribers/${id}`, { method: 'DELETE' });
@@ -355,7 +363,14 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleDeleteUpdate = async (id: string) => {
-    if (!confirm('Deseja realmente excluir esta publicação do histórico?')) return;
+    const confirmed = await confirmDialog({
+      title: 'Excluir Atualização do Sistema',
+      message: 'Deseja realmente excluir esta publicação do histórico de novidades?',
+      variant: 'danger',
+      confirmText: 'Sim, Excluir',
+      cancelText: 'Cancelar'
+    });
+    if (!confirmed) return;
     try {
       await fetch(`/api/updates/${id}`, { method: 'DELETE' });
       await fetchUpdates();
@@ -909,9 +924,14 @@ export const AdminDashboard: React.FC = () => {
             </div>
             <button
               type="button"
-              onClick={() => {
-                navigator.clipboard.writeText('https://zap.nyxzap.com.br/api/webhook/cakto');
-                alert('URL do Webhook copiada para a área de transferência!');
+              onClick={async () => {
+                await navigator.clipboard.writeText('https://zap.nyxzap.com.br/api/webhook/cakto');
+                await alertDialog({
+                  title: 'URL Copiada!',
+                  message: 'A URL oficial do Webhook Cakto foi copiada com sucesso para sua área de transferência.',
+                  variant: 'success',
+                  confirmText: 'OK'
+                });
               }}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shrink-0 flex items-center justify-center gap-1.5"
             >

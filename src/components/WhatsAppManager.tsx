@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { WhatsAppSession, UserAuth } from '../types';
 import { trackEvent } from '../lib/telemetry';
+import { confirmDialog, alertDialog } from './ModalConfirm';
 
 interface WhatsAppManagerProps {
   user?: UserAuth;
@@ -153,7 +154,14 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
   };
 
   const handleDeleteSession = async (id: string) => {
-    if (!confirm('Deseja realmente remover esta conexão de WhatsApp?')) return;
+    const confirmed = await confirmDialog({
+      title: 'Remover Conexão WhatsApp',
+      message: 'Deseja realmente desconectar e remover esta conexão de WhatsApp? Você precisará ler o QR Code novamente para reconectar.',
+      variant: 'danger',
+      confirmText: 'Sim, Remover',
+      cancelText: 'Cancelar'
+    });
+    if (!confirmed) return;
     try {
       await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
       await fetchSessions();
