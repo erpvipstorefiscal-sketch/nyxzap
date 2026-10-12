@@ -1770,16 +1770,36 @@ async function executeNodeAction(
               }
             }
 
-            // Enviar mensagem avisando que o grupo foi criado SEM LINK NENHUM
-            const welcomeMsg = node.data?.welcomeMessage 
-              ? replaceVariables(node.data.welcomeMessage)
-              : `Olá ${replaceVariables('{nome}')}! Seu grupo exclusivo *${groupSubject}* foi criado com sucesso e você já foi adicionado!`;
-            
+            // Enviar mensagem de boas-vindas DENTRO DO GRUPO marcando o lead com @
+            const firstName = (senderName || 'Amigo').split(' ')[0];
+            const leadMentionTag = `@${cleanPhone}`;
+
+            let welcomeMsg = '';
+            if (node.data?.welcomeMessage) {
+              let custom = replaceVariables(node.data.welcomeMessage);
+              // Garante a menção oficial do WhatsApp @[numero] associada ao nome do lead
+              if (!custom.includes(leadMentionTag)) {
+                if (custom.toLowerCase().includes(firstName.toLowerCase())) {
+                  custom = custom.replace(new RegExp(firstName, 'i'), `${leadMentionTag} (${firstName})`);
+                } else {
+                  custom = `Olá ${leadMentionTag} (${firstName})!\n\n${custom}`;
+                }
+              }
+              welcomeMsg = custom;
+            } else {
+              welcomeMsg = `Olá ${leadMentionTag} (${firstName})! Seja muito bem-vindo(a) ao seu grupo exclusivo *${groupSubject}*! 🎉`;
+            }
+
             try {
-              await targetSock.sendMessage(remoteJid, { text: welcomeMsg });
-              recordFlowMessageInChat(remoteJid, welcomeMsg);
+              // Envia diretamente DENTRO do grupo recém-criado mencionando o participante
+              await targetSock.sendMessage(groupRes.id, {
+                text: welcomeMsg,
+                mentions: candidateParticipants
+              });
+              console.log(`[Flow Engine] Mensagem de boas-vindas enviada DENTRO do grupo ${groupRes.id} marcando @${cleanPhone} (${firstName})`);
+              recordFlowMessageInChat(remoteJid, `👥 [Boas-vindas enviada no grupo '${groupSubject}' marcando @${firstName}]`);
             } catch (msgErr: any) {
-              console.warn('[Flow Engine] Erro ao enviar mensagem de boas-vindas do grupo:', msgErr.message);
+              console.warn('[Flow Engine] Erro ao enviar mensagem de boas-vindas dentro do grupo:', msgErr.message);
             }
           } else {
             console.warn(`[Flow Engine] Não foi possível criar o grupo WhatsApp '${groupSubject}' para ${remoteJid}`);

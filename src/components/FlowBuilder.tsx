@@ -2586,15 +2586,18 @@ export const FlowBuilder: React.FC = () => {
 
                               <div className="space-y-1 pt-1 border-t border-slate-800/80">
                                 <label className="text-[9px] font-bold text-slate-400 block">
-                                  Mensagem de Boas-Vindas no Grupo (Opcional):
+                                  Mensagem de Boas-Vindas no Grupo (Com menção @):
                                 </label>
                                 <textarea
                                   rows={2}
                                   value={node.data.welcomeMessage || ''}
                                   onChange={(e) => updateNodeData(node.id, { welcomeMessage: e.target.value })}
-                                  placeholder="Ex: Olá {nome}, seja muito bem-vindo ao seu grupo VIP exclusivo!"
+                                  placeholder="Ex: Olá {nome}, seja muito bem-vindo ao grupo exclusivo!"
                                   className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none font-sans"
                                 />
+                                <p className="text-[9px] text-slate-500">
+                                  Enviada diretamente no grupo marcando o lead (@telefone + nome).
+                                </p>
                               </div>
                             </div>
                           ) : (
