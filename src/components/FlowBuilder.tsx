@@ -2176,19 +2176,44 @@ export const FlowBuilder: React.FC = () => {
                         </div>
 
                         {/* Eventos selecionáveis */}
-                        <div className="space-y-1 pt-1 border-t border-slate-800/80">
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                            Disparar quando receber evento:
-                          </label>
-                          <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
-                            {['Compra Aprovada', 'PIX Gerado', 'Boleto Gerado', 'Carrinho Abandonado', 'Reembolso'].map((ev) => {
-                              const isEventActive = (node.data.activeEvents || ['Compra Aprovada', 'PIX Gerado']).includes(ev);
+                        <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Disparar quando receber evento:
+                            </label>
+                            <span className="text-[9px] text-emerald-400 font-bold">
+                              {(node.data.activeEvents || []).length} selecionado(s)
+                            </span>
+                          </div>
+                          
+                          <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
+                            {[
+                              'Boleto Gerado',
+                              'Pix Gerado',
+                              'Compra Aprovada',
+                              'Compra Recusada',
+                              'Reembolso',
+                              'Chargeback',
+                              'Assinatura Cancelada',
+                              'Assinatura Renovada',
+                              'Abandono de Carrinho',
+                              'PicPay Gerado',
+                              'NuBank Gerado',
+                              'Assinatura Criada',
+                              'Renovação de Assinatura',
+                              'Assinatura Pausada',
+                              'Assinatura Reativada',
+                              'Assinatura Atrasada',
+                              'Assinatura Recuperada',
+                              'Reembolso Solicitado'
+                            ].map((ev) => {
+                              const isEventActive = (node.data.activeEvents || ['Compra Aprovada', 'Pix Gerado']).includes(ev);
                               return (
                                 <button
                                   key={ev}
                                   type="button"
                                   onClick={() => {
-                                    const current = node.data.activeEvents || ['Compra Aprovada', 'PIX Gerado'];
+                                    const current = node.data.activeEvents || ['Compra Aprovada', 'Pix Gerado'];
                                     const next = current.includes(ev) ? current.filter((x: string) => x !== ev) : [...current, ev];
                                     updateNodeData(node.id, { activeEvents: next });
                                   }}
@@ -2204,6 +2229,40 @@ export const FlowBuilder: React.FC = () => {
                               );
                             })}
                           </div>
+
+                          {/* Configuração de tempo para Abandono de Carrinho */}
+                          {((node.data.activeEvents || []).includes('Abandono de Carrinho') || (node.data.activeEvents || []).includes('Carrinho Abandonado')) && (
+                            <div className="bg-[#13141f] border border-amber-500/30 rounded-xl p-2.5 space-y-2 mt-2">
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-amber-300 font-bold flex items-center gap-1.5">
+                                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                                  Aguardar após abandono:
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="365"
+                                    value={node.data.cartDelay ?? 15}
+                                    onChange={(e) => updateNodeData(node.id, { cartDelay: Number(e.target.value) })}
+                                    className="w-14 bg-[#10111a] border border-amber-500/40 rounded-lg px-1.5 py-0.5 text-center text-xs text-amber-200 font-bold focus:outline-none"
+                                  />
+                                  <select
+                                    value={node.data.cartDelayUnit || 'minutos'}
+                                    onChange={(e) => updateNodeData(node.id, { cartDelayUnit: e.target.value })}
+                                    className="bg-[#10111a] border border-amber-500/40 rounded-lg px-2 py-0.5 text-[11px] text-amber-300 font-semibold focus:outline-none"
+                                  >
+                                    <option value="minutos">Minutos</option>
+                                    <option value="horas">Horas</option>
+                                    <option value="dias">Dias</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <p className="text-[9px] text-slate-400 leading-tight">
+                                ⏰ O fluxo será disparado automaticamente <strong>{node.data.cartDelay ?? 15} {node.data.cartDelayUnit || 'minutos'}</strong> após o lead abandonar o carrinho no checkout.
+                              </p>
+                            </div>
+                          )}
                         </div>
 
                         <div className="text-[9px] text-slate-500 pt-0.5">
@@ -2636,28 +2695,36 @@ export const FlowBuilder: React.FC = () => {
                           )}
                         </div>
 
-                        {/* Configuração de Encerramento Automático */}
-                        <div className="bg-[#13141f] border border-slate-800 rounded-xl p-2 space-y-1.5">
+                        {/* Configuração de Toque e Audio Drop */}
+                        <div className="bg-[#13141f] border border-teal-500/30 rounded-xl p-2.5 space-y-2">
                           <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-slate-300 font-bold flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-teal-400" />
-                              Tempo da chamada:
+                            <span className="text-teal-300 font-bold flex items-center gap-1.5">
+                              <PhoneCall className="w-3.5 h-3.5 text-teal-400" />
+                              Tempo tocando o celular:
                             </span>
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
                                 min="5"
-                                max="300"
-                                value={node.data.callDuration || 30}
-                                onChange={(e) => updateNodeData(node.id, { callDuration: Number(e.target.value) })}
+                                max="30"
+                                value={node.data.ringDuration ?? node.data.callDuration ?? 10}
+                                onChange={(e) => updateNodeData(node.id, { ringDuration: Number(e.target.value), callDuration: Number(e.target.value) })}
                                 className="w-14 bg-[#10111a] border border-teal-500/40 rounded-lg px-1.5 py-0.5 text-center text-xs text-teal-300 font-bold focus:outline-none"
                               />
                               <span className="text-[10px] text-slate-400 font-bold">seg</span>
                             </div>
                           </div>
-                          <p className="text-[9px] text-slate-400 leading-tight">
-                            Ao disparar, faz a chamada tocando o áudio gravado e <strong>desliga automaticamente</strong> após o tempo configurado (máx 5 min).
-                          </p>
+                          <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20 text-[9px] text-slate-300 leading-relaxed space-y-1">
+                            <p className="font-bold text-teal-300 flex items-center gap-1">
+                              <span>🚀 Call Trigger & Audio Drop (100% Gratuito):</span>
+                            </p>
+                            <p>
+                              1. A chamada de voz toca em tela cheia no celular do lead pelo tempo configurado ({node.data.ringDuration ?? node.data.callDuration ?? 10}s) para chamar a atenção.
+                            </p>
+                            <p>
+                              2. A ligação desliga e o áudio é <strong>entregue na hora como Nota de Voz Oficial</strong> (com bolinha verde de microfone gravado).
+                            </p>
+                          </div>
                         </div>
                       </div>
                     )}

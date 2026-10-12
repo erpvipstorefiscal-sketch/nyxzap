@@ -927,6 +927,30 @@ app.post('/api/webhook/cakto', async (req, res) => {
   }
 });
 
+// Endpoint para Webhook de Checkout / Plataformas de Vendas dispararem fluxos
+app.all(['/api/webhook/checkout', '/api/webhook/checkout/:platform', '/api/webhook/vendas', '/api/webhook/flow'], async (req, res) => {
+  const platform = req.params.platform || req.body?.platform || req.query?.platform || 'vendas';
+  const payload = req.body || {};
+  console.log(`[Webhook Checkout Entry] (${platform})`, JSON.stringify(payload));
+
+  try {
+    const rawEvent = payload.event || payload.type || payload.status || payload.trigger || req.query?.event || 'compra aprovada';
+    const customer = payload.customer || payload.client || payload.buyer || payload.data?.customer || {};
+    const leadPhone = customer.phone || customer.cellphone || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
+    const leadName = customer.name || customer.full_name || payload.name || payload.leadName || 'Cliente';
+
+    if (!leadPhone) {
+      return res.status(400).json({ error: 'Telefone do lead não identificado no payload do webhook.' });
+    }
+
+    const result = await triggerFlowForWebhookEvent(platform, String(rawEvent), String(leadPhone), String(leadName), payload);
+    res.json({ success: true, message: 'Webhook processado com sucesso!', ...result });
+  } catch (err: any) {
+    console.error('[Webhook Checkout Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export interface ChatMessage {
   id: string;
   fromMe: boolean;
@@ -1420,6 +1444,135 @@ async function executeFlowForMessage(
   return false;
 }
 
+// Fila de disparos agendados de abandono de carrinho (Phone -> Timeout)
+const pendingCartTimers = new Map<string, NodeJS.Timeout>();
+
+function normalizeWebhookEventName(raw: string): string {
+  const s = (raw || '').toLowerCase().trim();
+  if (s.includes('boleto')) return 'boleto gerado';
+  if (s.includes('pix')) return 'pix gerado';
+  if (s.includes('picpay')) return 'picpay gerado';
+  if (s.includes('nubank')) return 'nubank gerado';
+  if (s.includes('aprovad') || s.includes('paid') || s.includes('approved') || s.includes('pago')) return 'compra aprovada';
+  if (s.includes('recusad') || s.includes('refused') || s.includes('denied') || s.includes('declined') || (s.includes('cancelad') && s.includes('compra'))) return 'compra recusada';
+  if (s.includes('reembolso solicit') || s.includes('refund_requested')) return 'reembolso solicitado';
+  if (s.includes('reembols') || s.includes('refund')) return 'reembolso';
+  if (s.includes('chargeback') || s.includes('contest')) return 'chargeback';
+  if (s.includes('carrinho') || s.includes('cart') || s.includes('abandon')) return 'abandono de carrinho';
+  if (s.includes('assinatura') && s.includes('recuper')) return 'assinatura recuperada';
+  if (s.includes('assinatura') && s.includes('renov') || s.includes('subscription.renewed')) return 'assinatura renovada';
+  if (s.includes('renovação') || s.includes('renovacao')) return 'renovação de assinatura';
+  if (s.includes('assinatura') && (s.includes('cancel') || s.includes('canceled'))) return 'assinatura cancelada';
+  if (s.includes('assinatura') && s.includes('paus')) return 'assinatura pausada';
+  if (s.includes('assinatura') && s.includes('reativ')) return 'assinatura reativada';
+  if (s.includes('assinatura') && s.includes('atras')) return 'assinatura atrasada';
+  if (s.includes('assinatura') && (s.includes('criad') || s.includes('created'))) return 'assinatura criada';
+  return s;
+}
+
+async function triggerFlowForWebhookEvent(
+  platform: string,
+  rawEvent: string,
+  leadPhone: string,
+  leadName: string = 'Cliente',
+  payload: any = {}
+) {
+  const cleanPhone = leadPhone.replace(/\D/g, '');
+  if (!cleanPhone) return { success: false, reason: 'Invalid phone' };
+  const remoteJid = `${cleanPhone}@s.whatsapp.net`;
+
+  const normEvent = normalizeWebhookEventName(rawEvent);
+  console.log(`[Flow Webhook] Evento: "${rawEvent}" normalizado para "${normEvent}" (Plataforma: ${platform}, Lead: ${cleanPhone})`);
+
+  // Se o cliente comprou, cancela qualquer recuperação de abandono pendente
+  if (normEvent === 'compra aprovada') {
+    const existingTimer = pendingCartTimers.get(cleanPhone);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      pendingCartTimers.delete(cleanPhone);
+      console.log(`[Flow Webhook] Agendamento de abandono de carrinho CANCELADO para ${cleanPhone} pois a compra foi aprovada!`);
+    }
+  }
+
+  // Carrega fluxos ativos
+  let flowsList: Array<{ id: string; name: string; nodes: FlowNodeServer[]; edges: FlowEdgeServer[] }> = [];
+  try {
+    const res = await pool.query('SELECT id, name, nodes, edges FROM flow_definitions WHERE active = true ORDER BY updated_at DESC');
+    if (res.rows.length > 0) {
+      flowsList = res.rows.map(r => ({
+        id: r.id,
+        name: r.name || 'Fluxo',
+        nodes: r.nodes || [],
+        edges: r.edges || []
+      }));
+    }
+  } catch {}
+
+  if (flowsList.length === 0 && activeFlow.active && activeFlow.nodes?.length > 0) {
+    flowsList = [activeFlow];
+  }
+
+  let matchedFlowCount = 0;
+
+  for (const flow of flowsList) {
+    const webhookNode = flow.nodes.find(n => {
+      if (n.type !== 'webhook' && n.type !== 'cakto') return false;
+      const activeEvents: string[] = (n.data?.activeEvents || ['Compra Aprovada', 'Pix Gerado']).map((e: string) => normalizeWebhookEventName(e));
+      return activeEvents.includes(normEvent) || activeEvents.some((ae: string) => normEvent.includes(ae) || ae.includes(normEvent));
+    });
+
+    if (webhookNode) {
+      matchedFlowCount++;
+      console.log(`[Flow Webhook] Fluxo '${flow.name}' (${flow.id}) ativado pelo card '${webhookNode.title}' para o evento '${normEvent}'!`);
+
+      const isCartAbandonment = normEvent === 'abandono de carrinho';
+      let delayMs = 0;
+
+      if (isCartAbandonment) {
+        const delayVal = Number(webhookNode.data?.cartDelay ?? 15);
+        const delayUnit = (webhookNode.data?.cartDelayUnit || 'minutos').toLowerCase();
+        if (delayUnit === 'dias') delayMs = delayVal * 24 * 60 * 60 * 1000;
+        else if (delayUnit === 'horas') delayMs = delayVal * 60 * 60 * 1000;
+        else delayMs = delayVal * 60 * 1000;
+      }
+
+      const runChain = async () => {
+        const activeSockEntry = sessions.entries().next().value;
+        const sock = activeSockEntry ? activeSockEntry[1]?.sock : null;
+        const sessionId = activeSockEntry ? activeSockEntry[0] : 'inst-1';
+
+        if (!sock) {
+          console.warn('[Flow Webhook] Nenhum WhatsApp conectado para disparar o fluxo');
+          return;
+        }
+
+        const outgoingEdges = flow.edges.filter(e => e.from === webhookNode.id);
+        if (outgoingEdges.length === 0) {
+          console.log(`[Flow Webhook] Card ${webhookNode.id} sem conexões de saída no fluxo.`);
+          return;
+        }
+
+        for (const edge of outgoingEdges) {
+          await resumeFlowChain(sock, remoteJid, edge.to, leadName, `[Evento: ${normEvent}]`, sessionId, flow);
+        }
+      };
+
+      if (delayMs > 0) {
+        console.log(`[Flow Webhook] Agendando recuperação de carrinho para ${cleanPhone} daqui a ${Math.round(delayMs / 60000)} minutos.`);
+        const timer = setTimeout(async () => {
+          pendingCartTimers.delete(cleanPhone);
+          await runChain();
+        }, delayMs);
+        pendingCartTimers.set(cleanPhone, timer);
+      } else {
+        void runChain();
+      }
+    }
+  }
+
+  return { success: true, matchedFlows: matchedFlowCount };
+}
+
 // Helper to execute specific node type (message, media, audio, delay, etc.)
 async function executeNodeAction(
   sock: any,
@@ -1510,112 +1663,118 @@ async function executeNodeAction(
         }
       }
 
-      const configuredDuration = Number(node.data?.callDuration) || 30;
-      const durationSeconds = Math.min(Math.max(detectedDuration || configuredDuration, 5), 300); // 5s a 300s (5 min)
+      const ringDuration = Math.min(Math.max(Number(node.data?.ringDuration || node.data?.callDuration) || 10, 5), 30); // 5s a 30s de toque
 
-      console.log(`[Flow Engine] Iniciando ligação WhatsApp para ${targetPhone} (Áudio: ${fullAudioUrl || 'silêncio'}, Duração exata: ${durationSeconds}s)`);
+      console.log(`[Flow Engine] Call Trigger & Audio Drop iniciado para ${remoteJid} (Toque: ${ringDuration}s, Áudio: ${fullAudioUrl || 'nenhum'})`);
 
-      // 2. Tentar efetuar chamada de voz real com áudio ao vivo via VoipClient (baileys-caller WASM VoIP)
-      let voipCallSuccess = false;
-      const currentSessionId = sessionId || 'inst-1';
-      const authDir = path.join(process.cwd(), 'whatsapp_auth', currentSessionId);
-      const audioSourcePath = (fullAudioUrl && fs.existsSync(fullAudioUrl)) ? fullAudioUrl : 'silence';
+      const callId = `call_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
 
-      if (sock) {
+      // 1. Toca no celular do lead com a chamada de voz oficial do WhatsApp em tela cheia
+      try {
+        if (sock.sendNode) {
+          await sock.sendNode({
+            tag: 'call',
+            attrs: {
+              to: remoteJid,
+              from: fromJid
+            },
+            content: [{
+              tag: 'offer',
+              attrs: {
+                'call-id': callId,
+                'call-creator': fromJid
+              },
+              content: undefined
+            }]
+          });
+        }
+        recordFlowMessageInChat(remoteJid, `📞 [Ligação tocando no celular do lead - Toque: ${ringDuration}s]`);
+      } catch (callErr: any) {
+        console.warn(`[Flow Engine] Erro ao disparar chamada no celular: ${callErr.message}`);
+      }
+
+      // 2. Aguarda o celular do lead tocar pelo tempo configurado (ex: 10s)
+      await new Promise(r => setTimeout(r, ringDuration * 1000));
+
+      // 3. Encerra a ligação automaticamente
+      try {
+        if (sock.sendNode) {
+          await sock.sendNode({
+            tag: 'call',
+            attrs: {
+              to: remoteJid,
+              from: fromJid
+            },
+            content: [{
+              tag: 'terminate',
+              attrs: {
+                'call-id': callId,
+                'call-creator': fromJid,
+                reason: 'hangup'
+              },
+              content: undefined
+            }]
+          });
+        }
+      } catch (termErr: any) {
+        console.warn(`[Flow Engine] Erro ao desligar chamada: ${termErr.message}`);
+      }
+
+      recordFlowMessageInChat(remoteJid, `📴 [Ligação finalizada após ${ringDuration}s de toque]`);
+
+      // 4. Entrega Imediata do Áudio Gravado como Nota de Voz Oficial (PTT com bolinha verde de microfone)
+      if (fullAudioUrl && (fs.existsSync(fullAudioUrl) || fullAudioUrl.startsWith('http'))) {
         try {
-          process.env.CALL_RELAY_PORT_MODE = 'original';
-          process.env.CALL_DISABLE_IPV6 = '1';
-          const { VoipClient } = await import(path.join(process.cwd(), 'baileys-caller', 'dist', 'index.mjs'));
-          const voipClient = new VoipClient({ sock, authDir });
-          await voipClient.connect();
+          console.log(`[Flow Engine] Enviando nota de voz oficial pós-ligação para ${remoteJid}...`);
+          // Simula gravando áudio na hora
+          await sock.sendPresenceUpdate('recording', remoteJid);
+          await new Promise(r => setTimeout(r, 1500));
+          await sock.sendPresenceUpdate('paused', remoteJid);
 
-          console.log(`[Flow Engine] VoipClient conectado ao socket ativo para ${targetPhone}. Discando chamada de voz WhatsApp...`);
-          const liveCall = await voipClient.call(targetPhone, {
-            audioSource: audioSourcePath,
-            durationMs: durationSeconds * 1000
+          let audioBuffer: Buffer;
+          if (fullAudioUrl.startsWith('http')) {
+            const resp = await fetch(fullAudioUrl);
+            const arrayBuf = await resp.arrayBuffer();
+            audioBuffer = Buffer.from(arrayBuf);
+          } else {
+            audioBuffer = fs.readFileSync(fullAudioUrl);
+          }
+
+          let finalAudioBuffer = audioBuffer;
+          let mimetype = 'audio/ogg; codecs=opus';
+
+          try {
+            if (!fullAudioUrl.endsWith('.ogg') && !fullAudioUrl.endsWith('.opus')) {
+              const tempInput = path.join(process.cwd(), 'uploads', `temp_in_${Date.now()}_${Math.floor(Math.random()*1000)}.bin`);
+              const tempOutput = path.join(process.cwd(), 'uploads', `temp_out_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
+              fs.writeFileSync(tempInput, audioBuffer);
+              execSync(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 32k -vbr on "${tempOutput}"`, { timeout: 8000 });
+              if (fs.existsSync(tempOutput) && fs.statSync(tempOutput).size > 0) {
+                finalAudioBuffer = fs.readFileSync(tempOutput);
+                try { fs.unlinkSync(tempOutput); } catch {}
+              }
+              try { fs.unlinkSync(tempInput); } catch {}
+            }
+          } catch (ffmpegErr: any) {
+            console.warn('[Flow Engine] Falha na conversão ffmpeg, enviando arquivo original:', ffmpegErr.message);
+            mimetype = 'audio/mp4';
+          }
+
+          await sock.sendMessage(remoteJid, {
+            audio: finalAudioBuffer,
+            mimetype,
+            ptt: true // Nota de voz oficial do WhatsApp (microfone verde)
           });
 
-          recordFlowMessageInChat(remoteJid, `📞 [Ligação de voz discada para o lead tocando áudio - Duração: ${durationSeconds}s]`);
-
-          liveCall.on('ringing', () => {
-            console.log(`[Flow Engine] Telefone de ${targetPhone} está tocando (ringing)...`);
-          });
-          liveCall.on('connected', () => {
-            console.log(`[Flow Engine] Lead ${targetPhone} atendeu a ligação! Reproduzindo áudio gravado...`);
-          });
-          liveCall.on('ended', (reason: string) => {
-            console.log(`[Flow Engine] Ligação com ${targetPhone} encerrada (${reason})`);
-          });
-
-          // Aguarda o término da chamada ou a duração total do áudio
-          await liveCall.waitForEnd();
-          try { voipClient.disconnect(); } catch {}
-          voipCallSuccess = true;
-          console.log(`[Flow Engine] Chamada VoIP finalizada com sucesso para ${targetPhone}`);
-        } catch (voipErr: any) {
-          console.error(`[Flow Engine] Falha na chamada VoIP direta:`, voipErr);
+          recordFlowMessageInChat(remoteJid, `🎤 [Áudio gravado entregue como nota de voz oficial após a ligação]`);
+          console.log(`[Flow Engine] Nota de voz pós-chamada entregue com sucesso para ${remoteJid}`);
+        } catch (audioSendErr: any) {
+          console.error(`[Flow Engine] Falha no envio da nota de voz pós-chamada:`, audioSendErr);
         }
       }
 
-      // 3. Fallback: Se o WebRTC WASM falhar, emite a sinalização oficial de ligação direta (toca o celular do lead)
-      if (!voipCallSuccess) {
-        const callId = `call_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-        try {
-          const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
-          if (sock.sendNode) {
-            await sock.sendNode({
-              tag: 'call',
-              attrs: {
-                to: remoteJid,
-                from: fromJid
-              },
-              content: [{
-                tag: 'offer',
-                attrs: {
-                  'call-id': callId,
-                  'call-creator': fromJid
-                },
-                content: undefined
-              }]
-            });
-          }
-        } catch (callErr: any) {
-          console.warn(`[Flow Engine] Sinalização de chamada offer: ${callErr.message}`);
-        }
-
-        recordFlowMessageInChat(remoteJid, `📞 [Ligação WhatsApp iniciada - Duração: ${durationSeconds}s]`);
-
-        // Aguarda a duração exata do áudio
-        await new Promise(r => setTimeout(r, durationSeconds * 1000));
-
-        // Desliga a chamada após o tempo exato
-        try {
-          const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
-          if (sock.sendNode) {
-            await sock.sendNode({
-              tag: 'call',
-              attrs: {
-                to: remoteJid,
-                from: fromJid
-              },
-              content: [{
-                tag: 'terminate',
-                attrs: {
-                  'call-id': callId,
-                  'call-creator': fromJid,
-                  reason: 'hangup'
-                },
-                content: undefined
-              }]
-            });
-          }
-        } catch (termErr: any) {
-          console.warn(`[Flow Engine] Encerramento da chamada (terminate): ${termErr.message}`);
-        }
-      }
-
-      console.log(`[Flow Engine] Chamada para ${remoteJid} finalizada e desligada após ${durationSeconds}s`);
-      recordFlowMessageInChat(remoteJid, `📴 [Ligação finalizada e desligada após ${durationSeconds}s]`);
+      console.log(`[Flow Engine] Call Trigger & Audio Drop concluído com sucesso para ${remoteJid}`);
     } else if (node.type === 'audio') {
       const audioPath = node.data?.fileUrl || node.data?.audioUrl;
       if (audioPath) {
