@@ -56,61 +56,113 @@ import { FlowNode, FlowEdge, WhatsAppGroup } from '../types';
 import { confirmDialog, alertDialog } from './ModalConfirm';
 
 // Standard dimensions for calculating port positions precisely
-const getNodeDimensions = (type: FlowNode['type'], waitForResponse?: boolean) => {
+const getNodeDimensions = (
+  type: FlowNode['type'], 
+  waitForResponse?: boolean, 
+  nodeId?: string,
+  measuredHeights?: { [id: string]: number }
+) => {
   const extraHeight = waitForResponse ? 50 : 0;
+  let defaultWidth = 270;
+  let defaultHeight = 220 + extraHeight;
+
   switch (type) {
     case 'inicio':
-      return { width: 270, height: 260 };
+      defaultWidth = 270;
+      defaultHeight = 260;
+      break;
     case 'ia':
     case 'ia_audio':
     case 'ia_video':
     case 'ia_ligacao':
-      return { width: 270, height: 260 };
+      defaultWidth = 270;
+      defaultHeight = 260;
+      break;
     case 'condicao':
-      return { width: 260, height: 220 };
+      defaultWidth = 260;
+      defaultHeight = 220;
+      break;
     case 'sms':
     case 'whatsapp':
     case 'email':
-      return { width: 270, height: 250 + extraHeight };
+      defaultWidth = 270;
+      defaultHeight = 250 + extraHeight;
+      break;
+    case 'contato':
+      defaultWidth = 270;
+      defaultHeight = 210 + extraHeight;
+      break;
     case 'audio':
-      return { width: 270, height: 260 + extraHeight };
+      defaultWidth = 270;
+      defaultHeight = 260 + extraHeight;
+      break;
     case 'imagem':
-      return { width: 270, height: 280 + extraHeight };
+      defaultWidth = 270;
+      defaultHeight = 280 + extraHeight;
+      break;
     case 'video':
-      return { width: 270, height: 280 + extraHeight };
+      defaultWidth = 270;
+      defaultHeight = 280 + extraHeight;
+      break;
     case 'pdf':
-      return { width: 270, height: 250 + extraHeight };
+      defaultWidth = 270;
+      defaultHeight = 250 + extraHeight;
+      break;
     case 'timer':
-      return { width: 260, height: 170 };
+      defaultWidth = 260;
+      defaultHeight = 150;
+      break;
     case 'botoes':
     case 'carrossel':
     case 'resposta':
     case 'resposta_avancada':
-      return { width: 270, height: 250 + extraHeight };
+      defaultWidth = 270;
+      defaultHeight = 250 + extraHeight;
+      break;
     case 'funil':
     case 'acoes':
     case 'agendar':
     case 'pipeline':
-      return { width: 260, height: 220 };
+      defaultWidth = 260;
+      defaultHeight = 220;
+      break;
     case 'grupo_wa':
-      return { width: 280, height: 320 };
+      defaultWidth = 280;
+      defaultHeight = 360;
+      break;
     case 'finalizar':
-      return { width: 250, height: 95 };
+      defaultWidth = 250;
+      defaultHeight = 95;
+      break;
     case 'conectar_fluxo':
-      return { width: 290, height: 260 };
+      defaultWidth = 290;
+      defaultHeight = 260;
+      break;
     case 'cakto':
     case 'webhook':
-      return { width: 270, height: 280 };
+      defaultWidth = 270;
+      defaultHeight = 280;
+      break;
     default:
-      return { width: 260, height: 220 + extraHeight };
+      defaultWidth = 270;
+      defaultHeight = 220 + extraHeight;
+      break;
   }
+
+  // Se houver medição real do DOM do card, utiliza com 100% de precisão para alinhar com a bolinha
+  if (nodeId && measuredHeights && measuredHeights[nodeId] && measuredHeights[nodeId] > 30) {
+    return { width: defaultWidth, height: measuredHeights[nodeId] };
+  }
+
+  return { width: defaultWidth, height: defaultHeight };
 };
 
 const getNodeOutputPos = (
   node: FlowNode, 
-  handleType: 'default' | 'response' | 'timeout' | 'yes' | 'no' = 'default'
+  handleType: 'default' | 'response' | 'timeout' | 'yes' | 'no' = 'default',
+  measuredHeights?: { [id: string]: number }
 ) => {
-  const { width, height } = getNodeDimensions(node.type, !!node.data.waitForResponse);
+  const { width, height } = getNodeDimensions(node.type, !!node.data.waitForResponse, node.id, measuredHeights);
   if (node.data.waitForResponse) {
     if (handleType === 'response') {
       return { x: node.x + width, y: node.y + (height * 0.40) };
@@ -122,8 +174,8 @@ const getNodeOutputPos = (
   return { x: node.x + width, y: node.y + (height / 2) };
 };
 
-const getNodeInputPos = (node: FlowNode) => {
-  const { height } = getNodeDimensions(node.type, !!node.data.waitForResponse);
+const getNodeInputPos = (node: FlowNode, measuredHeights?: { [id: string]: number }) => {
+  const { height } = getNodeDimensions(node.type, !!node.data.waitForResponse, node.id, measuredHeights);
   return { x: node.x, y: node.y + height / 2 };
 };
 
@@ -343,6 +395,50 @@ export const FlowBuilder: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeUploadContext, setActiveUploadContext] = useState<{ nodeId: string; accept: string } | null>(null);
 
+  // Dynamic measurement of node DOM elements for pixel-perfect port alignment
+  const nodeRefs = useRef<{ [id: string]: HTMLDivElement | null }>({});
+  const [nodeHeights, setNodeHeights] = useState<{ [id: string]: number }>({});
+  const nodeHeightsRef = useRef<{ [id: string]: number }>({});
+  nodeHeightsRef.current = nodeHeights;
+
+  useEffect(() => {
+    const measureAll = () => {
+      let changed = false;
+      const next = { ...nodeHeightsRef.current };
+      nodes.forEach(node => {
+        const el = nodeRefs.current[node.id];
+        if (el) {
+          const h = el.offsetHeight;
+          if (h > 0 && Math.abs((next[node.id] || 0) - h) > 1) {
+            next[node.id] = h;
+            changed = true;
+          }
+        }
+      });
+      if (changed) {
+        setNodeHeights(next);
+      }
+    };
+
+    measureAll();
+    const t = setTimeout(measureAll, 60);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        measureAll();
+      });
+      Object.values(nodeRefs.current).forEach(el => {
+        if (el) ro?.observe(el);
+      });
+    }
+
+    return () => {
+      clearTimeout(t);
+      if (ro) ro.disconnect();
+    };
+  }, [nodes, uploadingNodeId, groupsList]);
+
   // GLOBAL POINTER LISTENERS: GUARANTEES CARDS NEVER GET STUCK OR GLUED ON RELEASE!
   useEffect(() => {
     const handleGlobalPointerUp = () => {
@@ -509,7 +605,7 @@ export const FlowBuilder: React.FC = () => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
 
-    const startPos = getNodeOutputPos(node, handleType);
+    const startPos = getNodeOutputPos(node, handleType, nodeHeights);
     setConnectingFrom({ nodeId, handleType, x: startPos.x, y: startPos.y });
 
     const rect = containerRef.current.getBoundingClientRect();
@@ -964,6 +1060,12 @@ export const FlowBuilder: React.FC = () => {
       defaultData.value = '50';
     } else if (type === 'sms' || type === 'whatsapp' || type === 'email' || type === 'resposta') {
       defaultData.message = 'Olá {nome}, como posso te ajudar hoje?';
+      defaultData.waitForResponse = false;
+      defaultData.timeoutSeconds = 30;
+      defaultData.timeoutUnit = 'segundos';
+    } else if (type === 'contato') {
+      defaultData.contactName = 'Suporte VIP';
+      defaultData.contactPhone = '';
       defaultData.waitForResponse = false;
       defaultData.timeoutSeconds = 30;
       defaultData.timeoutUnit = 'segundos';
@@ -1627,8 +1729,8 @@ export const FlowBuilder: React.FC = () => {
               const tgt = nodes.find(n => n.id === edge.to);
               if (!src || !tgt) return null;
 
-              const p1 = getNodeOutputPos(src, edge.fromHandle || 'default');
-              const p2 = getNodeInputPos(tgt);
+              const p1 = getNodeOutputPos(src, edge.fromHandle || 'default', nodeHeights);
+              const p2 = getNodeInputPos(tgt, nodeHeights);
 
               const x1 = p1.x;
               const y1 = p1.y;
@@ -1726,7 +1828,7 @@ export const FlowBuilder: React.FC = () => {
               if (hoveredTargetPortId) {
                 const targetNode = nodes.find(n => n.id === hoveredTargetPortId);
                 if (targetNode) {
-                  const targetPos = getNodeInputPos(targetNode);
+                  const targetPos = getNodeInputPos(targetNode, nodeHeights);
                   x2 = targetPos.x;
                   y2 = targetPos.y;
                 }
@@ -1773,6 +1875,16 @@ export const FlowBuilder: React.FC = () => {
               return (
                 <div
                   key={node.id}
+                  data-node-id={node.id}
+                  ref={(el) => {
+                    nodeRefs.current[node.id] = el;
+                    if (el) {
+                      const h = el.offsetHeight;
+                      if (h > 0 && Math.abs((nodeHeightsRef.current[node.id] || 0) - h) > 1) {
+                        nodeHeightsRef.current[node.id] = h;
+                      }
+                    }
+                  }}
                   onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
                   style={{
                     position: 'absolute',
@@ -1844,6 +1956,11 @@ export const FlowBuilder: React.FC = () => {
                       {(node.type === 'sms' || node.type === 'whatsapp') && (
                         <div className="w-5 h-5 rounded-md bg-sky-500/10 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/20">
                           <MessageSquare className="w-3 h-3" />
+                        </div>
+                      )}
+                      {node.type === 'contato' && (
+                        <div className="w-5 h-5 rounded-md bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
+                          <UserCheck className="w-3 h-3" />
                         </div>
                       )}
                       {node.type === 'grupo_wa' && (
@@ -2385,6 +2502,55 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
+                    {/* 8. CONTATO CARD */}
+                    {node.type === 'contato' && (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-300 block">
+                            Nome do Contato:
+                          </label>
+                          <input
+                            type="text"
+                            value={node.data.contactName || ''}
+                            onChange={(e) => updateNodeData(node.id, { contactName: e.target.value })}
+                            placeholder="Ex: Suporte VIP / {nome}"
+                            className="w-full bg-[#1c1d29] border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-semibold"
+                          />
+                          <div className="flex flex-wrap gap-1">
+                            {['{nome}', '{empresa}'].map((v) => (
+                              <button
+                                key={v}
+                                type="button"
+                                onClick={() => {
+                                  const current = node.data.contactName || '';
+                                  updateNodeData(node.id, { contactName: `${current} ${v}`.trim() });
+                                }}
+                                className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 hover:bg-cyan-600/30 text-slate-300 hover:text-cyan-300 border border-slate-700 transition-colors"
+                              >
+                                + {v}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-300 block">
+                            Telefone do Contato (com DDD):
+                          </label>
+                          <input
+                            type="text"
+                            value={node.data.contactPhone || ''}
+                            onChange={(e) => updateNodeData(node.id, { contactPhone: e.target.value })}
+                            placeholder="Ex: 5511999999999 ou +55 11 99999-9999"
+                            className="w-full bg-[#1c1d29] border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                          />
+                          <p className="text-[9px] text-slate-400 leading-tight">
+                            Envia o cartão de contato (vCard) do WhatsApp com botão direto para o lead salvar ou chamar.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* 9. TIMER CARD */}
                     {node.type === 'timer' && (
                       <div className="space-y-2.5">
@@ -2858,6 +3024,17 @@ export const FlowBuilder: React.FC = () => {
               <MessageSquare className="w-4 h-4" />
             </div>
             <span className="text-[10px] font-medium">Texto</span>
+          </button>
+
+          <button 
+            onClick={() => addNode('contato', 'Contato')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
+            title="Enviar Cartão de Contato (vCard)"
+          >
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-transform">
+              <UserCheck className="w-4 h-4" />
+            </div>
+            <span className="text-[10px] font-medium">Contato</span>
           </button>
 
           <button 

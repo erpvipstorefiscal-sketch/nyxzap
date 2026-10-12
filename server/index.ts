@@ -1448,6 +1448,36 @@ async function executeNodeAction(
 
       await sock.sendMessage(remoteJid, { text: finalText });
       recordFlowMessageInChat(remoteJid, finalText);
+    } else if (node.type === 'contato') {
+      const rawName = (node.data?.contactName || 'Contato').trim();
+      const rawPhone = (node.data?.contactPhone || '').trim();
+      const contactName = replaceVariables(rawName).trim() || 'Contato';
+      const resolvedPhone = replaceVariables(rawPhone).trim();
+      const cleanContactPhone = resolvedPhone.replace(/\D/g, '');
+
+      if (cleanContactPhone) {
+        console.log(`[Flow Engine] Enviando cartão de contato '${contactName}' (${cleanContactPhone}) para ${remoteJid}`);
+        await simulateTyping(sock, remoteJid, 1500);
+
+        // vCard 3.0 padrão oficial WhatsApp Android e iOS
+        const vcard = 'BEGIN:VCARD\n'
+          + 'VERSION:3.0\n'
+          + `FN:${contactName}\n`
+          + `ORG:NyxZap;\n`
+          + `TEL;type=CELL;type=VOICE;waid=${cleanContactPhone}:+${cleanContactPhone}\n`
+          + 'END:VCARD';
+
+        await sock.sendMessage(remoteJid, {
+          contacts: {
+            displayName: contactName,
+            contacts: [{ vcard }]
+          }
+        });
+        recordFlowMessageInChat(remoteJid, `👤 [Contato enviado: ${contactName} (+${cleanContactPhone})]`);
+      } else {
+        console.warn(`[Flow Engine] Telefone de contato não configurado no card ${node.id}`);
+        recordFlowMessageInChat(remoteJid, `⚠️ [Card Contato: Telefone não configurado]`);
+      }
     } else if (node.type === 'audio') {
       const audioPath = node.data?.fileUrl || node.data?.audioUrl;
       if (audioPath) {
