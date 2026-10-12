@@ -92,6 +92,10 @@ const getNodeDimensions = (
       defaultWidth = 270;
       defaultHeight = 210 + extraHeight;
       break;
+    case 'ligacao':
+      defaultWidth = 270;
+      defaultHeight = 250 + extraHeight;
+      break;
     case 'audio':
       defaultWidth = 270;
       defaultHeight = 260 + extraHeight;
@@ -962,6 +966,17 @@ export const FlowBuilder: React.FC = () => {
       return;
     }
 
+    // Validation for Audio / Ligação: max 5 minutes or 25MB
+    if ((node.type === 'ligacao' || node.type === 'audio') && file.size > 25 * 1024 * 1024) {
+      await alertDialog({
+        title: 'Áudio Muito Grande',
+        message: 'O arquivo de áudio excede 25MB. Selecione um áudio menor.',
+        variant: 'warning',
+        confirmText: 'Entendido'
+      });
+      return;
+    }
+
     setUploadingNodeId(nodeId);
 
     const formatBytes = (bytes: number) => {
@@ -1066,6 +1081,15 @@ export const FlowBuilder: React.FC = () => {
     } else if (type === 'contato') {
       defaultData.contactName = 'Suporte VIP';
       defaultData.contactPhone = '';
+      defaultData.waitForResponse = false;
+      defaultData.timeoutSeconds = 30;
+      defaultData.timeoutUnit = 'segundos';
+    } else if (type === 'ligacao') {
+      defaultData.audioUrl = '';
+      defaultData.fileName = '';
+      defaultData.fileSize = '';
+      defaultData.callDuration = 30;
+      defaultData.hangupAfterAudio = true;
       defaultData.waitForResponse = false;
       defaultData.timeoutSeconds = 30;
       defaultData.timeoutUnit = 'segundos';
@@ -1963,6 +1987,11 @@ export const FlowBuilder: React.FC = () => {
                           <UserCheck className="w-3 h-3" />
                         </div>
                       )}
+                      {node.type === 'ligacao' && (
+                        <div className="w-5 h-5 rounded-md bg-teal-500/10 text-teal-400 flex items-center justify-center shrink-0 border border-teal-500/20">
+                          <Phone className="w-3 h-3" />
+                        </div>
+                      )}
                       {node.type === 'grupo_wa' && (
                         <div className="w-5 h-5 rounded-md bg-teal-500/10 text-teal-400 flex items-center justify-center shrink-0 border border-teal-500/20">
                           <Users className="w-3 h-3" />
@@ -2551,6 +2580,88 @@ export const FlowBuilder: React.FC = () => {
                       </div>
                     )}
 
+                    {/* 8.1 LIGAÇÃO WHATSAPP CARD */}
+                    {node.type === 'ligacao' && (
+                      <div className="space-y-2.5">
+                        <div className="bg-[#1c1d29] border border-slate-800/80 rounded-xl p-2.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-300 flex items-center gap-1.5">
+                              <PhoneCall className="w-3.5 h-3.5 text-teal-400" />
+                              Áudio da Ligação
+                            </span>
+                            <span className="text-[8px] font-mono text-teal-300 bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20 font-bold">
+                              MP3, WAV, OGG, OPUS, M4A, AAC
+                            </span>
+                          </div>
+
+                          {node.data.fileName ? (
+                            <div className="bg-[#13141f] border border-teal-500/30 rounded-lg p-2 space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-bold text-white truncate max-w-[150px]">
+                                  {node.data.fileName}
+                                </span>
+                                <span className="text-[9px] font-mono text-slate-400">{node.data.fileSize}</span>
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => triggerFileUpload(node.id, '.mp3,.wav,.ogg,.opus,.m4a,.aac')}
+                                  className="text-[9px] text-teal-400 hover:text-teal-300 font-bold underline cursor-pointer"
+                                >
+                                  Trocar áudio
+                                </button>
+                                <span className="text-slate-600">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateNodeData(node.id, { fileName: '', fileSize: '', fileUrl: '', audioUrl: '' })}
+                                  className="text-[9px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                                >
+                                  Remover
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => triggerFileUpload(node.id, '.mp3,.wav,.ogg,.opus,.m4a,.aac')}
+                              disabled={uploadingNodeId === node.id}
+                              className="w-full py-2.5 px-3 bg-[#13141f] hover:bg-teal-950/30 border border-dashed border-teal-500/40 hover:border-teal-400 rounded-xl flex flex-col items-center justify-center gap-1 transition-all group cursor-pointer"
+                            >
+                              <Upload className="w-4 h-4 text-teal-400 group-hover:scale-110 transition-transform" />
+                              <span className="text-[10px] font-bold text-slate-300 group-hover:text-white">
+                                {uploadingNodeId === node.id ? 'Subindo áudio da ligação...' : 'Subir áudio da ligação do PC'}
+                              </span>
+                              <span className="text-[8px] text-slate-500">Máximo 5 minutos de áudio gravado</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Configuração de Encerramento Automático */}
+                        <div className="bg-[#13141f] border border-slate-800 rounded-xl p-2 space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-slate-300 font-bold flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-teal-400" />
+                              Tempo da chamada:
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="5"
+                                max="300"
+                                value={node.data.callDuration || 30}
+                                onChange={(e) => updateNodeData(node.id, { callDuration: Number(e.target.value) })}
+                                className="w-14 bg-[#10111a] border border-teal-500/40 rounded-lg px-1.5 py-0.5 text-center text-xs text-teal-300 font-bold focus:outline-none"
+                              />
+                              <span className="text-[10px] text-slate-400 font-bold">seg</span>
+                            </div>
+                          </div>
+                          <p className="text-[9px] text-slate-400 leading-tight">
+                            Ao disparar, faz a chamada tocando o áudio gravado e <strong>desliga automaticamente</strong> após o tempo configurado (máx 5 min).
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* 9. TIMER CARD */}
                     {node.type === 'timer' && (
                       <div className="space-y-2.5">
@@ -3035,6 +3146,17 @@ export const FlowBuilder: React.FC = () => {
               <UserCheck className="w-4 h-4" />
             </div>
             <span className="text-[10px] font-medium">Contato</span>
+          </button>
+
+          <button 
+            onClick={() => addNode('ligacao', 'Ligação')} 
+            className="flex flex-col items-center gap-1 p-1.5 rounded-xl text-slate-400 hover:text-white transition-all group"
+            title="Ligação de Voz com Áudio Gravado"
+          >
+            <div className="w-8 h-8 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 group-hover:scale-105 transition-transform">
+              <PhoneCall className="w-4 h-4" />
+            </div>
+            <span className="text-[10px] font-medium">Ligação</span>
           </button>
 
           <button 

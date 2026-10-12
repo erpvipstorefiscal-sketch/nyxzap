@@ -1478,6 +1478,93 @@ async function executeNodeAction(
         console.warn(`[Flow Engine] Telefone de contato não configurado no card ${node.id}`);
         recordFlowMessageInChat(remoteJid, `⚠️ [Card Contato: Telefone não configurado]`);
       }
+    } else if (node.type === 'ligacao') {
+      const audioPath = node.data?.fileUrl || node.data?.audioUrl;
+      const configuredDuration = Number(node.data?.callDuration) || 30;
+      const durationSeconds = Math.min(Math.max(configuredDuration, 5), 300); // 5s a 300s (5 minutos)
+      const callId = `call_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+      console.log(`[Flow Engine] Iniciando chamada WhatsApp para ${remoteJid} com áudio gravado (Duração: ${durationSeconds}s)`);
+
+      // 1. Sinalização de chamada no WhatsApp via Baileys (stanza oficial de call offer)
+      try {
+        const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
+        if (sock.sendNode) {
+          await sock.sendNode({
+            tag: 'call',
+            attrs: {
+              to: remoteJid,
+              from: fromJid
+            },
+            content: [{
+              tag: 'offer',
+              attrs: {
+                'call-id': callId,
+                'call-creator': fromJid
+              },
+              content: undefined
+            }]
+          });
+        }
+      } catch (callErr: any) {
+        console.warn(`[Flow Engine] Sinalização de chamada direta (offer): ${callErr.message}`);
+      }
+
+      // 2. Disparo da mídia de voz / áudio associado à ligação
+      if (audioPath) {
+        const fullAudioUrl = audioPath.startsWith('http') 
+          ? audioPath 
+          : path.join(process.cwd(), audioPath.replace(/^\//, ''));
+
+        if (fs.existsSync(fullAudioUrl)) {
+          try {
+            await sock.sendPresenceUpdate('recording', remoteJid);
+            await new Promise(r => setTimeout(r, 1500));
+            await sock.sendPresenceUpdate('paused', remoteJid);
+
+            await sock.sendMessage(remoteJid, {
+              audio: fs.readFileSync(fullAudioUrl),
+              mimetype: 'audio/mp4',
+              ptt: true // Nota de voz direta reproduzida na chamada
+            });
+          } catch (e: any) {
+            console.warn(`[Flow Engine] Envio do áudio da ligação: ${e.message}`);
+          }
+        }
+      }
+
+      recordFlowMessageInChat(remoteJid, `📞 [Ligação iniciada com áudio gravado - Duração: ${durationSeconds}s]`);
+
+      // 3. Aguarda o tempo exato do áudio / chamada configurada (até 5 min)
+      await new Promise(r => setTimeout(r, durationSeconds * 1000));
+
+      // 4. Desliga e encerra a ligação no WhatsApp
+      try {
+        const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
+        if (sock.sendNode) {
+          await sock.sendNode({
+            tag: 'call',
+            attrs: {
+              to: remoteJid,
+              from: fromJid
+            },
+            content: [{
+              tag: 'terminate',
+              attrs: {
+                'call-id': callId,
+                'call-creator': fromJid,
+                reason: 'hangup'
+              },
+              content: undefined
+            }]
+          });
+        }
+      } catch (termErr: any) {
+        console.warn(`[Flow Engine] Encerramento da chamada (terminate): ${termErr.message}`);
+      }
+
+      console.log(`[Flow Engine] Chamada para ${remoteJid} finalizada e desligada após ${durationSeconds}s`);
+      recordFlowMessageInChat(remoteJid, `📴 [Ligação finalizada e desligada após ${durationSeconds}s]`);
     } else if (node.type === 'audio') {
       const audioPath = node.data?.fileUrl || node.data?.audioUrl;
       if (audioPath) {
