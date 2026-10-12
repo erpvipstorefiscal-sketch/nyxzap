@@ -998,6 +998,77 @@ async function loadSavedFlow() {
 }
 loadSavedFlow();
 
+// Persist chat and message to PostgreSQL
+async function persistChatAndMessage(chat: ChatConversation, newMsg?: ChatMessage) {
+  try {
+    await pool.query(
+      `INSERT INTO chats (id, lead_phone, lead_name, tag, follow_up_date, internal_notes, ai_agent_active, bot_flow_active, unread_count, last_message, last_message_time, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET
+         lead_phone = EXCLUDED.lead_phone,
+         lead_name = EXCLUDED.lead_name,
+         tag = EXCLUDED.tag,
+         follow_up_date = EXCLUDED.follow_up_date,
+         internal_notes = EXCLUDED.internal_notes,
+         ai_agent_active = EXCLUDED.ai_agent_active,
+         bot_flow_active = EXCLUDED.bot_flow_active,
+         unread_count = EXCLUDED.unread_count,
+         last_message = EXCLUDED.last_message,
+         last_message_time = EXCLUDED.last_message_time,
+         updated_at = CURRENT_TIMESTAMP`,
+      [chat.id, chat.leadPhone, chat.leadName, chat.tag, chat.followUpDate || null, chat.internalNotes || '', chat.aiAgentActive, chat.botFlowActive, chat.unreadCount, chat.lastMessage, chat.lastMessageTime]
+    );
+
+    if (newMsg) {
+      await pool.query(
+        `INSERT INTO chat_messages (id, chat_id, from_me, text, timestamp, sender_name, is_ai_generated, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO NOTHING`,
+        [newMsg.id, chat.id, newMsg.fromMe, newMsg.text, newMsg.timestamp, newMsg.senderName || '', newMsg.isAiGenerated || false]
+      );
+    }
+  } catch (err) {
+    console.error('[Persist Chat Error]', err);
+  }
+}
+
+// Load saved chats from PostgreSQL on server startup
+async function loadSavedChats() {
+  try {
+    const chatsResult = await pool.query('SELECT * FROM chats ORDER BY updated_at DESC');
+    for (const row of chatsResult.rows) {
+      if (!row.id || row.id.includes('broadcast') || row.id.includes('@newsletter') || row.id.includes('@lid')) continue;
+      const msgsResult = await pool.query('SELECT * FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC', [row.id]);
+      const messages: ChatMessage[] = msgsResult.rows.map(m => ({
+        id: m.id,
+        fromMe: Boolean(m.from_me),
+        text: m.text,
+        timestamp: m.timestamp,
+        senderName: m.sender_name,
+        isAiGenerated: Boolean(m.is_ai_generated)
+      }));
+      liveChats.set(row.id, {
+        id: row.id,
+        leadPhone: row.lead_phone,
+        leadName: row.lead_name,
+        tag: row.tag || 'morno',
+        followUpDate: row.follow_up_date,
+        internalNotes: row.internal_notes || '',
+        aiAgentActive: row.ai_agent_active !== false,
+        botFlowActive: Boolean(row.bot_flow_active),
+        unreadCount: row.unread_count || 0,
+        lastMessage: row.last_message || '',
+        lastMessageTime: row.last_message_time || '',
+        messages
+      });
+    }
+    console.log(`[Chats] ${liveChats.size} conversas carregadas do banco de dados PostgreSQL.`);
+  } catch (err) {
+    console.error('[Chats Error] Falha ao carregar chats do banco:', err);
+  }
+}
+loadSavedChats();
+
 // Helper to sanitize text for matching keywords (remove accents, lowercase, trim)
 function normalizeText(str: string): string {
   return (str || '')
@@ -1040,6 +1111,7 @@ interface PendingFlowResponse {
   timeoutTimer: NodeJS.Timeout;
   responseTargetId?: string;
   timeoutTargetId?: string;
+  flow?: { nodes: FlowNodeServer[]; edges: FlowEdgeServer[] };
 }
 
 // Leads currently waiting for response at a specific card in a flow
@@ -1052,7 +1124,8 @@ async function resumeFlowChain(
   startNodeId: string,
   senderName: string,
   incomingText: string,
-  sessionId: string
+  sessionId: string,
+  flowObj: { nodes: FlowNodeServer[]; edges: FlowEdgeServer[] } = activeFlow
 ): Promise<void> {
   const visitedNodes = new Set<string>();
   let queue: string[] = [startNodeId];
@@ -1062,7 +1135,7 @@ async function resumeFlowChain(
     if (visitedNodes.has(currentNodeId)) continue;
     visitedNodes.add(currentNodeId);
 
-    const currentNode = activeFlow.nodes.find(n => n.id === currentNodeId);
+    const currentNode = flowObj.nodes.find(n => n.id === currentNodeId);
     if (!currentNode) continue;
 
     // Execute node action
@@ -1076,7 +1149,7 @@ async function resumeFlowChain(
 
     // Check if node waits for client response
     if (currentNode.data?.waitForResponse) {
-      const outgoingEdges = activeFlow.edges.filter(e => e.from === currentNode.id);
+      const outgoingEdges = flowObj.edges.filter(e => e.from === currentNode.id);
       const responseEdge = outgoingEdges.find(e => e.fromHandle === 'response' || e.label?.toLowerCase().includes('respondeu'));
       const timeoutEdge = outgoingEdges.find(e => e.fromHandle === 'timeout' || e.label?.toLowerCase().includes('não'));
 
@@ -1094,7 +1167,7 @@ async function resumeFlowChain(
         pendingFlowResponses.delete(remoteJid);
         console.log(`[Flow Engine] Tempo esgotado (${delay} ${unit}) para ${remoteJid}. Prosseguindo conexão 'Não respondeu' (${timeoutEdge?.to || 'Nenhuma'}).`);
         if (timeoutEdge?.to) {
-          await resumeFlowChain(sock, remoteJid, timeoutEdge.to, senderName, '', sessionId);
+          await resumeFlowChain(sock, remoteJid, timeoutEdge.to, senderName, '', sessionId, flowObj);
         }
       }, totalMs);
 
@@ -1105,7 +1178,8 @@ async function resumeFlowChain(
         senderName,
         timeoutTimer,
         responseTargetId: responseEdge?.to,
-        timeoutTargetId: timeoutEdge?.to
+        timeoutTargetId: timeoutEdge?.to,
+        flow: flowObj
       });
 
       // STOP here. Do NOT execute next nodes until response or timeout.
@@ -1113,7 +1187,7 @@ async function resumeFlowChain(
     }
 
     // Normal progression for nodes without response pause
-    const outgoingEdges = activeFlow.edges.filter(e => e.from === currentNodeId);
+    const outgoingEdges = flowObj.edges.filter(e => e.from === currentNodeId);
     outgoingEdges.forEach(e => {
       if (!visitedNodes.has(e.to)) {
         queue.push(e.to);
@@ -1130,64 +1204,85 @@ async function executeFlowForMessage(
   senderName: string,
   sessionId: string
 ): Promise<boolean> {
-  if (!activeFlow.active || !activeFlow.nodes || activeFlow.nodes.length === 0) {
-    return false;
-  }
-
   const normIncoming = normalizeText(incomingText);
 
-  // Find matching trigger 'inicio' node
-  const triggerNode = activeFlow.nodes.find(n => {
-    if (n.type !== 'inicio') return false;
-
-    // Check instance filter if specified
-    const targetInst = n.data?.instance;
-    if (targetInst && targetInst !== 'Todas') {
-      const cleanInstNum = targetInst.replace(/[^0-9]/g, '');
-      const cleanSessionNum = sessionId.replace(/[^0-9]/g, '');
-      if (cleanInstNum && cleanSessionNum && cleanInstNum !== cleanSessionNum) {
-        return false;
-      }
-    }
-
-    const triggerType = n.data?.trigger || 'palavra_chave';
-    if (triggerType === 'boas_vindas') {
-      return true; // Fires on greeting/first message
-    }
-
-    const keywords: string[] = n.data?.keywords || [];
-    if (keywords.length === 0) return false;
-
-    return keywords.some(kw => {
-      const normKw = normalizeText(kw);
-      if (!normKw) return false;
-      return normIncoming.includes(normKw);
-    });
-  });
-
-  if (!triggerNode) {
-    return false;
-  }
-
-  console.log(`[Flow Engine] Gatilho ativado pelo card '${triggerNode.title}' para ${remoteJid}!`);
-
-  // Increment execution counter in DB
+  // Load all active flows from PostgreSQL (or fallback to in-memory activeFlow)
+  let flowsList: Array<{ id: string; name: string; nodes: FlowNodeServer[]; edges: FlowEdgeServer[] }> = [];
   try {
-    const flowId = activeFlow.id || 'default';
-    activeFlow.execution_count = (activeFlow.execution_count || 0) + 1;
-    await pool.query('UPDATE flow_definitions SET execution_count = COALESCE(execution_count, 0) + 1 WHERE id = $1', [flowId]);
+    const res = await pool.query('SELECT id, name, nodes, edges FROM flow_definitions WHERE active = true ORDER BY updated_at DESC');
+    if (res.rows.length > 0) {
+      flowsList = res.rows.map(r => ({
+        id: r.id,
+        name: r.name || 'Fluxo',
+        nodes: r.nodes || [],
+        edges: r.edges || []
+      }));
+    }
   } catch (err) {
-    // Non-blocking
+    // fallback
   }
 
-  const initialEdges = activeFlow.edges.filter(e => e.from === triggerNode.id);
-  if (initialEdges.length === 0) return true;
-
-  for (const edge of initialEdges) {
-    await resumeFlowChain(sock, remoteJid, edge.to, senderName, incomingText, sessionId);
+  if (flowsList.length === 0 && activeFlow.active && activeFlow.nodes?.length > 0) {
+    flowsList = [activeFlow];
   }
 
-  return true;
+  if (flowsList.length === 0) return false;
+
+  for (const flow of flowsList) {
+    const triggerNode = flow.nodes.find(n => {
+      if (n.type !== 'inicio') return false;
+
+      // Check instance filter if specified
+      const targetInst = n.data?.instance;
+      if (targetInst && targetInst !== 'Todas') {
+        const cleanInstNum = targetInst.replace(/[^0-9]/g, '');
+        const cleanSessionNum = sessionId.replace(/[^0-9]/g, '');
+        const session = sessions.get(sessionId);
+        const sessionName = (session?.name || '').toLowerCase();
+        const matchesInstNum = cleanInstNum && cleanSessionNum && cleanInstNum === cleanSessionNum;
+        const matchesInstName = cleanInstNum && sessionName.includes(cleanInstNum);
+        if (!matchesInstNum && !matchesInstName && !sessionId.includes(cleanInstNum)) {
+          return false;
+        }
+      }
+
+      const triggerType = n.data?.trigger || 'palavra_chave';
+      if (triggerType === 'boas_vindas') {
+        return true;
+      }
+
+      const keywords: string[] = n.data?.keywords || [];
+      if (keywords.length === 0) return false;
+
+      return keywords.some(kw => {
+        const normKw = normalizeText(kw);
+        if (!normKw) return false;
+        return normIncoming.includes(normKw) || normKw.includes(normIncoming);
+      });
+    });
+
+    if (triggerNode) {
+      console.log(`[Flow Engine] Gatilho ativado pelo card '${triggerNode.title}' no fluxo '${flow.name}' (${flow.id}) para ${remoteJid}!`);
+
+      // Increment execution counter in DB
+      try {
+        await pool.query('UPDATE flow_definitions SET execution_count = COALESCE(execution_count, 0) + 1 WHERE id = $1', [flow.id]);
+      } catch (err) {
+        // Non-blocking
+      }
+
+      const initialEdges = flow.edges.filter(e => e.from === triggerNode.id);
+      if (initialEdges.length === 0) return true;
+
+      for (const edge of initialEdges) {
+        await resumeFlowChain(sock, remoteJid, edge.to, senderName, incomingText, sessionId, flow);
+      }
+
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // Helper to execute specific node type (message, media, audio, delay, etc.)
@@ -1359,6 +1454,7 @@ function recordFlowMessageInChat(remoteJid: string, text: string, isAi = false) 
     chat.lastMessage = text;
     chat.lastMessageTime = timeStr;
     liveChats.set(remoteJid, chat);
+    persistChatAndMessage(chat, botMsg).catch(err => console.error('[Bot Msg Persist Error]', err));
     broadcast('chat_message', { chatId: remoteJid, message: botMsg, conversation: chat });
   }
 }
@@ -1443,6 +1539,40 @@ async function startWhatsAppSession(sessionId: string) {
     }
   });
 
+  // Handle syncing recent chat history on connection
+  sock.ev.on('messaging-history.set', async ({ chats: histChats }: any) => {
+    try {
+      if (Array.isArray(histChats)) {
+        for (const c of histChats) {
+          const jid = c.id;
+          if (!jid || jid.includes('@g.us') || jid.includes('broadcast') || jid.includes('status@') || jid.includes('@newsletter') || jid.includes('@lid')) continue;
+          const cleanPhone = jid.replace('@s.whatsapp.net', '');
+          let chat = liveChats.get(jid);
+          if (!chat) {
+            chat = {
+              id: jid,
+              leadPhone: `+${cleanPhone}`,
+              leadName: c.name || 'Contato WhatsApp',
+              tag: 'morno',
+              internalNotes: '',
+              aiAgentActive: false,
+              botFlowActive: true,
+              unreadCount: c.unreadCount || 0,
+              lastMessage: '',
+              lastMessageTime: getBrazilTimeString(),
+              messages: []
+            };
+            liveChats.set(jid, chat);
+            await persistChatAndMessage(chat);
+          }
+        }
+        console.log(`[WhatsApp Sync] Sincronizadas ${histChats.length} conversas recebidas do WhatsApp.`);
+      }
+    } catch (e) {
+      console.error('[WhatsApp Sync Error]', e);
+    }
+  });
+
   // Handle incoming & outgoing messages in real-time
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
@@ -1460,9 +1590,26 @@ async function startWhatsAppSession(sessionId: string) {
         continue;
       }
 
-      const text = msg.message.conversation 
-        || msg.message.extendedTextMessage?.text 
-        || msg.message.imageMessage?.caption 
+      // Unwrap ephemeral, viewOnce, and document-with-caption wrappers
+      const rawMsg = msg.message;
+      const unwrapped = (rawMsg as any)?.ephemeralMessage?.message 
+        || (rawMsg as any)?.viewOnceMessage?.message 
+        || (rawMsg as any)?.viewOnceMessageV2?.message 
+        || (rawMsg as any)?.documentWithCaptionMessage?.message 
+        || rawMsg;
+
+      const text = (unwrapped as any)?.conversation 
+        || (unwrapped as any)?.extendedTextMessage?.text 
+        || (unwrapped as any)?.imageMessage?.caption 
+        || (unwrapped as any)?.videoMessage?.caption
+        || (unwrapped as any)?.documentMessage?.caption
+        || ((unwrapped as any)?.audioMessage ? '🎵 [Áudio]' : '')
+        || ((unwrapped as any)?.imageMessage ? '📷 [Foto]' : '')
+        || ((unwrapped as any)?.videoMessage ? '🎥 [Vídeo]' : '')
+        || ((unwrapped as any)?.documentMessage ? `📄 [Documento: ${(unwrapped as any).documentMessage.fileName || 'arquivo'}]` : '')
+        || ((unwrapped as any)?.stickerMessage ? '🏷️ [Figurinha]' : '')
+        || ((unwrapped as any)?.contactMessage ? '👤 [Contato]' : '')
+        || ((unwrapped as any)?.locationMessage ? '📍 [Localização]' : '')
         || '';
 
       if (!text) continue;
@@ -1495,7 +1642,7 @@ async function startWhatsAppSession(sessionId: string) {
         chat.lastMessage = text;
         chat.lastMessageTime = timeStr;
         if (!fromMe) chat.unreadCount += 1;
-        if (pushName && chat.leadName === 'Contato WhatsApp') chat.leadName = pushName;
+        if (pushName && (chat.leadName === 'Contato WhatsApp' || !chat.leadName)) chat.leadName = pushName;
       }
 
       // Check if message already exists by ID or content to prevent duplicates
@@ -1513,6 +1660,9 @@ async function startWhatsAppSession(sessionId: string) {
       chat.messages.push(newMsg);
       liveChats.set(remoteJid, chat);
 
+      // Persist conversation and message to PostgreSQL (ensuring it stays after deploys)
+      await persistChatAndMessage(chat, newMsg);
+
       broadcast('chat_message', { chatId: remoteJid, message: newMsg, conversation: chat });
 
       // Check escape keywords (Transbordo Humano)
@@ -1525,6 +1675,7 @@ async function startWhatsAppSession(sessionId: string) {
           chat.aiAgentActive = false;
           chat.botFlowActive = false;
           liveChats.set(remoteJid, chat);
+          await persistChatAndMessage(chat);
 
           broadcast('transbordo_alert', {
             phone: remoteJid,
@@ -1894,7 +2045,12 @@ app.get('/api/whatsapp/groups', async (req, res) => {
       name: g.subject || 'Grupo sem nome',
       participantsCount: Array.isArray(g.participants) ? g.participants.length : 0,
       desc: g.desc || '',
-      owner: g.owner || ''
+      owner: g.owner || '',
+      participants: Array.isArray(g.participants) ? g.participants.map((p: any) => ({
+        id: p.id,
+        phone: p.id ? p.id.split('@')[0] : '',
+        admin: p.admin || null
+      })) : []
     }));
 
     res.json({ success: true, sessionId: targetSession.id, groups });
@@ -1903,6 +2059,231 @@ app.get('/api/whatsapp/groups', async (req, res) => {
     res.status(500).json({ success: false, groups: [], error: 'Erro ao buscar grupos: ' + err.message });
   }
 });
+
+// Helper to send group broadcast with attachments and @todos mention
+async function sendGroupBroadcastMessage(
+  sock: any,
+  groupId: string,
+  text: string,
+  mediaPath?: string,
+  mediaType?: string,
+  fileName?: string,
+  mentionAll?: boolean
+) {
+  let mentions: string[] = [];
+  if (mentionAll && sock.groupMetadata) {
+    try {
+      const meta = await sock.groupMetadata(groupId);
+      if (meta && Array.isArray(meta.participants)) {
+        mentions = meta.participants.map((p: any) => p.id);
+      }
+    } catch (e) {
+      console.warn('[Broadcast Mentions Warning]', e);
+    }
+  }
+
+  if (mediaPath) {
+    const fullMediaPath = mediaPath.startsWith('http')
+      ? mediaPath
+      : path.join(process.cwd(), mediaPath.replace(/^\//, ''));
+
+    if (fs.existsSync(fullMediaPath)) {
+      const buffer = fs.readFileSync(fullMediaPath);
+
+      if (mediaType === 'image') {
+        await sock.sendMessage(groupId, {
+          image: buffer,
+          caption: text || '',
+          mentions: mentions.length > 0 ? mentions : undefined
+        });
+        return;
+      } else if (mediaType === 'video') {
+        await sock.sendMessage(groupId, {
+          video: buffer,
+          caption: text || '',
+          mentions: mentions.length > 0 ? mentions : undefined
+        });
+        return;
+      } else if (mediaType === 'audio') {
+        await sock.sendMessage(groupId, {
+          audio: buffer,
+          mimetype: 'audio/mp4',
+          ptt: true
+        });
+        if (text) {
+          await sock.sendMessage(groupId, {
+            text,
+            mentions: mentions.length > 0 ? mentions : undefined
+          });
+        }
+        return;
+      } else if (mediaType === 'document') {
+        await sock.sendMessage(groupId, {
+          document: buffer,
+          mimetype: 'application/octet-stream',
+          fileName: fileName || path.basename(fullMediaPath) || 'documento',
+          caption: text || '',
+          mentions: mentions.length > 0 ? mentions : undefined
+        });
+        return;
+      }
+    }
+  }
+
+  // Pure text fallback
+  await sock.sendMessage(groupId, {
+    text: text || '',
+    mentions: mentions.length > 0 ? mentions : undefined
+  });
+}
+
+// Disparo em Grupo (Imediato ou Agendado com Mídias e @todos)
+app.post('/api/whatsapp/groups/broadcast', async (req, res) => {
+  const { groupId, groupName, text, mediaPath, mediaType, fileName, mentionAll, scheduledAt, sessionId } = req.body;
+
+  if (!groupId) {
+    return res.status(400).json({ error: 'ID do grupo é obrigatório.' });
+  }
+
+  if (!text && !mediaPath) {
+    return res.status(400).json({ error: 'Informe um texto ou anexe uma mídia para o disparo.' });
+  }
+
+  // Se agendado: salvar no banco para disparo futuro
+  if (scheduledAt) {
+    const broadcastId = `sch-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    try {
+      await pool.query(
+        `INSERT INTO scheduled_broadcasts (id, group_id, group_name, text, media_path, media_type, file_name, mention_all, scheduled_at, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')`,
+        [broadcastId, groupId, groupName || 'Grupo WhatsApp', text || '', mediaPath || null, mediaType || null, fileName || null, Boolean(mentionAll), new Date(scheduledAt)]
+      );
+      return res.json({ 
+        success: true, 
+        scheduled: true, 
+        id: broadcastId, 
+        message: `Comunicado agendado com sucesso para ${new Date(scheduledAt).toLocaleString('pt-BR')}!` 
+      });
+    } catch (err: any) {
+      console.error('[Schedule Broadcast Error]', err);
+      return res.status(500).json({ error: 'Erro ao agendar disparo: ' + err.message });
+    }
+  }
+
+  // Disparo Imediato
+  let targetSession: SessionData | undefined;
+  if (sessionId && typeof sessionId === 'string') {
+    targetSession = sessions.get(sessionId);
+  }
+  if (!targetSession || !targetSession.sock || targetSession.status !== 'connected') {
+    for (const s of sessions.values()) {
+      if (s.status === 'connected' && s.sock) {
+        targetSession = s;
+        break;
+      }
+    }
+  }
+
+  if (!targetSession || !targetSession.sock) {
+    return res.status(400).json({ error: 'WhatsApp não está conectado para enviar o comunicado.' });
+  }
+
+  try {
+    await sendGroupBroadcastMessage(
+      targetSession.sock,
+      groupId,
+      text || '',
+      mediaPath,
+      mediaType,
+      fileName,
+      Boolean(mentionAll)
+    );
+
+    // Salva histórico de envio imediato
+    try {
+      const histId = `sent-${Date.now()}`;
+      await pool.query(
+        `INSERT INTO scheduled_broadcasts (id, group_id, group_name, text, media_path, media_type, file_name, mention_all, scheduled_at, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, 'sent')`,
+        [histId, groupId, groupName || 'Grupo WhatsApp', text || '', mediaPath || null, mediaType || null, fileName || null, Boolean(mentionAll)]
+      );
+    } catch (e) {}
+
+    res.json({ success: true, message: 'Comunicado enviado com sucesso para o grupo!' });
+  } catch (err: any) {
+    console.error('[Immediate Broadcast Error]', err);
+    res.status(500).json({ error: 'Erro ao enviar comunicado: ' + err.message });
+  }
+});
+
+// Listar Disparos Agendados
+app.get('/api/whatsapp/groups/scheduled', async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, group_id as "groupId", group_name as "groupName", text, media_path as "mediaPath", media_type as "mediaType", file_name as "fileName", mention_all as "mentionAll", scheduled_at as "scheduledAt", status, error_message as "errorMessage", created_at as "createdAt"
+       FROM scheduled_broadcasts 
+       ORDER BY scheduled_at DESC LIMIT 50`
+    );
+    res.json({ success: true, broadcasts: result.rows });
+  } catch (err: any) {
+    console.error('[List Scheduled Error]', err);
+    res.json({ success: true, broadcasts: [] });
+  }
+});
+
+// Cancelar / Excluir Disparo Agendado
+app.delete('/api/whatsapp/groups/scheduled/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM scheduled_broadcasts WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Agendamento cancelado com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Worker periódico para disparar mensagens agendadas
+async function processScheduledBroadcasts() {
+  try {
+    const res = await pool.query(
+      `SELECT * FROM scheduled_broadcasts 
+       WHERE status = 'pending' AND scheduled_at <= CURRENT_TIMESTAMP 
+       ORDER BY scheduled_at ASC LIMIT 5`
+    );
+    if (res.rows.length === 0) return;
+
+    let targetSession: SessionData | undefined;
+    for (const s of sessions.values()) {
+      if (s.status === 'connected' && s.sock) {
+        targetSession = s;
+        break;
+      }
+    }
+    if (!targetSession || !targetSession.sock) {
+      return;
+    }
+
+    for (const b of res.rows) {
+      try {
+        console.log(`[Scheduled Broadcast] Disparando agendamento ${b.id} para grupo ${b.group_name} (${b.group_id})...`);
+        await sendGroupBroadcastMessage(
+          targetSession.sock,
+          b.group_id,
+          b.text,
+          b.media_path,
+          b.media_type,
+          b.file_name,
+          b.mention_all
+        );
+        await pool.query(`UPDATE scheduled_broadcasts SET status = 'sent', error_message = NULL WHERE id = $1`, [b.id]);
+      } catch (err: any) {
+        console.error(`[Scheduled Broadcast Error] Erro ao enviar ${b.id}:`, err);
+        await pool.query(`UPDATE scheduled_broadcasts SET status = 'failed', error_message = $1 WHERE id = $2`, [err.message || 'Erro', b.id]);
+      }
+    }
+  } catch (e) {}
+}
+setInterval(processScheduledBroadcasts, 15000);
 
 // Ações no Grupo (Adicionar ou Remover Lead)
 app.post('/api/whatsapp/groups/manage', async (req, res) => {

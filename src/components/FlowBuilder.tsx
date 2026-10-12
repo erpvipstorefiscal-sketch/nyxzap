@@ -281,6 +281,23 @@ export const FlowBuilder: React.FC = () => {
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
+  // Renomear cards inline no canvas
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editingCardTitle, setEditingCardTitle] = useState('');
+
+  const startRenamingCard = (nodeId: string, currentTitle: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingCardId(nodeId);
+    setEditingCardTitle(currentTitle);
+  };
+
+  const saveRenamedCard = (nodeId: string) => {
+    if (editingCardTitle.trim()) {
+      setNodes(nds => nds.map(n => n.id === nodeId ? { ...n, title: editingCardTitle.trim() } : n));
+    }
+    setEditingCardId(null);
+  };
+
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const draggingIdRef = useRef<string | null>(null);
   draggingIdRef.current = draggingId;
@@ -1762,24 +1779,55 @@ export const FlowBuilder: React.FC = () => {
                       'bg-gradient-to-r from-blue-600 to-indigo-700'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      {node.type === 'inicio' && <Smartphone className="w-3.5 h-3.5 text-white" />}
-                      {(node.type === 'ia' || node.type === 'ia_audio') && <Sparkles className="w-3.5 h-3.5 text-white" />}
-                      {node.type === 'condicao' && <Scissors className="w-3.5 h-3.5 text-white" />}
-                      {node.type === 'audio' && <Mic className="w-3.5 h-3.5 text-white" />}
-                      {node.type === 'imagem' && <ImageIcon className="w-3.5 h-3.5 text-white" />}
-                      {node.type === 'video' && <Video className="w-3.5 h-3.5 text-white" />}
-                      {node.type === 'pdf' && <FileText className="w-3.5 h-3.5 text-white" />}
-                      {node.type === 'timer' && <Clock className="w-3.5 h-3.5 text-white" />}
-                      {(node.type === 'cakto' || node.type === 'webhook') && <WebhookIcon className="w-3.5 h-3.5 text-white" />}
-                      {(node.type === 'sms' || node.type === 'whatsapp') && <MessageSquare className="w-3.5 h-3.5 text-white" />}
-                      {node.type === 'grupo_wa' && <Users className="w-3.5 h-3.5 text-emerald-300" />}
-                      {node.type === 'finalizar' && <StopCircle className="w-3.5 h-3.5 text-rose-300" />}
-                      {node.type === 'conectar_fluxo' && <LinkIcon className="w-3.5 h-3.5 text-cyan-300" />}
-                      <span className="tracking-wide uppercase text-[11px] font-black">{node.title}</span>
+                    <div className="flex items-center gap-2 flex-1 min-w-0 mr-1">
+                      {node.type === 'inicio' && <Smartphone className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {(node.type === 'ia' || node.type === 'ia_audio') && <Bot className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {node.type === 'condicao' && <Scissors className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {node.type === 'audio' && <Mic className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {node.type === 'imagem' && <ImageIcon className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {node.type === 'video' && <Video className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {node.type === 'pdf' && <FileText className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {node.type === 'timer' && <Clock className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {(node.type === 'cakto' || node.type === 'webhook') && <WebhookIcon className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {(node.type === 'sms' || node.type === 'whatsapp') && <MessageSquare className="w-3.5 h-3.5 text-white shrink-0" />}
+                      {node.type === 'grupo_wa' && <Users className="w-3.5 h-3.5 text-emerald-300 shrink-0" />}
+                      {node.type === 'finalizar' && <StopCircle className="w-3.5 h-3.5 text-rose-300 shrink-0" />}
+                      {node.type === 'conectar_fluxo' && <LinkIcon className="w-3.5 h-3.5 text-cyan-300 shrink-0" />}
+                      
+                      {editingCardId === node.id ? (
+                        <input
+                          type="text"
+                          value={editingCardTitle}
+                          onChange={(e) => setEditingCardTitle(e.target.value)}
+                          onBlur={() => saveRenamedCard(node.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveRenamedCard(node.id);
+                            if (e.key === 'Escape') setEditingCardId(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          autoFocus
+                          className="w-full bg-black/50 text-white border border-white/40 rounded px-1.5 py-0.5 text-[11px] font-black uppercase outline-none focus:border-white shadow-inner"
+                        />
+                      ) : (
+                        <span 
+                          onClick={(e) => startRenamingCard(node.id, node.title, e)}
+                          title="Clique para renomear este card"
+                          className="tracking-wide uppercase text-[11px] font-black truncate cursor-pointer hover:underline"
+                        >
+                          {node.title}
+                        </span>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
+                    <div className="flex items-center gap-1 opacity-90 hover:opacity-100 shrink-0">
+                      <button
+                        onClick={(e) => startRenamingCard(node.id, node.title, e)}
+                        title="Renomear Card"
+                        className="p-1 hover:bg-black/25 rounded-md transition-colors"
+                      >
+                        <Edit3 className="w-3 h-3 text-white/80 hover:text-white" />
+                      </button>
                       <button
                         onClick={(e) => duplicateNode(node.id, e)}
                         title="Duplicar Card"
@@ -2689,7 +2737,7 @@ export const FlowBuilder: React.FC = () => {
             title="Inteligência Artificial"
           >
             <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
-              <Sparkles className="w-4 h-4" />
+              <Bot className="w-4 h-4" />
             </div>
             <span className="text-[9px] font-bold">Agente IA</span>
           </button>

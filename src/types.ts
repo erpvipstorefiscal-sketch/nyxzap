@@ -59,7 +59,23 @@ export interface WhatsAppGroup {
   id: string;
   name: string;
   participantsCount: number;
+  participants?: Array<{ id: string; phone: string; admin?: string | null }>;
   desc?: string;
+}
+
+export interface ScheduledBroadcast {
+  id: string;
+  groupId: string;
+  groupName?: string;
+  text?: string;
+  mediaPath?: string;
+  mediaType?: string;
+  fileName?: string;
+  mentionAll: boolean;
+  scheduledAt: string;
+  status: 'pending' | 'sent' | 'failed' | 'canceled';
+  errorMessage?: string;
+  createdAt: string;
 }
 
 export type LeadTag = 'frio' | 'morno' | 'quente' | 'comprou';

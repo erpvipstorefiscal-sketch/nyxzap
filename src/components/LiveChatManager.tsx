@@ -16,9 +16,16 @@ import {
   Trash2,
   CheckCircle2,
   AlertTriangle,
-  Users
+  Users,
+  Download,
+  Paperclip,
+  Image as ImageIcon,
+  Video,
+  Mic,
+  AtSign,
+  X
 } from 'lucide-react';
-import { ChatConversation, LeadTag, ChatMessage, WhatsAppGroup } from '../types';
+import { ChatConversation, LeadTag, ChatMessage, WhatsAppGroup, ScheduledBroadcast } from '../types';
 import { confirmDialog, alertDialog } from './ModalConfirm';
 
 export const LiveChatManager: React.FC = () => {
@@ -37,6 +44,15 @@ export const LiveChatManager: React.FC = () => {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [groupMessageText, setGroupMessageText] = useState('');
   const [isSendingGroupMessage, setIsSendingGroupMessage] = useState(false);
+
+  // Group Broadcast extensions: Attachments, Mentions, Scheduling, Export
+  const [scheduledBroadcasts, setScheduledBroadcasts] = useState<ScheduledBroadcast[]>([]);
+  const [broadcastMedia, setBroadcastMedia] = useState<{ url: string; type: 'image' | 'video' | 'audio' | 'document'; fileName: string } | null>(null);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [mentionAll, setMentionAll] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -77,6 +93,7 @@ export const LiveChatManager: React.FC = () => {
 
   useEffect(() => {
     fetchChats();
+    fetchScheduledBroadcasts();
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -228,23 +245,185 @@ export const LiveChatManager: React.FC = () => {
     }
   };
 
-  const handleSendGroupMessage = async () => {
-    if (!selectedGroupId || !groupMessageText.trim()) return;
-    setIsSendingGroupMessage(true);
+  const fetchScheduledBroadcasts = async () => {
     try {
-      await fetch(`/api/chats/${encodeURIComponent(selectedGroupId)}/message`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: groupMessageText.trim() })
-      });
-      setGroupMessageText('');
+      const res = await fetch('/api/whatsapp/groups/scheduled');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.broadcasts)) {
+        setScheduledBroadcasts(data.broadcasts);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar disparos agendados:', err);
+    }
+  };
+
+  const handleUploadMedia = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
       await alertDialog({
-        title: 'Comunicado Enviado',
-        message: 'Sua mensagem foi transmitida com sucesso para todos os membros do grupo no WhatsApp.',
-        variant: 'success',
+        title: 'Arquivo Muito Grande',
+        message: 'O arquivo não pode ultrapassar 50MB.',
+        variant: 'danger',
+        confirmText: 'Entendi'
+      });
+      return;
+    }
+
+    setIsUploadingMedia(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/flow/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document';
+        if (file.type.startsWith('image/')) mediaType = 'image';
+        else if (file.type.startsWith('video/')) mediaType = 'video';
+        else if (file.type.startsWith('audio/')) mediaType = 'audio';
+
+        setBroadcastMedia({
+          url: data.url,
+          type: mediaType,
+          fileName: data.filename || file.name
+        });
+      } else {
+        await alertDialog({
+          title: 'Erro no Upload',
+          message: data.error || 'Falha ao enviar arquivo.',
+          variant: 'danger',
+          confirmText: 'OK'
+        });
+      }
+    } catch (err: any) {
+      console.error('[Upload Error]', err);
+    } finally {
+      setIsUploadingMedia(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleExportContacts = (group: WhatsAppGroup) => {
+    const participants = group.participants || [];
+    let lines = [
+      `# NyxZap - Contatos Extraídos do Grupo`,
+      `# Nome do Grupo: ${group.name}`,
+      `# ID do Grupo: ${group.id}`,
+      `# Total de Participantes: ${participants.length}`,
+      `# Data de Extração: ${new Date().toLocaleString('pt-BR')}`,
+      `# ----------------------------------------------------`,
+      ``
+    ];
+
+    if (participants.length === 0) {
+      lines.push(`# Nenhum participante detalhado encontrado no cache.`);
+    } else {
+      participants.forEach(p => {
+        const num = p.phone || p.id.split('@')[0];
+        lines.push(`+${num}`);
+      });
+    }
+
+    const content = lines.join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const safeName = group.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    link.download = `contatos_${safeName}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDeleteScheduledBroadcast = async (id: string) => {
+    const ok = await confirmDialog({
+      title: 'Cancelar Agendamento',
+      message: 'Tem certeza que deseja cancelar este disparo agendado?',
+      confirmText: 'Sim, Cancelar',
+      cancelText: 'Voltar',
+      variant: 'danger'
+    });
+    if (!ok) return;
+
+    try {
+      await fetch(`/api/whatsapp/groups/scheduled/${id}`, { method: 'DELETE' });
+      fetchScheduledBroadcasts();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSendGroupMessage = async () => {
+    if (!selectedGroupId) return;
+    if (!groupMessageText.trim() && !broadcastMedia) {
+      await alertDialog({
+        title: 'Mensagem Vazia',
+        message: 'Digite um texto ou anexe uma mídia para realizar o disparo no grupo.',
+        variant: 'danger',
         confirmText: 'OK'
       });
-    } catch (err) {
+      return;
+    }
+
+    if (isScheduling && !scheduledDate) {
+      await alertDialog({
+        title: 'Data Obrigatória',
+        message: 'Selecione a data e o horário para o agendamento do disparo.',
+        variant: 'danger',
+        confirmText: 'OK'
+      });
+      return;
+    }
+
+    setIsSendingGroupMessage(true);
+    const activeGroup = groups.find(g => g.id === selectedGroupId);
+
+    try {
+      const res = await fetch('/api/whatsapp/groups/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupId: selectedGroupId,
+          groupName: activeGroup?.name || 'Grupo WhatsApp',
+          text: groupMessageText.trim(),
+          mediaPath: broadcastMedia?.url,
+          mediaType: broadcastMedia?.type,
+          fileName: broadcastMedia?.fileName,
+          mentionAll,
+          scheduledAt: isScheduling ? scheduledDate : undefined
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGroupMessageText('');
+        setBroadcastMedia(null);
+        setMentionAll(false);
+        setIsScheduling(false);
+        setScheduledDate('');
+        fetchScheduledBroadcasts();
+
+        await alertDialog({
+          title: data.scheduled ? 'Disparo Agendado!' : 'Comunicado Enviado!',
+          message: data.message || 'Operação realizada com sucesso no WhatsApp.',
+          variant: 'success',
+          confirmText: 'OK'
+        });
+      } else {
+        await alertDialog({
+          title: 'Erro no Disparo',
+          message: data.error || 'Falha ao processar comunicado.',
+          variant: 'danger',
+          confirmText: 'OK'
+        });
+      }
+    } catch (err: any) {
       console.error('Erro ao enviar mensagem para o grupo:', err);
     } finally {
       setIsSendingGroupMessage(false);
@@ -471,30 +650,48 @@ export const LiveChatManager: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  onClick={fetchGroups}
-                  disabled={isSyncingGroups}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-[#151824] text-slate-300 border border-slate-700 hover:text-white"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGroups ? 'animate-spin' : ''}`} />
-                  <span>Atualizar</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleExportContacts(activeGroup)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-emerald-600/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/25 transition-all shadow-sm"
+                    title="Exportar todos os números dos participantes deste grupo em formato .TXT"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Extrair Contatos (.TXT)</span>
+                  </button>
+
+                  <button
+                    onClick={fetchGroups}
+                    disabled={isSyncingGroups}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-[#151824] text-slate-300 border border-slate-700 hover:text-white"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGroups ? 'animate-spin' : ''}`} />
+                    <span>Atualizar</span>
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 p-6 space-y-6 overflow-y-auto">
+                {/* Informações do Grupo */}
                 <div className="bg-[#10111a] border border-slate-800 rounded-2xl p-5 space-y-4">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <Users className="w-4 h-4 text-emerald-400" />
-                    Informações do Grupo
-                  </h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Users className="w-4 h-4 text-emerald-400" />
+                      Informações do Grupo
+                    </h4>
+                    <span className="text-[11px] text-slate-400">
+                      ID: <span className="font-mono text-slate-300">{activeGroup.id}</span>
+                    </span>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-[#151824] p-3 rounded-xl border border-slate-800/80">
                       <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total de Membros</span>
                       <span className="text-lg font-bold text-emerald-400">{activeGroup.participantsCount} membros</span>
                     </div>
                     <div className="bg-[#151824] p-3 rounded-xl border border-slate-800/80">
-                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Identificador (JID)</span>
-                      <span className="text-[11px] font-mono text-slate-300 truncate block">{activeGroup.id}</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-semibold block">Exportação</span>
+                      <span className="text-xs font-medium text-slate-300">Pronto para extrair contatos em TXT</span>
                     </div>
                   </div>
                   {activeGroup.desc && (
@@ -505,14 +702,124 @@ export const LiveChatManager: React.FC = () => {
                   )}
                 </div>
 
-                <div className="bg-[#10111a] border border-slate-800 rounded-2xl p-5 space-y-3">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <Send className="w-4 h-4 text-emerald-400" />
-                    Disparo de Comunicado no Grupo
-                  </h4>
+                {/* Disparo de Comunicado no Grupo */}
+                <div className="bg-[#10111a] border border-slate-800 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Send className="w-4 h-4 text-emerald-400" />
+                      Disparo de Comunicado no Grupo
+                    </h4>
+                    <span className="text-[11px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      {isScheduling ? '📅 Modo Agendamento' : '⚡ Disparo Imediato'}
+                    </span>
+                  </div>
+
                   <p className="text-xs text-slate-400">
-                    Envie uma mensagem instantânea para todos os membros deste grupo pelo WhatsApp conectado:
+                    Transmita comunicados, fotos, vídeos, áudios ou documentos para todos os membros deste grupo.
                   </p>
+
+                  {/* Input de arquivo invisível */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleUploadMedia}
+                    className="hidden"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
+                  />
+
+                  {/* Anexos de Mídia */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mr-1">
+                      <Paperclip className="w-3.5 h-3.5" /> Anexar:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.accept = 'image/*';
+                          fileInputRef.current.click();
+                        }
+                      }}
+                      disabled={isUploadingMedia}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition-all"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 text-pink-400" />
+                      <span>Foto</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.accept = 'video/*';
+                          fileInputRef.current.click();
+                        }
+                      }}
+                      disabled={isUploadingMedia}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition-all"
+                    >
+                      <Video className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Vídeo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.accept = 'audio/*';
+                          fileInputRef.current.click();
+                        }
+                      }}
+                      disabled={isUploadingMedia}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition-all"
+                    >
+                      <Mic className="w-3.5 h-3.5 text-violet-400" />
+                      <span>Áudio</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.accept = '.pdf,.doc,.docx,.txt';
+                          fileInputRef.current.click();
+                        }
+                      }}
+                      disabled={isUploadingMedia}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition-all"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Documento</span>
+                    </button>
+
+                    {isUploadingMedia && (
+                      <span className="text-xs text-purple-400 flex items-center gap-1 ml-2">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Fazendo upload...
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Prévia da mídia anexada */}
+                  {broadcastMedia && (
+                    <div className="bg-[#151824] border border-purple-500/30 rounded-xl p-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {broadcastMedia.type === 'image' && <ImageIcon className="w-4 h-4 text-pink-400" />}
+                        {broadcastMedia.type === 'video' && <Video className="w-4 h-4 text-rose-400" />}
+                        {broadcastMedia.type === 'audio' && <Mic className="w-4 h-4 text-violet-400" />}
+                        {broadcastMedia.type === 'document' && <FileText className="w-4 h-4 text-amber-400" />}
+                        <div>
+                          <span className="text-xs font-bold text-white block">{broadcastMedia.fileName}</span>
+                          <span className="text-[10px] text-purple-300 capitalize">Anexo tipo {broadcastMedia.type}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setBroadcastMedia(null)}
+                        className="p-1 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-all"
+                        title="Remover anexo"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Campo de Texto do Comunicado */}
                   <textarea
                     rows={4}
                     placeholder="Digite seu comunicado ou mensagem para o grupo..."
@@ -520,17 +827,156 @@ export const LiveChatManager: React.FC = () => {
                     onChange={(e) => setGroupMessageText(e.target.value)}
                     className="w-full bg-[#151824] border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none leading-relaxed"
                   />
-                  <div className="flex justify-end">
+
+                  {/* Controles: Marcar @todos e Agendamento */}
+                  <div className="bg-[#151824]/60 border border-slate-800 rounded-xl p-3 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      {/* Checkbox @todos */}
+                      <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={mentionAll}
+                          onChange={(e) => setMentionAll(e.target.checked)}
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-0 bg-[#0f111a] border-slate-700"
+                        />
+                        <span className="flex items-center gap-1 font-bold">
+                          <AtSign className="w-3.5 h-3.5 text-emerald-400" />
+                          Marcar @todos no grupo
+                        </span>
+                        <span className="text-[10px] text-slate-400">(menciona todos os membros)</span>
+                      </label>
+
+                      {/* Alternador Enviar Agora vs Agendar */}
+                      <div className="flex items-center gap-1 bg-[#0f111a] p-1 rounded-xl border border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setIsScheduling(false)}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                            !isScheduling
+                              ? 'bg-emerald-600 text-white shadow'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Enviar Agora
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsScheduling(true)}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                            isScheduling
+                              ? 'bg-purple-600 text-white shadow'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <Calendar className="w-3 h-3" />
+                          Agendar Disparo
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Campo de Data/Hora quando Agendamento estiver ativo */}
+                    {isScheduling && (
+                      <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center gap-2">
+                        <span className="text-xs text-purple-300 font-bold flex items-center gap-1 shrink-0">
+                          <Clock className="w-3.5 h-3.5" /> Escolha data e horário de Brasília:
+                        </span>
+                        <input
+                          type="datetime-local"
+                          value={scheduledDate}
+                          onChange={(e) => setScheduledDate(e.target.value)}
+                          className="bg-[#0f111a] border border-purple-500/40 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-purple-400 flex-1"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-1">
                     <button
                       onClick={handleSendGroupMessage}
-                      disabled={isSendingGroupMessage || !groupMessageText.trim()}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-emerald-600/20"
+                      disabled={isSendingGroupMessage || (!groupMessageText.trim() && !broadcastMedia)}
+                      className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg ${
+                        isScheduling
+                          ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
+                      } disabled:opacity-50`}
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>{isSendingGroupMessage ? 'Enviando...' : 'Enviar Comunicado'}</span>
+                      {isSendingGroupMessage ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Processando...</span>
+                        </>
+                      ) : isScheduling ? (
+                        <>
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>Confirmar Agendamento</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Enviar Comunicado Agora</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
+
+                {/* Lista de Disparos Agendados para este Grupo */}
+                {scheduledBroadcasts.filter(b => b.groupId === activeGroup.id).length > 0 && (
+                  <div className="bg-[#10111a] border border-slate-800 rounded-2xl p-5 space-y-3">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-purple-400" />
+                      Disparos Agendados e Histórico ({scheduledBroadcasts.filter(b => b.groupId === activeGroup.id).length})
+                    </h4>
+                    <div className="space-y-2">
+                      {scheduledBroadcasts.filter(b => b.groupId === activeGroup.id).map(b => (
+                        <div
+                          key={b.id}
+                          className="bg-[#151824] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-3"
+                        >
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                b.status === 'pending'
+                                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                                  : b.status === 'sent'
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              }`}>
+                                {b.status === 'pending' ? '🕒 Agendado' : b.status === 'sent' ? '✓ Enviado' : '✕ Falhou'}
+                              </span>
+                              <span className="text-[11px] text-slate-300 font-mono">
+                                {new Date(b.scheduledAt).toLocaleString('pt-BR')}
+                              </span>
+                              {b.mentionAll && (
+                                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                  @todos
+                                </span>
+                              )}
+                              {b.mediaType && (
+                                <span className="text-[10px] text-pink-400 font-bold bg-pink-500/10 px-1.5 py-0.5 rounded border border-pink-500/20">
+                                  📎 {b.mediaType}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-300 truncate max-w-lg">
+                              {b.text || (b.fileName ? `Arquivo: ${b.fileName}` : 'Disparo de mídia')}
+                            </p>
+                          </div>
+
+                          {b.status === 'pending' && (
+                            <button
+                              onClick={() => handleDeleteScheduledBroadcast(b.id)}
+                              className="p-1.5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition-all shrink-0"
+                              title="Cancelar este disparo"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (

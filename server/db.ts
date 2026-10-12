@@ -156,7 +156,7 @@ export async function initDatabase() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS chats (
         id VARCHAR(100) PRIMARY KEY,
-        user_id VARCHAR(100) REFERENCES users(id) ON DELETE CASCADE,
+        user_id VARCHAR(100),
         lead_phone VARCHAR(50) NOT NULL,
         lead_name VARCHAR(150) NOT NULL,
         tag VARCHAR(50) DEFAULT 'quente',
@@ -169,7 +169,26 @@ export async function initDatabase() {
         last_message_time VARCHAR(50) DEFAULT '',
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE chats DROP CONSTRAINT IF EXISTS chats_user_id_fkey;
       DELETE FROM chats WHERE id LIKE '%broadcast%' OR lead_phone LIKE '%broadcast%';
+    `);
+
+    // 5.1 Tabela de Disparos Agendados de Comunicados em Grupos
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_broadcasts (
+        id VARCHAR(100) PRIMARY KEY,
+        group_id VARCHAR(100) NOT NULL,
+        group_name VARCHAR(150),
+        text TEXT,
+        media_path TEXT,
+        media_type VARCHAR(50),
+        file_name VARCHAR(150),
+        mention_all BOOLEAN DEFAULT false,
+        scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        status VARCHAR(30) DEFAULT 'pending', -- 'pending', 'sent', 'failed', 'canceled'
+        error_message TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     // 6. Tabela de Mensagens do Chat
