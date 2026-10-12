@@ -256,12 +256,18 @@ export class VoipClient {
         }
         catch { }
         this.#sock.ws.on("CB:call", (node) => {
-            this.#signaling.processIncomingCall(node, this.#engine, this.#activeCall?.callId ?? "");
+            if (!this.#signaling || !this.#engine) return;
+            try {
+                this.#signaling.processIncomingCall(node, this.#engine, this.#activeCall?.callId ?? "");
+            } catch { }
         });
         this.#sock.ws.on("CB:receipt", (node) => {
             if (!isCallReceiptNode(node))
                 return;
-            this.#signaling.processIncomingReceipt(node, this.#engine, this.#activeCall?.callId ?? "");
+            if (!this.#signaling || !this.#engine) return;
+            try {
+                this.#signaling.processIncomingReceipt(node, this.#engine, this.#activeCall?.callId ?? "");
+            } catch { }
         });
     };
     /** Place an outbound voice call. */
@@ -309,17 +315,16 @@ export class VoipClient {
     };
     /** Tear down the WhatsApp socket and release resources. */
     disconnect = () => {
-        this.#activeCall?._forceEnd("disconnect");
+        try { this.#activeCall?._forceEnd("disconnect"); } catch {}
         this.#activeCall = null;
-        this.#relay?.closeAll();
-        this.#engine?.destroy();
+        try { this.#relay?.closeAll(); } catch {}
+        try { this.#engine?.destroy(); } catch {}
         if (!this.#config.sock) {
-            this.#sock?.end?.();
+            try { this.#sock?.end?.(); } catch {}
         }
         this.#engine = null;
         this.#relay = null;
         this.#signaling = null;
-        this.#sock = null;
     };
     // ─── private ──────────────────────────────────────────────────────────────
     #handleCallEvent = (eventType, eventData) => {

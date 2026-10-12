@@ -1716,14 +1716,21 @@ async function executeNodeAction(
           try { liveCall.end(); } catch {}
         }
 
+        // Aguarda 1.5s para a chamada finalizar totalmente nos servidores do WhatsApp
+        await new Promise(r => setTimeout(r, 1500));
         try { voipClient.disconnect(); } catch {}
       } catch (voipErr: any) {
         console.error(`[Flow Engine] Erro ao originar chamada:`, voipErr.message);
       }
 
       // 2. Envia o áudio gravado configurado como Nota de Voz Oficial (tanto se atendeu quanto se não atendeu)
-      console.log(`[Flow Engine] Ligação com ${targetPhone} concluída (${leadAnswered ? 'lead ATENDEU e chamada foi desligada' : 'lead NÃO atendeu / tempo esgotado'}). Enviando áudio gravado no WhatsApp...`);
+      console.log(`[Flow Engine] Ligação com ${targetPhone} concluída (${leadAnswered ? 'lead ATENDEU e chamada foi desligada' : 'lead NÃO atendeu / tempo esgotado'}). Preparando envio do áudio no WhatsApp...`);
       recordFlowMessageInChat(remoteJid, `📴 [Ligação encerrada (${leadAnswered ? 'atendida' : 'não atendeu'}) - Enviando áudio no WhatsApp]`);
+
+      // Pausa de 1s para garantir liberação completa do canal de mídia após chamada VoIP
+      await new Promise(r => setTimeout(r, 1000));
+
+      const targetRecipient = remoteJid.includes('@') ? remoteJid : `${remoteJid}@s.whatsapp.net`;
 
       // Busca o arquivo de áudio no disco em múltiplos locais possíveis
       let resolvedAudioBuffer: Buffer | null = null;
@@ -1757,37 +1764,21 @@ async function executeNodeAction(
 
       if (resolvedAudioBuffer && resolvedAudioBuffer.length > 0) {
         try {
-          await sock.sendPresenceUpdate('recording', remoteJid);
+          await sock.sendPresenceUpdate('recording', targetRecipient);
           await new Promise(r => setTimeout(r, 1500));
-          await sock.sendPresenceUpdate('paused', remoteJid);
+          await sock.sendPresenceUpdate('paused', targetRecipient);
 
-          let finalAudioBuffer = resolvedAudioBuffer;
-          let mimetype = 'audio/mp4';
+          const isOgg = audioPath && (audioPath.endsWith('.ogg') || audioPath.endsWith('.opus'));
+          const mimetype = isOgg ? 'audio/ogg; codecs=opus' : 'audio/mp4';
 
-          try {
-            const tempInput = path.join(uploadsDir, `temp_in_${Date.now()}_${Math.floor(Math.random()*1000)}.bin`);
-            const tempOutput = path.join(uploadsDir, `temp_out_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
-            fs.writeFileSync(tempInput, resolvedAudioBuffer);
-            execSync(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 32k -vbr on "${tempOutput}"`, { timeout: 8000 });
-            if (fs.existsSync(tempOutput) && fs.statSync(tempOutput).size > 0) {
-              finalAudioBuffer = fs.readFileSync(tempOutput);
-              mimetype = 'audio/ogg; codecs=opus';
-              try { fs.unlinkSync(tempOutput); } catch {}
-            }
-            try { fs.unlinkSync(tempInput); } catch {}
-          } catch (ffmpegErr: any) {
-            console.warn('[Flow Engine] ffmpeg indisponível ou falhou na conversão, enviando nativo mp4:', ffmpegErr.message);
-            mimetype = 'audio/mp4';
-          }
-
-          await sock.sendMessage(remoteJid, {
-            audio: finalAudioBuffer,
+          await sock.sendMessage(targetRecipient, {
+            audio: resolvedAudioBuffer,
             mimetype,
             ptt: true // Nota de voz gravada oficial (microfone verde)
           });
 
           recordFlowMessageInChat(remoteJid, `🎤 [Nota de voz enviada para o lead]`);
-          console.log(`[Flow Engine] Áudio gravado enviado com sucesso para ${remoteJid}`);
+          console.log(`[Flow Engine] Áudio gravado enviado com sucesso para ${targetRecipient}`);
         } catch (audioSendErr: any) {
           console.error(`[Flow Engine] Falha no envio do áudio pós-chamada:`, audioSendErr);
         }
