@@ -42,6 +42,18 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  // Cakto checkout links
+  const [caktoLinks, setCaktoLinks] = useState<Record<string, string>>({
+    tier_1: 'https://pay.cakto.com.br/nyxzap-extra-1',
+    tier_2: 'https://pay.cakto.com.br/nyxzap-extra-2',
+    tier_3: 'https://pay.cakto.com.br/nyxzap-extra-3',
+    tier_5: 'https://pay.cakto.com.br/nyxzap-extra-5',
+  });
+
+  const getTierUrl = (connections: number) => {
+    return caktoLinks[`tier_${connections}`] || `https://pay.cakto.com.br/nyxzap-extra-${connections}`;
+  };
+
   const currentLimit = user?.instancesLimit || 1;
 
   // Plan extra connections packages
@@ -92,6 +104,16 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
 
   useEffect(() => {
     fetchSessions();
+
+    // Fetch Cakto configured links
+    fetch('/api/cakto/config')
+      .then(r => r.json())
+      .then(data => {
+        if (data.checkoutLinks) {
+          setCaktoLinks(prev => ({ ...prev, ...data.checkoutLinks }));
+        }
+      })
+      .catch(err => console.error('Erro ao buscar links Cakto:', err));
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -204,27 +226,12 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
     }
   };
 
-  const handleBuyTier = async (connections: number) => {
+  const handleBuyTier = (connections: number) => {
     trackEvent('cakto_checkout_requested', 'whatsapp_manager', { connections });
-    try {
-      const res = await fetch('/api/cakto/checkout-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemType: 'tier', itemId: String(connections) })
-      });
-      const data = await res.json();
-      if (data.checkoutUrl) {
-        window.open(data.checkoutUrl, '_blank');
-      }
-    } catch (err) {
-      console.error('Erro ao buscar link Cakto:', err);
-    }
-
-    setSuccessMsg(`Abrindo checkout da Cakto para +${connections} conexão(ões). A liberação ocorrerá automaticamente assim que o pagamento for confirmado!`);
-    setTimeout(() => {
-      setSuccessMsg('');
-      setShowBuyModal(false);
-    }, 4000);
+    const targetUrl = getTierUrl(connections);
+    // Open immediately in a new tab without async delay to bypass popup blockers
+    window.open(targetUrl, '_blank');
+    setSuccessMsg(`Abrindo checkout da Cakto para +${connections} conexão(ões). Conclua seu pagamento na aba aberta para liberação imediata.`);
   };
 
   return (
@@ -559,9 +566,22 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
             </div>
 
             {successMsg && (
-              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-emerald-400 text-xs font-bold flex items-center gap-2 animate-pulse">
-                <Check className="w-5 h-5" />
-                <span>{successMsg}</span>
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-emerald-400 text-xs font-semibold flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <Check className="w-5 h-5 shrink-0 text-emerald-400" />
+                  <span>{successMsg}</span>
+                </div>
+                {selectedTier !== null && (
+                  <a
+                    href={getTierUrl(connectionTiers[selectedTier]?.connections || 1)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-emerald-300 font-bold hover:text-white shrink-0 flex items-center gap-1"
+                  >
+                    <span>Ir para o Checkout</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
             )}
 
@@ -612,16 +632,21 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
                     <span className="text-[11px] text-slate-400 flex items-center gap-1.5 font-medium">
                       <Check className="w-3.5 h-3.5 text-emerald-400" /> Ativação Imediata
                     </span>
-                    <button
-                      type="button"
+                    <a
+                      href={getTierUrl(tier.connections)}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleBuyTier(tier.connections);
+                        setSelectedTier(idx);
+                        trackEvent('cakto_checkout_requested', 'whatsapp_manager', { connections: tier.connections });
+                        setSuccessMsg(`Abrindo checkout da Cakto para +${tier.connections} conexão(ões). Conclua seu pagamento na nova aba para liberação imediata.`);
                       }}
-                      className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-purple-600/30"
+                      className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-purple-600/30 flex items-center gap-1.5"
                     >
-                      Contratar
-                    </button>
+                      <span>Contratar</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
                   </div>
                 </div>
               ))}

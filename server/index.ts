@@ -684,6 +684,39 @@ app.post('/api/cakto/config', async (req, res) => {
   }
 });
 
+app.post('/api/cakto/checkout-url', async (req, res) => {
+  const { itemType, itemId } = req.body;
+  try {
+    const defaultLinks: Record<string, string> = {
+      'tier_1': 'https://pay.cakto.com.br/nyxzap-extra-1',
+      'tier_2': 'https://pay.cakto.com.br/nyxzap-extra-2',
+      'tier_3': 'https://pay.cakto.com.br/nyxzap-extra-3',
+      'tier_5': 'https://pay.cakto.com.br/nyxzap-extra-5',
+      'plan_p1': 'https://pay.cakto.com.br/nyxzap-start',
+      'plan_p2': 'https://pay.cakto.com.br/nyxzap-pro',
+      'plan_p3': 'https://pay.cakto.com.br/nyxzap-enterprise'
+    };
+
+    let checkoutUrl = '';
+    const result = await pool.query('SELECT * FROM cakto_config WHERE id = $1', ['default']);
+    if (result.rows.length > 0) {
+      const cfg = result.rows[0];
+      const links = cfg.checkout_links || {};
+      const key = `${itemType}_${itemId}`;
+      checkoutUrl = links[key] || '';
+    }
+
+    if (!checkoutUrl) {
+      const fallbackKey = `${itemType}_${itemId}`;
+      checkoutUrl = defaultLinks[fallbackKey] || `https://pay.cakto.com.br/nyxzap-extra-${itemId || '1'}`;
+    }
+
+    res.json({ success: true, checkoutUrl });
+  } catch (err: any) {
+    res.json({ success: true, checkoutUrl: `https://pay.cakto.com.br/nyxzap-extra-${itemId || '1'}` });
+  }
+});
+
 // Cakto Webhook Handler - Confirmações de Assinaturas, Renovações e Conexões Extras
 app.post('/api/webhook/cakto', async (req, res) => {
   const payload = req.body || {};

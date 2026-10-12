@@ -24,7 +24,9 @@ import {
   Mic,
   AtSign,
   X,
-  Check
+  Check,
+  PanelRight,
+  ChevronDown
 } from 'lucide-react';
 import { ChatConversation, LeadTag, ChatMessage, WhatsAppGroup, ScheduledBroadcast } from '../types';
 import { confirmDialog, alertDialog } from './ModalConfirm';
@@ -65,7 +67,28 @@ export const LiveChatManager: React.FC = () => {
   const [isUploadingFollowUpMedia, setIsUploadingFollowUpMedia] = useState(false);
   const followUpFileInputRef = useRef<HTMLInputElement>(null);
 
+  const [showCrmSidebar, setShowCrmSidebar] = useState(true);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUpRef = useRef<boolean>(false);
+  const prevMessagesLengthRef = useRef<number>(0);
+  const prevActiveChatIdRef = useRef<string | null>(null);
+
+  const handleMessagesScroll = () => {
+    if (!messagesContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 120;
+    isUserScrolledUpRef.current = !isNearBottom;
+    setShowScrollBottomBtn(!isNearBottom);
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    isUserScrolledUpRef.current = false;
+    setShowScrollBottomBtn(false);
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  };
 
   const fetchGroups = async () => {
     setIsSyncingGroups(true);
@@ -130,8 +153,33 @@ export const LiveChatManager: React.FC = () => {
   const activeChat = conversations.find(c => c.id === activeChatId) || conversations[0];
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeChat?.messages]);
+    const currentMessages = activeChat?.messages || [];
+    const chatChanged = prevActiveChatIdRef.current !== activeChatId;
+    const newMessagesReceived = currentMessages.length > prevMessagesLengthRef.current;
+    
+    prevActiveChatIdRef.current = activeChatId;
+    prevMessagesLengthRef.current = currentMessages.length;
+
+    // Chat switched: scroll to bottom immediately
+    if (chatChanged) {
+      isUserScrolledUpRef.current = false;
+      setShowScrollBottomBtn(false);
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }, 50);
+      return;
+    }
+
+    // User is reading history (scrolled up) - NEVER FORCE SCROLL DOWN!
+    if (isUserScrolledUpRef.current) {
+      return;
+    }
+
+    // Only scroll if a new message actually arrived
+    if (newMessagesReceived) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [activeChat?.messages?.length, activeChatId]);
 
   // Filtered list
   const filteredChats = conversations.filter(c => {
@@ -175,6 +223,7 @@ export const LiveChatManager: React.FC = () => {
         body: JSON.stringify({ text: textToSend })
       });
       fetchChats();
+      scrollToBottom('smooth');
     } catch (err) {
       console.error('Erro ao enviar mensagem:', err);
     }
@@ -862,7 +911,7 @@ export const LiveChatManager: React.FC = () => {
         (() => {
           const activeGroup = groups.find(g => g.id === selectedGroupId) || groups[0];
           return activeGroup ? (
-            <div className="flex-1 flex flex-col bg-[#090a0f]">
+            <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#090a0f]">
               <div className="p-3.5 border-b border-slate-800 bg-[#0f111a] flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center font-bold text-white text-base shadow-lg">
@@ -1324,8 +1373,8 @@ export const LiveChatManager: React.FC = () => {
           );
         })()
       ) : activeChat ? (
-        <div className="flex-1 flex flex-col bg-[#0B0C10]">
-          <div className="px-5 py-3.5 border-b border-white/[0.06] bg-[#0E1017] flex items-center justify-between">
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#0B0C10]">
+          <div className="px-5 py-3.5 border-b border-white/[0.06] bg-[#0E1017] flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-surface-card border border-white/10 flex items-center justify-center font-semibold text-white text-xs shadow-subtle">
                 {activeChat.leadName.substring(0, 2).toUpperCase()}
@@ -1358,51 +1407,67 @@ export const LiveChatManager: React.FC = () => {
               </div>
             </div>
 
-            {/* Mutually exclusive 3-mode selector: Bot Fluxo OR Agente IA OR Manual */}
-            <div className="flex items-center gap-1 bg-[#12141D] p-1 rounded-xl border border-white/[0.06]">
-              <button
-                onClick={() => setChatAutomationMode(activeChat.botFlowActive ? 'none' : 'flow')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                  activeChat.botFlowActive
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-                }`}
-                title="Ativar Bot de Fluxo (desativa IA automaticamente)"
-              >
-                <Workflow className="w-3.5 h-3.5" />
-                <span>{activeChat.botFlowActive ? 'Bot Fluxo Ativo' : 'Bot Fluxo'}</span>
-              </button>
+            <div className="flex items-center gap-2">
+              {/* Mutually exclusive 3-mode selector: Bot Fluxo OR Agente IA OR Manual */}
+              <div className="flex items-center gap-1 bg-[#12141D] p-1 rounded-xl border border-white/[0.06]">
+                <button
+                  onClick={() => setChatAutomationMode(activeChat.botFlowActive ? 'none' : 'flow')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    activeChat.botFlowActive
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                  }`}
+                  title="Ativar Bot de Fluxo (desativa IA automaticamente)"
+                >
+                  <Workflow className="w-3.5 h-3.5" />
+                  <span>{activeChat.botFlowActive ? 'Bot Fluxo Ativo' : 'Bot Fluxo'}</span>
+                </button>
 
-              <button
-                onClick={() => setChatAutomationMode(activeChat.aiAgentActive ? 'none' : 'ai')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                  activeChat.aiAgentActive
-                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-                }`}
-                title="Ativar Agente IA (desativa Bot de Fluxo automaticamente)"
-              >
-                <Bot className="w-3.5 h-3.5" />
-                <span>{activeChat.aiAgentActive ? 'Agente IA Ativo' : 'Agente IA'}</span>
-              </button>
+                <button
+                  onClick={() => setChatAutomationMode(activeChat.aiAgentActive ? 'none' : 'ai')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    activeChat.aiAgentActive
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                  }`}
+                  title="Ativar Agente IA (desativa Bot de Fluxo automaticamente)"
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  <span>{activeChat.aiAgentActive ? 'Agente IA Ativo' : 'Agente IA'}</span>
+                </button>
 
+                <button
+                  onClick={() => setChatAutomationMode('none')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    !activeChat.botFlowActive && !activeChat.aiAgentActive
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                  }`}
+                  title="Atendimento manual (desativa Bot e IA)"
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Manual</span>
+                </button>
+              </div>
+
+              {/* Botão para Exibir/Ocultar CRM Sidebar */}
               <button
-                onClick={() => setChatAutomationMode('none')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                  !activeChat.botFlowActive && !activeChat.aiAgentActive
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                onClick={() => setShowCrmSidebar(prev => !prev)}
+                className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all border ${
+                  showCrmSidebar
+                    ? 'bg-white/[0.08] text-white border-white/[0.12] shadow-sm'
+                    : 'text-slate-400 hover:text-white border-white/[0.04] bg-[#12141D]'
                 }`}
-                title="Atendimento manual (desativa Bot e IA)"
+                title={showCrmSidebar ? "Ocultar Detalhes do Lead (CRM)" : "Exibir Detalhes do Lead (CRM)"}
               >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>Manual</span>
+                <PanelRight className="w-4 h-4 text-indigo-400" />
+                <span className="hidden xl:inline text-[11px] font-semibold">CRM</span>
               </button>
             </div>
           </div>
 
           {!activeChat.aiAgentActive && !activeChat.botFlowActive && (
-            <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-4 py-2 flex items-center justify-between text-xs text-emerald-300 font-medium">
+            <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-4 py-2 flex items-center justify-between text-xs text-emerald-300 font-medium shrink-0">
               <span className="flex items-center gap-2">
                 <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
                 Você está em modo Manual. O Bot de Fluxo e a IA estão pausados para esta conversa.
@@ -1411,7 +1476,11 @@ export const LiveChatManager: React.FC = () => {
           )}
 
           {/* Area de Mensagens Estilo CRM Executivo */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-[#090A0F] bg-dot-grid relative">
+          <div 
+            ref={messagesContainerRef}
+            onScroll={handleMessagesScroll}
+            className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#090A0F] bg-dot-grid relative"
+          >
             <div className="absolute inset-0 bg-gradient-to-b from-[#090A0F]/90 via-transparent to-[#090A0F]/90 pointer-events-none" />
             <div className="relative z-10 space-y-3.5">
               {activeChat.messages.map((m) => (
@@ -1448,6 +1517,20 @@ export const LiveChatManager: React.FC = () => {
               ))}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Botão flutuante para rolar para a mensagem mais recente quando rolado para cima */}
+            {showScrollBottomBtn && (
+              <div className="sticky bottom-2 flex justify-center pointer-events-none z-20">
+                <button
+                  type="button"
+                  onClick={() => scrollToBottom('smooth')}
+                  className="pointer-events-auto px-4 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xl shadow-black/60 backdrop-blur-md flex items-center gap-1.5 transition-all border border-indigo-400/30 animate-fadeIn"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  <span>Mais recentes</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Barra de Digitação */}
@@ -1496,8 +1579,8 @@ export const LiveChatManager: React.FC = () => {
       )}
 
       {/* 3. RIGHT SIDEBAR: LEAD CRM INFO */}
-      {activeChat && (
-        <div className="w-80 border-l border-white/[0.06] bg-[#0E1017] p-5 flex flex-col gap-5 shrink-0 overflow-y-auto">
+      {activeChat && showCrmSidebar && (
+        <div className="w-72 xl:w-80 border-l border-white/[0.06] bg-[#0E1017] p-5 flex flex-col gap-5 shrink-0 overflow-y-auto h-full">
           {/* Classificação do Lead */}
           <div className="bg-[#12141F] border border-white/[0.06] rounded-2xl p-4 shadow-subtle space-y-3">
             <div className="flex items-center justify-between">

@@ -234,10 +234,10 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] text-zinc-100 flex flex-col md:flex-row font-sans">
+    <div className="h-screen w-screen overflow-hidden bg-[#0B0C10] text-zinc-100 flex flex-col md:flex-row font-sans">
       {/* LEFT SIDEBAR NAVIGATION */}
-      <aside className={`transition-all duration-300 ease-in-out bg-[#0E1017] border-r border-white/[0.06] flex flex-col justify-between shrink-0 z-40 ${
-        isSidebarCollapsed ? 'w-0 hidden md:hidden overflow-hidden' : 'w-full md:w-64'
+      <aside className={`transition-all duration-300 ease-in-out bg-[#0E1017] border-r border-white/[0.06] flex flex-col justify-between shrink-0 z-40 md:h-screen md:sticky md:top-0 overflow-y-auto ${
+        isSidebarCollapsed ? 'w-0 hidden md:hidden overflow-hidden' : 'w-full md:w-64 h-auto md:h-screen'
       }`}>
         {/* Brand Logo & Status */}
         <div>
@@ -411,7 +411,7 @@ export function App() {
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0B0C10]">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#0B0C10]">
         {/* Top bar */}
         <header className="border-b border-white/[0.06] bg-[#0E1017]/80 backdrop-blur-md px-4 sm:px-6 py-2.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -465,7 +465,7 @@ export function App() {
         {/* Main View Container */}
         <main className={`flex-1 w-full min-h-0 ${
           activeClientTab === 'flow' || activeClientTab === 'chat'
-            ? 'p-0 max-w-none h-[calc(100vh-53px)] overflow-hidden flex flex-col' 
+            ? 'p-0 max-w-none h-full overflow-hidden flex flex-col' 
             : 'p-6 max-w-7xl mx-auto overflow-y-auto'
         }`}>
           {user.role === 'admin' ? (
