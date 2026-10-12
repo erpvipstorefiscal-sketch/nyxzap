@@ -458,7 +458,15 @@ export class SignalingBridge {
     const type = enc.attrs.type;
     if (type !== "pkmsg" && type !== "msg") return voipNode;
 
-    const candidates = [...new Set([peerJid, this.#toCallDeviceJid(peerJid)])].filter(Boolean);
+    const bareJid = this.#toBareJid(peerJid);
+    const callDeviceJid = this.#toCallDeviceJid(peerJid);
+    const candidates = [...new Set([
+      peerJid,
+      callDeviceJid,
+      bareJid,
+      `${bareJid.split('@')[0]}:0@s.whatsapp.net`,
+      `${bareJid.split('@')[0]}:0@lid`
+    ])].filter(Boolean);
     let lastErr: unknown;
     for (const jid of candidates) {
       try {

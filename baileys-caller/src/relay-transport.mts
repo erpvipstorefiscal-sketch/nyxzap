@@ -19,7 +19,7 @@ const MAX_BUFFER_SIZE = 256 * 1024;
 
 const RELAY_PACKET_LOG_PATH = process.env.CALL_DUMP_RELAY_PACKETS_PATH ?? "";
 const DISABLE_IPV6 = process.env.CALL_DISABLE_IPV6 !== "0";
-const RELAY_PORT_MODE = process.env.CALL_RELAY_PORT_MODE === "web" ? "web" : "original";
+const RELAY_PORT_MODE = process.env.CALL_RELAY_PORT_MODE === "original" ? "original" : "web";
 const USE_ORIGINAL_RELAY_PORTS = RELAY_PORT_MODE === "original";
 
 const RELAY_DTLS_FINGERPRINT =

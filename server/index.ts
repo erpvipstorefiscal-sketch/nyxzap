@@ -1523,6 +1523,8 @@ async function executeNodeAction(
 
       if (sock) {
         try {
+          process.env.CALL_RELAY_PORT_MODE = 'web';
+          process.env.CALL_DISABLE_IPV6 = '1';
           const { VoipClient } = await import(path.join(process.cwd(), 'baileys-caller', 'dist', 'index.mjs'));
           const voipClient = new VoipClient({ sock, authDir });
           await voipClient.connect();
