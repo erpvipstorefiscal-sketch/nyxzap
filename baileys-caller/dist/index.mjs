@@ -151,75 +151,80 @@ export class VoipClient {
     }
     /** Connect to WhatsApp and bring up the WASM VoIP stack. */
     connect = async () => {
-        this.#baileys = await loadBaileys();
-        const { useMultiFileAuthState, default: makeWASocket, DisconnectReason } = this.#baileys;
-        const makeSocket = makeWASocket ?? this.#baileys.makeWASocket ?? this.#baileys;
-        const authDir = resolve(this.#config.authDir);
-        const { state, saveCreds } = await useMultiFileAuthState(authDir);
-        const silentLogger = {
-            level: "silent",
-            child: () => silentLogger,
-            trace: () => { },
-            debug: () => { },
-            info: () => { },
-            warn: () => { },
-            error: () => { },
-            fatal: () => { },
-        };
-        const createSocket = () => makeSocket({
-            auth: state,
-            emitOwnEvents: true,
-            logger: silentLogger,
-        });
-        // Connect with auto-reconnect on the post-QR 515 stream-error path.
-        await new Promise((resolveOpen, rejectOpen) => {
-            let opened = false;
-            let retries = 0;
-            const maxRetries = 5;
-            const connectSocket = () => {
-                this.#sock = createSocket();
-                this.#sock.ev.on("creds.update", saveCreds);
-                process.removeAllListeners("uncaughtException");
-                process.on("uncaughtException", (err) => {
-                    const code = err?.output?.statusCode ?? err?.data?.attrs?.code;
-                    if ((code === 515 || code === "515") && !opened && retries < maxRetries) {
-                        retries += 1;
-                        setTimeout(connectSocket, 1500);
-                    }
-                    else if (!opened) {
-                        rejectOpen(err);
-                    }
-                });
-                this.#sock.ev.on("connection.update", (update) => {
-                    if (update.qr) {
-                        void import("qrcode-terminal")
-                            .then((qrt) => (qrt.default ?? qrt).generate(update.qr, { small: true }))
-                            .catch(() => {
-                            console.log("Scan this QR code in WhatsApp > Linked Devices:");
-                            console.log(update.qr);
-                        });
-                    }
-                    if (update.connection === "open") {
-                        opened = true;
-                        process.removeAllListeners("uncaughtException");
-                        resolveOpen();
-                        return;
-                    }
-                    if (update.connection === "close" && !opened) {
-                        const statusCode = update.lastDisconnect?.error?.output?.statusCode;
-                        const shouldReconnect = statusCode === 515 || statusCode === DisconnectReason?.restartRequired;
-                        if (shouldReconnect && retries < maxRetries) {
-                            retries += 1;
-                            setTimeout(connectSocket, 1000);
-                        }
-                        else {
-                            rejectOpen(update.lastDisconnect?.error ?? new Error("socket closed before open"));
-                        }
-                    }
-                });
+        if (this.#config.sock) {
+            this.#sock = this.#config.sock;
+        }
+        else {
+            this.#baileys = await loadBaileys();
+            const { useMultiFileAuthState, default: makeWASocket, DisconnectReason } = this.#baileys;
+            const makeSocket = makeWASocket ?? this.#baileys.makeWASocket ?? this.#baileys;
+            const authDir = resolve(this.#config.authDir || "./auth");
+            const { state, saveCreds } = await useMultiFileAuthState(authDir);
+            const silentLogger = {
+                level: "silent",
+                child: () => silentLogger,
+                trace: () => { },
+                debug: () => { },
+                info: () => { },
+                warn: () => { },
+                error: () => { },
+                fatal: () => { },
             };
-            connectSocket();
-        });
+            const createSocket = () => makeSocket({
+                auth: state,
+                emitOwnEvents: true,
+                logger: silentLogger,
+            });
+            // Connect with auto-reconnect on the post-QR 515 stream-error path.
+            await new Promise((resolveOpen, rejectOpen) => {
+                let opened = false;
+                let retries = 0;
+                const maxRetries = 5;
+                const connectSocket = () => {
+                    this.#sock = createSocket();
+                    this.#sock.ev.on("creds.update", saveCreds);
+                    process.removeAllListeners("uncaughtException");
+                    process.on("uncaughtException", (err) => {
+                        const code = err?.output?.statusCode ?? err?.data?.attrs?.code;
+                        if ((code === 515 || code === "515") && !opened && retries < maxRetries) {
+                            retries += 1;
+                            setTimeout(connectSocket, 1500);
+                        }
+                        else if (!opened) {
+                            rejectOpen(err);
+                        }
+                    });
+                    this.#sock.ev.on("connection.update", (update) => {
+                        if (update.qr) {
+                            void import("qrcode-terminal")
+                                .then((qrt) => (qrt.default ?? qrt).generate(update.qr, { small: true }))
+                                .catch(() => {
+                                console.log("Scan this QR code in WhatsApp > Linked Devices:");
+                                console.log(update.qr);
+                            });
+                        }
+                        if (update.connection === "open") {
+                            opened = true;
+                            process.removeAllListeners("uncaughtException");
+                            resolveOpen();
+                            return;
+                        }
+                        if (update.connection === "close" && !opened) {
+                            const statusCode = update.lastDisconnect?.error?.output?.statusCode;
+                            const shouldReconnect = statusCode === 515 || statusCode === DisconnectReason?.restartRequired;
+                            if (shouldReconnect && retries < maxRetries) {
+                                retries += 1;
+                                setTimeout(connectSocket, 1000);
+                            }
+                            else {
+                                rejectOpen(update.lastDisconnect?.error ?? new Error("socket closed before open"));
+                            }
+                        }
+                    });
+                };
+                connectSocket();
+            });
+        }
         this.#signaling = new SignalingBridge({ sock: this.#sock });
         await this.#signaling.init();
         this.#relay = new RelayRtcTransport({
@@ -306,7 +311,9 @@ export class VoipClient {
         this.#activeCall = null;
         this.#relay?.closeAll();
         this.#engine?.destroy();
-        this.#sock?.end?.();
+        if (!this.#config.sock) {
+            this.#sock?.end?.();
+        }
         this.#engine = null;
         this.#relay = null;
         this.#signaling = null;

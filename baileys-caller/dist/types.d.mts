@@ -32,7 +32,9 @@ export type CallEvents = {
 /** Top-level SDK configuration. */
 export type VoipSdkConfig = {
     /** Path to a Baileys multi-file auth state directory. */
-    authDir: string;
+    authDir?: string;
+    /** Existing connected Baileys socket. */
+    sock?: any;
 };
 /** Mirrors the WhatsApp WASM `CallState` enum. */
 export declare const CallState: {

@@ -1486,9 +1486,14 @@ async function executeNodeAction(
       let fullAudioUrl = '';
 
       if (audioPath) {
-        fullAudioUrl = audioPath.startsWith('http') 
-          ? audioPath 
-          : path.join(process.cwd(), audioPath.replace(/^\//, ''));
+        if (audioPath.includes('/uploads/')) {
+          const filename = audioPath.split('/uploads/').pop();
+          fullAudioUrl = path.join(process.cwd(), 'uploads', filename || '');
+        } else if (audioPath.startsWith('http')) {
+          fullAudioUrl = audioPath;
+        } else {
+          fullAudioUrl = path.join(process.cwd(), audioPath.replace(/^\//, ''));
+        }
       }
 
       // 1. Detectar duração exata do arquivo de áudio via ffprobe
@@ -1514,32 +1519,39 @@ async function executeNodeAction(
       let voipCallSuccess = false;
       const currentSessionId = sessionId || 'inst-1';
       const authDir = path.join(process.cwd(), 'whatsapp_auth', currentSessionId);
+      const audioSourcePath = (fullAudioUrl && fs.existsSync(fullAudioUrl)) ? fullAudioUrl : 'silence';
 
-      if (fs.existsSync(authDir) && fullAudioUrl && fs.existsSync(fullAudioUrl)) {
+      if (sock) {
         try {
           const { VoipClient } = await import(path.join(process.cwd(), 'baileys-caller', 'dist', 'index.mjs'));
-          const voipClient = new VoipClient({ authDir });
+          const voipClient = new VoipClient({ sock, authDir });
           await voipClient.connect();
 
-          console.log(`[Flow Engine] VoipClient conectado para ${targetPhone}. Discando ligação de voz com áudio gravado...`);
+          console.log(`[Flow Engine] VoipClient conectado ao socket ativo para ${targetPhone}. Discando chamada de voz WhatsApp...`);
           const liveCall = await voipClient.call(targetPhone, {
-            audioSource: fullAudioUrl,
+            audioSource: audioSourcePath,
             durationMs: durationSeconds * 1000
           });
 
-          recordFlowMessageInChat(remoteJid, `📞 [Ligação de voz WhatsApp discada para o lead tocando áudio - Duração: ${durationSeconds}s]`);
+          recordFlowMessageInChat(remoteJid, `📞 [Ligação de voz discada para o lead tocando áudio - Duração: ${durationSeconds}s]`);
 
-          liveCall.on('ringing', () => console.log(`[Flow Engine] Chamando telefone de ${targetPhone}...`));
-          liveCall.on('connected', () => console.log(`[Flow Engine] Lead atendeu a ligação! Reproduzindo áudio gravado...`));
-          liveCall.on('ended', (reason: string) => console.log(`[Flow Engine] Ligação encerrada (${reason})`));
+          liveCall.on('ringing', () => {
+            console.log(`[Flow Engine] Telefone de ${targetPhone} está tocando (ringing)...`);
+          });
+          liveCall.on('connected', () => {
+            console.log(`[Flow Engine] Lead ${targetPhone} atendeu a ligação! Reproduzindo áudio gravado...`);
+          });
+          liveCall.on('ended', (reason: string) => {
+            console.log(`[Flow Engine] Ligação com ${targetPhone} encerrada (${reason})`);
+          });
 
-          // Aguarda o término da chamada ou o tempo do áudio
+          // Aguarda o término da chamada ou a duração total do áudio
           await liveCall.waitForEnd();
           try { voipClient.disconnect(); } catch {}
           voipCallSuccess = true;
-          console.log(`[Flow Engine] Chamada VoIP concluída com sucesso para ${targetPhone}`);
+          console.log(`[Flow Engine] Chamada VoIP finalizada com sucesso para ${targetPhone}`);
         } catch (voipErr: any) {
-          console.warn(`[Flow Engine] VoipClient direto falhou (${voipErr.message}), aplicando sinalização direta Baileys...`);
+          console.error(`[Flow Engine] Falha na chamada VoIP direta:`, voipErr);
         }
       }
 
