@@ -80,17 +80,23 @@ export class SignalingBridge {
     sendSignaling = (peerJid, callId, xmlPayload) => {
         this.#outgoingSignalingQueue = this.#outgoingSignalingQueue
             .then(() => this.#doSendSignaling(peerJid, callId, xmlPayload))
-            .catch(() => { });
+            .catch((err) => {
+            console.error(`[SignalingBridge] Outgoing signaling error (${peerJid}, ${callId}):`, err);
+        });
     };
     processIncomingCall = (node, voip, activeCallId) => {
         this.#incomingSignalingQueue = this.#incomingSignalingQueue
             .then(() => this.#doProcessIncomingCall(node, voip, activeCallId))
-            .catch(() => { });
+            .catch((err) => {
+            console.error(`[SignalingBridge] Incoming call processing error:`, err);
+        });
     };
     processIncomingReceipt = (node, voip, activeCallId) => {
         this.#incomingSignalingQueue = this.#incomingSignalingQueue
             .then(() => this.#doProcessIncomingReceipt(node, voip, activeCallId))
-            .catch(() => { });
+            .catch((err) => {
+            console.error(`[SignalingBridge] Incoming receipt processing error:`, err);
+        });
     };
     requestTcToken = async (jid) => {
         const userJid = this.#toBareJid(jid);
@@ -173,6 +179,14 @@ export class SignalingBridge {
         }
         catch {
             return false;
+        }
+    };
+    registerOutboundCall = (callId, peerLid, peerPn) => {
+        console.log(`[SignalingBridge] Registering outbound call ${callId} with LID=${peerLid}, PN=${peerPn}`);
+        this.#incomingCallPeerById.set(callId, peerLid);
+        this.#remoteDevicePeerByCallId.set(callId, peerLid);
+        if (peerPn) {
+            this.#remoteXmppRoutePeerByCallId.set(callId, peerPn);
         }
     };
     getRemoteDeviceJid = (callId) => this.#remoteDevicePeerByCallId.get(callId);
@@ -301,9 +315,10 @@ export class SignalingBridge {
         const epochId = voipChild.attrs.e ?? node.attrs.e ?? "0";
         const timestamp = voipChild.attrs.t ?? node.attrs.t ?? "0";
         const offline = !!(voipChild.attrs.offline ?? node.attrs.offline);
+        console.log(`[SignalingBridge] Incoming call node tag=${voipChild.tag}, id=${incomingCallId}, from=${node.attrs?.from}, participant=${voipChild.attrs?.participant}`);
         let usableNode = voipChild;
         if (getBinaryNodeChild(voipChild, "enc")) {
-            usableNode = await this.#maybeDecryptEnc(voipChild, senderDeviceJid);
+            usableNode = await this.#maybeDecryptEnc(voipChild, senderDeviceJid, callIdForRouting);
         }
         const b64 = Buffer.from(encodeBinaryNode(usableNode)).toString("base64");
         const storedPeerJid = callIdForRouting ? this.#incomingCallPeerById.get(callIdForRouting) : undefined;
@@ -386,7 +401,7 @@ export class SignalingBridge {
             tcToken,
         });
     };
-    #maybeDecryptEnc = async (voipNode, peerJid) => {
+    #maybeDecryptEnc = async (voipNode, peerJid, callId) => {
         const { getBinaryNodeChild, unpadRandomMax16, proto } = this.#baileys;
         const enc = getBinaryNodeChild(voipNode, "enc");
         if (!enc || !(enc.content instanceof Uint8Array))
@@ -396,13 +411,35 @@ export class SignalingBridge {
             return voipNode;
         const bareJid = this.#toBareJid(peerJid);
         const callDeviceJid = this.#toCallDeviceJid(peerJid);
-        const candidates = [...new Set([
-                peerJid,
-                callDeviceJid,
-                bareJid,
-                `${bareJid.split('@')[0]}:0@s.whatsapp.net`,
-                `${bareJid.split('@')[0]}:0@lid`
-            ])].filter(Boolean);
+        const storedLid = callId ? this.#incomingCallPeerById.get(callId) : undefined;
+        const mappedDevice = callId ? this.#remoteDevicePeerByCallId.get(callId) : undefined;
+        const xmppRoute = callId ? this.#remoteXmppRoutePeerByCallId.get(callId) : undefined;
+        let dynamicLid;
+        try {
+            dynamicLid = await this.#sock.signalRepository.lidMapping?.getLIDForPN(bareJid);
+        }
+        catch { }
+        const rawCandidates = [
+            peerJid,
+            callDeviceJid,
+            bareJid,
+            storedLid,
+            storedLid ? this.#toBareJid(storedLid) : undefined,
+            storedLid ? this.#toCallDeviceJid(storedLid) : undefined,
+            mappedDevice,
+            xmppRoute,
+            dynamicLid,
+            dynamicLid ? this.#toBareJid(dynamicLid) : undefined,
+            dynamicLid ? this.#toCallDeviceJid(dynamicLid) : undefined,
+            `${bareJid.split('@')[0]}:0@s.whatsapp.net`,
+            `${bareJid.split('@')[0]}:1@s.whatsapp.net`,
+            storedLid ? `${this.#toBareJid(storedLid).split('@')[0]}:0@lid` : undefined,
+            storedLid ? `${this.#toBareJid(storedLid).split('@')[0]}:1@lid` : undefined,
+            dynamicLid ? `${this.#toBareJid(dynamicLid).split('@')[0]}:0@lid` : undefined,
+            dynamicLid ? `${this.#toBareJid(dynamicLid).split('@')[0]}:1@lid` : undefined,
+        ].filter(Boolean);
+        const candidates = [...new Set(rawCandidates)];
+        console.log(`[SignalingBridge] Decrypting <enc> (callId=${callId}, type=${type}) across ${candidates.length} candidates:`, candidates);
         let lastErr;
         for (const jid of candidates) {
             try {
@@ -415,12 +452,14 @@ export class SignalingBridge {
                     throw new Error("decrypted signaling has no call.callKey");
                 }
                 enc.content = callKey;
+                console.log(`[SignalingBridge] Successfully decrypted callKey using JID: ${jid}!`);
                 return voipNode;
             }
             catch (err) {
                 lastErr = err;
             }
         }
+        console.error(`[SignalingBridge] Failed to decrypt callKey across all candidates! Last error:`, lastErr);
         throw lastErr;
     };
     #encryptCallKey = async (targetJid, rawCallKey, count) => {

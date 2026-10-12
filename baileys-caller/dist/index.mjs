@@ -291,6 +291,7 @@ export class VoipClient {
         await this.#signaling.issueTcToken(peerLid);
         const tcToken = await this.#signaling.ensureTcToken(peerLid, targetPnJid);
         const callId = ("00" + randomBytes(16).toString("hex").slice(2)).toUpperCase();
+        this.#signaling.registerOutboundCall(callId, peerLid, targetPnJid);
         const call = new ActiveCall(callId, this.#engine, durationMs);
         call._audioSource = audioSource;
         this.#activeCall = call;

@@ -37,5 +37,6 @@ export declare class SignalingBridge {
     ensureSessionsForPeers: (jids: string[]) => Promise<void>;
     resolveLid: (pnJid: string) => Promise<string | undefined>;
     issueTcToken: (jid: string) => Promise<boolean>;
+    registerOutboundCall: (callId: string, peerLid: string, peerPn?: string) => void;
     getRemoteDeviceJid: (callId: string) => string | undefined;
 }

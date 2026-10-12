@@ -440,6 +440,7 @@ export class RelayRtcTransport {
     dc.binaryType = "arraybuffer";
 
     dc.onopen = (): void => {
+      console.log(`[RelayRtcTransport] DataChannel OPENED for ${connection.info.id}`);
       connection.state = "open";
       connection.isReconnecting = false;
       if (connection.connectionTimeout) {
@@ -451,10 +452,12 @@ export class RelayRtcTransport {
     };
 
     dc.onclose = (): void => {
+      console.warn(`[RelayRtcTransport] DataChannel CLOSED for ${connection.info.id}`);
       if (connection.state !== "failed") connection.state = "closed";
     };
 
-    dc.onerror = (): void => {
+    dc.onerror = (err: any): void => {
+      console.error(`[RelayRtcTransport] DataChannel ERROR for ${connection.info.id}:`, err);
       connection.state = "failed";
     };
 
@@ -469,6 +472,7 @@ export class RelayRtcTransport {
     };
 
     pc.oniceconnectionstatechange = (): void => {
+      console.log(`[RelayRtcTransport] ICE state for ${connection.info.id} is: ${pc.iceConnectionState}`);
       if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
         connection.state = "failed";
       }
