@@ -1126,22 +1126,22 @@ export const FlowBuilder: React.FC = () => {
             <div
               key={flow.id}
               onClick={() => openFlowEditor(flow)}
-              className="group bg-surface-card hover:bg-surface-hover border border-white/[0.08] hover:border-white/20 rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-subtle flex flex-col justify-between relative overflow-hidden"
+              className="group bg-[#12141F] hover:bg-[#151824] border border-white/[0.08] hover:border-indigo-500/30 rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-subtle hover:shadow-elevated flex flex-col justify-between relative overflow-hidden"
             >
               <div>
                 {/* Header do Card com Ícone, Contador de Execuções e Botão Pausar/Ativar */}
-                <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex items-start justify-between gap-3 mb-3.5">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-[#141622] border border-white/10 text-indigo-400 flex items-center justify-center transition-transform">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center transition-transform group-hover:scale-105">
                       <Zap className="w-4 h-4 fill-indigo-400/20" />
                     </div>
                     {/* Contador de quantas vezes o fluxo foi executado */}
                     <div 
-                      className="bg-[#181a28] border border-slate-800/80 px-2.5 py-1 rounded-xl flex items-center gap-1.5 shadow-sm"
+                      className="bg-[#0B0D14] border border-white/[0.06] px-2.5 py-1 rounded-xl flex items-center gap-1.5"
                       title="Número de vezes que este fluxo foi executado pelo WhatsApp"
                     >
                       <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
-                      <span className="text-[11px] font-mono font-bold text-slate-200">
+                      <span className="text-[11px] font-mono font-medium text-slate-300">
                         {flow.executionCount ?? 0} {((flow.executionCount ?? 0) === 1) ? 'execução' : 'execuções'}
                       </span>
                     </div>
@@ -1151,21 +1151,21 @@ export const FlowBuilder: React.FC = () => {
                   <button
                     onClick={(e) => handleToggleFlowActive(flow, e)}
                     title={flow.active ? "Clique para pausar este fluxo" : "Clique para ativar este fluxo"}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 shadow-sm ${
+                    className={`px-3 py-1 rounded-xl text-xs font-medium border transition-all flex items-center gap-1.5 ${
                       flow.active
-                        ? 'bg-emerald-500/10 hover:bg-amber-500/10 text-emerald-400 hover:text-amber-400 border-emerald-500/30 hover:border-amber-500/30'
-                        : 'bg-slate-800 hover:bg-emerald-500/10 text-slate-400 hover:text-emerald-400 border-slate-700 hover:border-emerald-500/30'
+                        ? 'bg-emerald-500/10 hover:bg-amber-500/10 text-emerald-300 hover:text-amber-300 border-emerald-500/20 hover:border-amber-500/20'
+                        : 'bg-white/[0.03] hover:bg-emerald-500/10 text-slate-400 hover:text-emerald-300 border-white/[0.06] hover:border-emerald-500/20'
                     }`}
                   >
                     {flow.active ? (
                       <>
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                         <span>Ativo</span>
                         <Pause className="w-3 h-3 ml-0.5 opacity-60 group-hover:opacity-100" />
                       </>
                     ) : (
                       <>
-                        <span className="w-2 h-2 rounded-full bg-slate-500" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
                         <span>Pausado</span>
                         <Play className="w-3 h-3 ml-0.5 opacity-60 group-hover:opacity-100" />
                       </>
@@ -1173,22 +1173,22 @@ export const FlowBuilder: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Nome do Fluxo com Botão de Edição de Nome */}
+                {/* Nome do Fluxo */}
                 <div className="flex items-center justify-between gap-2 mt-1">
-                  <h3 className="text-base font-black text-white group-hover:text-purple-300 transition-colors line-clamp-1">
+                  <h3 className="text-sm font-semibold text-white group-hover:text-indigo-300 transition-colors line-clamp-1 tracking-tight">
                     {flow.name}
                   </h3>
                   <button
                     onClick={(e) => handleOpenEditModal(flow, e)}
-                    title="Editar nome e descrição do fluxo"
-                    className="p-1 hover:bg-slate-800 text-slate-400 hover:text-purple-300 rounded-lg transition-colors flex-shrink-0"
+                    title="Editar dados"
+                    className="p-1 hover:bg-white/[0.06] text-slate-400 hover:text-white rounded-lg transition-colors flex-shrink-0"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
                 {/* Descrição do Fluxo */}
-                <div className="mt-2 text-xs text-slate-400 line-clamp-2 min-h-[36px] bg-[#141624]/60 p-2.5 rounded-xl border border-slate-800/60">
+                <div className="mt-2.5 text-xs text-slate-400 line-clamp-2 min-h-[40px] bg-[#0B0D14]/60 p-2.5 rounded-xl border border-white/[0.04] leading-relaxed">
                   {flow.description ? (
                     flow.description
                   ) : (
@@ -1198,10 +1198,10 @@ export const FlowBuilder: React.FC = () => {
               </div>
 
               {/* Rodapé com métricas e ações */}
-              <div className="mt-5 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+              <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
                 <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1 text-[11px] font-mono text-purple-300">
-                    <Layers className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-1.5 text-[11px] font-mono text-slate-300">
+                    <Layers className="w-3.5 h-3.5 text-indigo-400" />
                     {flow.nodeCount || flow.nodes?.length || 0} cards
                   </span>
                   <span className="text-[11px] text-slate-500 font-mono">
@@ -1213,21 +1213,21 @@ export const FlowBuilder: React.FC = () => {
                   <button
                     onClick={(e) => handleOpenEditModal(flow, e)}
                     title="Editar Nome e Descrição"
-                    className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-white/[0.06] text-slate-400 hover:text-white rounded-lg transition-colors"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={(e) => handleDuplicateFlow(flow, e)}
                     title="Duplicar Fluxo"
-                    className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-white/[0.06] text-slate-400 hover:text-white rounded-lg transition-colors"
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={(e) => handleDeleteFlow(flow.id, e)}
                     title="Excluir Fluxo"
-                    className="p-1.5 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 rounded-lg transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

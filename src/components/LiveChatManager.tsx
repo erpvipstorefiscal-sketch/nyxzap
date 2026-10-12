@@ -1409,53 +1409,65 @@ export const LiveChatManager: React.FC = () => {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-5 space-y-3.5 bg-gradient-to-b from-[#0B0C10] to-[#0D0F15]">
-            {activeChat.messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex flex-col ${m.fromMe ? 'items-end' : 'items-start'}`}
-              >
+          {/* Area de Mensagens Estilo CRM Executivo */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-[#090A0F] bg-dot-grid relative">
+            <div className="absolute inset-0 bg-gradient-to-b from-[#090A0F]/90 via-transparent to-[#090A0F]/90 pointer-events-none" />
+            <div className="relative z-10 space-y-3.5">
+              {activeChat.messages.map((m) => (
                 <div
-                  className={`max-w-[70%] px-4 py-3 rounded-2xl text-xs leading-relaxed shadow-subtle ${
-                    m.fromMe
-                      ? m.isAiGenerated
-                        ? 'bg-[#181B26] text-slate-100 border border-indigo-500/30 rounded-tr-sm'
-                        : 'bg-indigo-600 text-white rounded-tr-sm'
-                      : 'bg-[#151722] text-slate-200 border border-white/[0.06] rounded-tl-sm'
-                  }`}
+                  key={m.id}
+                  className={`flex flex-col ${m.fromMe ? 'items-end' : 'items-start'} group`}
                 >
-                  {m.fromMe && m.isAiGenerated && (
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300 mb-1 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-indigo-400" /> Resposta da IA (Gemini)
+                  <div
+                    className={`max-w-[65%] px-4 py-3 rounded-2xl text-[13px] leading-relaxed transition-all ${
+                      m.fromMe
+                        ? m.isAiGenerated
+                          ? 'bg-gradient-to-br from-[#181A28] to-[#121422] text-slate-100 border border-indigo-500/30 rounded-tr-xs shadow-lg shadow-indigo-950/20'
+                          : 'bg-gradient-to-br from-[#242A42] to-[#1B2034] text-white border border-indigo-400/20 rounded-tr-xs shadow-md'
+                        : 'bg-[#151724] text-slate-200 border border-white/[0.08] rounded-tl-xs shadow-md'
+                    }`}
+                  >
+                    {m.fromMe && m.isAiGenerated && (
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300 mb-1.5 flex items-center gap-1.5 border-b border-indigo-500/20 pb-1">
+                        <Sparkles className="w-3 h-3 text-indigo-400" />
+                        <span>Resposta do Agente de IA</span>
+                      </div>
+                    )}
+                    <p className="whitespace-pre-wrap selection:bg-indigo-500/30 selection:text-white font-normal">{m.text}</p>
+                    <div className="flex items-center justify-end gap-1.5 mt-1.5 pt-0.5">
+                      <span className="text-[10px] font-mono text-slate-400/80">
+                        {m.timestamp}
+                      </span>
+                      {m.fromMe && (
+                        <Check className="w-3 h-3 text-indigo-400 opacity-80" />
+                      )}
                     </div>
-                  )}
-                  <p className="whitespace-pre-wrap">{m.text}</p>
-                  <span className={`text-[9px] font-mono block text-right mt-1.5 ${
-                    m.fromMe ? (m.isAiGenerated ? 'text-slate-400' : 'text-indigo-200') : 'text-slate-400'
-                  }`}>
-                    {m.timestamp}
-                  </span>
+                  </div>
                 </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
           </div>
 
+          {/* Barra de Digitação */}
           <div className="p-3.5 border-t border-white/[0.06] bg-[#0E1017] flex items-center gap-2.5">
-            <input
-              type="text"
-              placeholder="Digite uma mensagem para o WhatsApp (assume atendimento manual)..."
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              className="flex-1 bg-[#141622] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-            />
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                placeholder="Digite uma mensagem para responder (assume atendimento humano)..."
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                className="w-full bg-[#12141F] border border-white/[0.08] hover:border-white/[0.15] rounded-xl pl-4 pr-10 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-inner"
+              />
+            </div>
             <button
               onClick={handleSendMessage}
-              className="p-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-xl transition-all shadow-subtle flex items-center justify-center"
+              className="p-2.5 px-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-medium rounded-xl transition-all shadow-subtle flex items-center justify-center gap-1.5"
               title="Enviar mensagem"
             >
-              <Send className="w-4 h-4" />
+              <span>Enviar</span>
+              <Send className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -1484,24 +1496,28 @@ export const LiveChatManager: React.FC = () => {
 
       {/* 3. RIGHT SIDEBAR: LEAD CRM INFO */}
       {activeChat && (
-        <div className="w-72 border-l border-white/[0.06] bg-[#0E1017] p-4 flex flex-col gap-4 shrink-0 overflow-y-auto">
-          <div className="border-b border-white/[0.06] pb-3">
-            <h4 className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Classificação do Lead</span>
-            </h4>
-            <div className="grid grid-cols-2 gap-1.5 pt-2.5">
+        <div className="w-80 border-l border-white/[0.06] bg-[#0E1017] p-5 flex flex-col gap-5 shrink-0 overflow-y-auto">
+          {/* Classificação do Lead */}
+          <div className="bg-[#12141F] border border-white/[0.06] rounded-2xl p-4 shadow-subtle space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Status do Funil</span>
+              </h4>
+              <span className="text-[10px] text-slate-400 font-mono">CRM</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
               {(['frio', 'morno', 'quente', 'comprou'] as LeadTag[]).map((tag) => (
                 <button
                   key={tag}
                   onClick={() => handleUpdateTag(tag)}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-medium capitalize transition-all border ${
+                  className={`py-2 px-2.5 rounded-xl text-xs font-medium capitalize transition-all border ${
                     activeChat.tag === tag
-                      ? tag === 'quente' ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
-                      : tag === 'morno' ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                      : tag === 'frio' ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
-                      : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                      : 'bg-[#141622] border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                      ? tag === 'quente' ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-sm'
+                      : tag === 'morno' ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-sm'
+                      : tag === 'frio' ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 shadow-sm'
+                      : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-sm'
+                      : 'bg-[#171926] border-white/[0.04] text-slate-400 hover:text-white hover:bg-white/[0.04]'
                   }`}
                 >
                   {tag}
@@ -1510,26 +1526,27 @@ export const LiveChatManager: React.FC = () => {
             </div>
           </div>
 
-          <div className="border-b border-white/[0.06] pb-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <h4 className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-amber-400" />
-                <span>Follow-up Automático</span>
+          {/* Follow-up Automático */}
+          <div className="bg-[#12141F] border border-white/[0.06] rounded-2xl p-4 shadow-subtle space-y-3.5">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
+              <h4 className="text-[11px] font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Follow-up Agendado</span>
               </h4>
               {activeChat.followUpStatus === 'scheduled' && (
-                <span className="text-[10px] font-medium bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
+                <span className="text-[10px] font-medium bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/20">
                   Agendado
                 </span>
               )}
               {activeChat.followUpStatus === 'completed' && (
-                <span className="text-[10px] font-medium bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                <span className="text-[10px] font-medium bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">
                   Concluído
                 </span>
               )}
             </div>
 
-            <p className="text-[10px] text-slate-400 leading-snug">
-              Programe o disparo automático de mensagem e anexo direto no WhatsApp do lead:
+            <p className="text-[11px] text-slate-400 leading-snug">
+              Programe o disparo de mensagens e anexos para retomar contato automaticamente:
             </p>
 
             {/* Input de arquivo invisível para follow-up */}
@@ -1542,42 +1559,42 @@ export const LiveChatManager: React.FC = () => {
             />
 
             {/* Data e Hora */}
-            <div className="space-y-1">
-              <span className="text-[10px] font-semibold text-slate-300 block">Data e Horário (Brasília):</span>
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-medium text-slate-300 block">Horário de Envio</span>
               <input
                 type="datetime-local"
                 value={followUpDate}
                 onChange={(e) => setFollowUpDate(e.target.value)}
-                className="w-full bg-[#151824] border border-slate-700 focus:border-amber-500 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none"
+                className="w-full bg-[#171926] border border-white/[0.06] focus:border-indigo-500 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none transition-colors"
               />
             </div>
 
             {/* Texto do Follow-up */}
-            <div className="space-y-1">
-              <span className="text-[10px] font-semibold text-slate-300 block">Mensagem do Follow-up:</span>
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-medium text-slate-300 block">Mensagem Programada</span>
               <textarea
                 rows={3}
                 placeholder="Ex: Olá {nome}, tudo bem? Passando para saber o que achou da nossa proposta..."
                 value={followUpText}
                 onChange={(e) => setFollowUpText(e.target.value)}
-                className="w-full bg-[#151824] border border-slate-700 focus:border-amber-500 rounded-xl p-2.5 text-xs text-white focus:outline-none resize-none leading-relaxed"
+                className="w-full bg-[#171926] border border-white/[0.06] focus:border-indigo-500 rounded-xl p-3 text-xs text-white placeholder:text-slate-600 focus:outline-none resize-none leading-relaxed transition-colors"
               />
             </div>
 
             {/* Anexos de Mídia do Follow-up */}
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-slate-300 flex items-center gap-1">
-                  <Paperclip className="w-3 h-3 text-amber-400" /> Anexar Mídia:
+                <span className="text-[10px] font-medium text-slate-300 flex items-center gap-1">
+                  <Paperclip className="w-3 h-3 text-indigo-400" /> Anexar Conteúdo
                 </span>
                 {isUploadingFollowUpMedia && (
-                  <span className="text-[10px] text-amber-400 flex items-center gap-1">
-                    <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Enviando...
+                  <span className="text-[10px] text-indigo-400 flex items-center gap-1 font-medium">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Subindo...
                   </span>
                 )}
               </div>
 
-              <div className="grid grid-cols-4 gap-1">
+              <div className="grid grid-cols-4 gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -1587,10 +1604,10 @@ export const LiveChatManager: React.FC = () => {
                     }
                   }}
                   disabled={isUploadingFollowUpMedia}
-                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex flex-col items-center gap-0.5 transition-all"
+                  className="py-1.5 px-1 rounded-xl text-[10px] font-medium bg-[#171926] hover:bg-white/[0.04] text-slate-300 border border-white/[0.04] flex flex-col items-center gap-1 transition-all"
                   title="Anexar Foto"
                 >
-                  <ImageIcon className="w-3 h-3 text-pink-400" />
+                  <ImageIcon className="w-3.5 h-3.5 text-pink-400" />
                   <span>Foto</span>
                 </button>
                 <button
@@ -1602,10 +1619,10 @@ export const LiveChatManager: React.FC = () => {
                     }
                   }}
                   disabled={isUploadingFollowUpMedia}
-                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex flex-col items-center gap-0.5 transition-all"
+                  className="py-1.5 px-1 rounded-xl text-[10px] font-medium bg-[#171926] hover:bg-white/[0.04] text-slate-300 border border-white/[0.04] flex flex-col items-center gap-1 transition-all"
                   title="Anexar Vídeo"
                 >
-                  <Video className="w-3 h-3 text-rose-400" />
+                  <Video className="w-3.5 h-3.5 text-rose-400" />
                   <span>Vídeo</span>
                 </button>
                 <button
@@ -1617,10 +1634,10 @@ export const LiveChatManager: React.FC = () => {
                     }
                   }}
                   disabled={isUploadingFollowUpMedia}
-                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex flex-col items-center gap-0.5 transition-all"
+                  className="py-1.5 px-1 rounded-xl text-[10px] font-medium bg-[#171926] hover:bg-white/[0.04] text-slate-300 border border-white/[0.04] flex flex-col items-center gap-1 transition-all"
                   title="Anexar Áudio"
                 >
-                  <Mic className="w-3 h-3 text-violet-400" />
+                  <Mic className="w-3.5 h-3.5 text-violet-400" />
                   <span>Áudio</span>
                 </button>
                 <button
@@ -1632,27 +1649,27 @@ export const LiveChatManager: React.FC = () => {
                     }
                   }}
                   disabled={isUploadingFollowUpMedia}
-                  className="py-1 px-1 rounded-lg text-[10px] font-bold bg-[#151824] hover:bg-slate-800 text-slate-300 border border-slate-700 flex flex-col items-center gap-0.5 transition-all"
+                  className="py-1.5 px-1 rounded-xl text-[10px] font-medium bg-[#171926] hover:bg-white/[0.04] text-slate-300 border border-white/[0.04] flex flex-col items-center gap-1 transition-all"
                   title="Anexar Documento"
                 >
-                  <FileText className="w-3 h-3 text-amber-400" />
+                  <FileText className="w-3.5 h-3.5 text-amber-400" />
                   <span>Doc</span>
                 </button>
               </div>
 
               {/* Mídia Anexada */}
               {followUpMedia && (
-                <div className="bg-[#151824] border border-amber-500/30 rounded-xl p-2 flex items-center justify-between mt-1">
-                  <div className="flex items-center gap-1.5 min-w-0">
+                <div className="bg-[#171926] border border-indigo-500/20 rounded-xl p-2.5 flex items-center justify-between mt-1">
+                  <div className="flex items-center gap-2 min-w-0">
                     {followUpMedia.type === 'image' && <ImageIcon className="w-3.5 h-3.5 text-pink-400 shrink-0" />}
                     {followUpMedia.type === 'video' && <Video className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
                     {followUpMedia.type === 'audio' && <Mic className="w-3.5 h-3.5 text-violet-400 shrink-0" />}
                     {followUpMedia.type === 'document' && <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                    <span className="text-[10px] text-slate-200 truncate font-mono">{followUpMedia.fileName}</span>
+                    <span className="text-[11px] text-slate-200 truncate font-mono">{followUpMedia.fileName}</span>
                   </div>
                   <button
                     onClick={() => setFollowUpMedia(null)}
-                    className="p-0.5 text-rose-400 hover:text-rose-300 shrink-0"
+                    className="p-1 text-slate-400 hover:text-rose-400 shrink-0 transition-colors"
                     title="Remover anexo"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1662,12 +1679,12 @@ export const LiveChatManager: React.FC = () => {
             </div>
 
             {/* Ações: Salvar / Agendar ou Cancelar */}
-            <div className="pt-1 flex flex-col gap-1.5">
+            <div className="pt-2 flex flex-col gap-2">
               <button
                 type="button"
                 onClick={handleScheduleFollowUp}
                 disabled={isSavingFollowUp || !followUpDate}
-                className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition-all shadow-md shadow-amber-600/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 px-4 rounded-xl text-xs font-medium bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white transition-all shadow-subtle disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isSavingFollowUp ? (
                   <>
@@ -1686,26 +1703,27 @@ export const LiveChatManager: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleCancelFollowUp}
-                  className="w-full py-1.5 px-3 rounded-xl text-[11px] font-bold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-all flex items-center justify-center gap-1"
+                  className="w-full py-2 px-3 rounded-xl text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all flex items-center justify-center gap-1.5"
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 className="w-3.5 h-3.5" />
                   <span>Cancelar Follow-up</span>
                 </button>
               )}
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col space-y-2">
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Notas Internas do Lead</span>
+          {/* Notas Internas */}
+          <div className="bg-[#12141F] border border-white/[0.06] rounded-2xl p-4 shadow-subtle flex-1 flex flex-col space-y-2">
+            <h4 className="text-[11px] font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Notas do Lead</span>
             </h4>
             <textarea
-              rows={8}
+              rows={5}
               placeholder="Adicione observações particulares sobre este lead..."
               value={activeChat.internalNotes}
               onChange={(e) => handleUpdateNotes(e.target.value)}
-              className="w-full flex-1 bg-[#151824] border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 resize-none leading-relaxed"
+              className="w-full flex-1 bg-[#171926] border border-white/[0.06] rounded-xl p-3 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 resize-none leading-relaxed transition-colors"
             />
             <span className="text-[10px] text-slate-500">
               Salvo em tempo real no servidor.

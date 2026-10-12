@@ -361,12 +361,25 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
                 </p>
               </div>
             ) : session.status === 'connected' ? (
-              <div className="p-6 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 text-center space-y-2">
-                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-                <h4 className="text-sm font-bold text-white">Sessão Ativa e Pronta</h4>
-                <p className="text-xs text-slate-300">
-                  Número: <span className="font-mono text-emerald-400 font-bold">{session.phone || 'Ativo'}</span>
-                </p>
+              <div className="p-6 rounded-2xl bg-[#121422] border border-emerald-500/20 text-center space-y-3 relative overflow-hidden shadow-inner">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center mx-auto text-emerald-400 shadow-sm">
+                  <CheckCircle2 className="w-6 h-6 stroke-[2]" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-white tracking-tight">Sessão Conectada & Operacional</h4>
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-mono font-medium">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>WhatsApp: +{session.phone || 'Ativo'}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-center gap-4 pt-1 text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1">
+                    <Wifi className="w-3 h-3 text-emerald-400" /> Sincronia Ativa
+                  </span>
+                  <span>•</span>
+                  <span>Webhook 100% OK</span>
+                </div>
               </div>
             ) : (
               <div className="p-8 rounded-2xl bg-nyx-850 border border-dashed border-slate-800 text-center space-y-3">
