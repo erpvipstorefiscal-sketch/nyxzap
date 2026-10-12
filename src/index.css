@@ -71,3 +71,230 @@
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
+/* ==========================================================================
+   TEMA CLARO (LIGHT MODE) - EXECUÇÃO SAAS ELEGANTE E PROFISSIONAL
+   ========================================================================== */
+html.theme-light,
+.theme-light {
+  color-scheme: light;
+}
+
+html.theme-light body,
+.theme-light body {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+}
+
+/* 1. Superfícies de Fundo Globais */
+.theme-light .bg-\[\#07080c\],
+.theme-light .bg-\[\#0B0C10\],
+.theme-light #root > div.bg-\[\#0B0C10\] {
+  background-color: #F8FAFC !important;
+}
+
+/* 2. Top Banners, Header e Modais Principais */
+.theme-light .bg-\[\#0E1017\],
+.theme-light .bg-\[\#0D0F17\],
+.theme-light .bg-\[\#0d0f18\],
+.theme-light .bg-\[\#11131f\],
+.theme-light .bg-\[\#10121d\],
+.theme-light .bg-nyx-900,
+.theme-light .bg-nyx-850,
+.theme-light .bg-surface-card {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  color: #0F172A !important;
+}
+
+.theme-light header.bg-\[\#0E1017\]\/80 {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-color: #E2E8F0 !important;
+}
+
+/* 3. Cards do Sistema e Paineis */
+.theme-light .bg-\[\#12141F\],
+.theme-light .bg-\[\#12141D\],
+.theme-light .bg-\[\#12141f\],
+.theme-light .bg-\[\#12131f\],
+.theme-light .bg-\[\#171926\],
+.theme-light .bg-\[\#151828\],
+.theme-light .bg-\[\#161827\],
+.theme-light .bg-\[\#1e2235\],
+.theme-light .bg-\[\#1B2034\],
+.theme-light .bg-\[\#121422\] {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+}
+
+/* 4. Sub-cards, Avisos, Inputs e Blocos Internos de Configuração */
+.theme-light .bg-\[\#0B0D14\],
+.theme-light .bg-\[\#0B0D14\]\/60,
+.theme-light .bg-\[\#10111a\],
+.theme-light .bg-\[\#0f111a\],
+.theme-light .bg-\[\#13141f\],
+.theme-light .bg-\[\#131622\],
+.theme-light .bg-\[\#141622\],
+.theme-light .bg-\[\#141724\],
+.theme-light .bg-\[\#151724\],
+.theme-light .bg-\[\#151824\],
+.theme-light .bg-\[\#161724\],
+.theme-light .bg-\[\#181a28\],
+.theme-light .bg-\[\#181b29\],
+.theme-light .bg-\[\#1c1d29\],
+.theme-light .bg-\[\#10121A\] {
+  background-color: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+  color: #1E293B !important;
+}
+
+/* 5. Inputs, Textareas e Selects em Todo o Sistema */
+.theme-light input,
+.theme-light textarea,
+.theme-light select {
+  background-color: #F8FAFC !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+.theme-light input:focus,
+.theme-light textarea:focus,
+.theme-light select:focus {
+  background-color: #FFFFFF !important;
+  border-color: #6366F1 !important;
+}
+
+.theme-light input::placeholder,
+.theme-light textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+/* 6. Botões Secundários, Cancelar, Fechar e Voltar */
+.theme-light .bg-slate-800,
+.theme-light .bg-slate-800\/90,
+.theme-light .bg-slate-800\/80,
+.theme-light button.bg-slate-800,
+.theme-light button.bg-slate-800\/90 {
+  background-color: #F1F5F9 !important;
+  color: #334155 !important;
+  border-color: #CBD5E1 !important;
+}
+
+.theme-light .bg-slate-800:hover,
+.theme-light .hover\:bg-slate-800:hover,
+.theme-light .hover\:bg-slate-700:hover,
+.theme-light button.hover\:bg-slate-800:hover,
+.theme-light button.hover\:bg-slate-700:hover {
+  background-color: #E2E8F0 !important;
+  color: #0F172A !important;
+}
+
+/* 7. Barra Flutuante de Ferramentas (FlowBuilder Dock) */
+.theme-light .bg-\[\#12141F\]\/90 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #CBD5E1 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1) !important;
+}
+.theme-light .bg-\[\#12141F\]\/90 button {
+  color: #475569 !important;
+}
+.theme-light .bg-\[\#12141F\]\/90 button:hover {
+  color: #0F172A !important;
+}
+
+/* 8. Canvas Visual e Grade de Pontos */
+.theme-light .bg-\[\#090a0f\],
+.theme-light .bg-\[\#090A0F\] {
+  background-color: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+}
+
+.theme-light .bg-dot-grid {
+  background-image: radial-gradient(rgba(15, 23, 42, 0.12) 1.2px, transparent 1.2px) !important;
+}
+
+/* 9. Chat ao Vivo & Balões de Conversa */
+.theme-light .chat-messages-container {
+  background-color: #F8FAFC !important;
+}
+
+.theme-light .dark-vignette {
+  display: none !important;
+}
+
+.theme-light .chat-bubble-me {
+  background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%) !important;
+  color: #FFFFFF !important;
+  border-color: transparent !important;
+  box-shadow: 0 2px 8px -1px rgba(79, 70, 229, 0.3) !important;
+}
+
+.theme-light .chat-bubble-ai {
+  background: #EEF2FF !important;
+  color: #1E1B4B !important;
+  border-color: #C7D2FE !important;
+}
+
+.theme-light .chat-bubble-lead {
+  background: #FFFFFF !important;
+  color: #0F172A !important;
+  border-color: #E2E8F0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* 10. Superfícies Translúcidas Brancas */
+.theme-light .bg-white\/\[0\.02\],
+.theme-light .bg-white\/\[0\.03\],
+.theme-light .bg-white\/\[0\.04\],
+.theme-light .bg-white\/\[0\.05\] {
+  background-color: #F1F5F9 !important;
+  color: #334155 !important;
+}
+
+.theme-light .bg-white\/\[0\.08\],
+.theme-light .bg-white\/\[0\.1\] {
+  background-color: #EEF2FF !important;
+  color: #312E81 !important;
+}
+
+/* 11. Bordas no Tema Claro */
+.theme-light .border-white\/\[0\.04\],
+.theme-light .border-white\/\[0\.06\],
+.theme-light .border-white\/\[0\.08\],
+.theme-light .border-white\/\[0\.1\],
+.theme-light .border-white\/\[0\.12\],
+.theme-light .border-white\/\[0\.15\],
+.theme-light .border-slate-800,
+.theme-light .border-slate-800\/60,
+.theme-light .border-slate-800\/80 {
+  border-color: #E2E8F0 !important;
+}
+
+/* 12. Textos no Tema Claro */
+.theme-light .text-white {
+  color: #0F172A !important;
+}
+
+.theme-light .text-zinc-100,
+.theme-light .text-zinc-200,
+.theme-light .text-zinc-300,
+.theme-light .text-slate-100,
+.theme-light .text-slate-200,
+.theme-light .text-slate-300 {
+  color: #1E293B !important;
+}
+
+.theme-light .text-zinc-400,
+.theme-light .text-zinc-500,
+.theme-light .text-slate-400,
+.theme-light .text-slate-500 {
+  color: #64748B !important;
+}
+
+/* 13. Barras de Rolagem */
+.theme-light ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15) !important;
+}
+.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28) !important;
+}
+

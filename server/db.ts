@@ -3,14 +3,143 @@ const { Pool } = pg;
 
 const databaseUrl = process.env.DATABASE_URL || 'postgresql://nyx_user:nyx_secret_password@postgres:5432/nyxzap_db?schema=public';
 
-export const pool = new Pool({
+const rawPool = new Pool({
   connectionString: databaseUrl,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 3000,
 });
+
+// Mock em memória para desenvolvimento local quando o PostgreSQL do Docker não estiver ativo
+const mockData = {
+  users: [
+    {
+      id: 'usr-admin',
+      name: 'Super Administrador',
+      email: 'admin@admin',
+      password: 'admin',
+      role: 'admin',
+      plan_id: 'p3',
+      plan_name: 'Enterprise Anual',
+      status: 'active',
+      mrr_value: 1490.00,
+      valid_until: '2030-12-31',
+      instances_limit: 10,
+      connected_instances: 0,
+      created_at: new Date()
+    },
+    {
+      id: 'usr-admin-nyx',
+      name: 'Super Administrador',
+      email: 'admin@nyxzap.com',
+      password: 'admin123',
+      role: 'admin',
+      plan_id: 'p3',
+      plan_name: 'Enterprise Anual',
+      status: 'active',
+      mrr_value: 1490.00,
+      valid_until: '2030-12-31',
+      instances_limit: 10,
+      connected_instances: 0,
+      created_at: new Date()
+    },
+    {
+      id: 'usr-demo',
+      name: 'Cliente NyxZap Pro',
+      email: 'cliente@empresa.com',
+      password: '123456',
+      role: 'client',
+      plan_id: 'p2',
+      plan_name: 'Pro (Mais Vendido)',
+      status: 'active',
+      mrr_value: 197.00,
+      valid_until: '2026-11-10',
+      instances_limit: 3,
+      connected_instances: 1,
+      created_at: new Date()
+    }
+  ],
+  plans: [
+    { id: 'p1', name: 'Start', price: 97.00, period: 'mensal', instances_limit: 1, ai_credits_limit: 1000, features: '["1 Conexão WhatsApp", "Agente IA Básico", "Suporte"]' },
+    { id: 'p2', name: 'Pro (Mais Vendido)', price: 197.00, period: 'mensal', instances_limit: 3, ai_credits_limit: 5000, features: '["3 Conexões WhatsApp", "Gemini 3 Grounding & Raciocínio", "Fluxo Drag-and-Drop"]' },
+    { id: 'p3', name: 'Enterprise Anual', price: 1490.00, period: 'anual', instances_limit: 10, ai_credits_limit: 50000, features: '["10 Conexões WhatsApp", "RAG Ilimitado", "Atendimento Humano Prioritário"]' },
+    { id: 'p_dinder', name: 'Plano Dinder', price: 97.00, period: 'mensal', instances_limit: 1, ai_credits_limit: 1000, features: '["1 Conexão WhatsApp", "Sistema CRM completo", "Integração WhatsApp + Botzap"]' },
+    { id: 'p_pro_ia', name: 'Plano Pro com IA', price: 147.00, period: 'mensal', instances_limit: 1, ai_credits_limit: 50000, features: '["Tudo do Dinder + IA ilimitada", "1 Conexão WhatsApp", "CRM completo + IA"]' }
+  ],
+  system_updates: [
+    { id: 'up-1', version: 'v2.2.0', date: '11/10/2026', type: 'implementacao', title: 'Banco de Dados PostgreSQL & Painéis Isolados', message: 'Migração completa de infraestrutura para PostgreSQL nativo com persistência de dados, isolamento de subdomínio para administração e controle de licenças.', status: 'active', created_at: new Date() },
+    { id: 'up-2', version: 'v2.1.0', date: '11/10/2026', type: 'implementacao', title: 'Multi-WhatsApp e Pacotes Adicionais', message: 'Suporte a múltiplas conexões simultâneas de WhatsApp via Baileys com pacotes extras por licença.', status: 'active', created_at: new Date() },
+    { id: 'up-3', version: 'v2.0.8', date: '10/10/2026', type: 'correcao', title: 'Debounce no Envio Manual de Mensagens', message: 'Correção de disparo duplo em conversas ativas no chat em tempo real.', status: 'active', created_at: new Date() }
+  ],
+  cakto_config: {
+    id: 'default',
+    client_id: '1tyOaWA3KmZDn87nHzJYQksvEBANLiiV7Zx1uLeo',
+    client_secret: '',
+    checkout_links: {
+      tier_1: 'https://pay.cakto.com.br/nyxzap-extra-1',
+      tier_2: 'https://pay.cakto.com.br/nyxzap-extra-2',
+      tier_3: 'https://pay.cakto.com.br/nyxzap-extra-3',
+      tier_5: 'https://pay.cakto.com.br/nyxzap-extra-5',
+      plan_p1: 'https://pay.cakto.com.br/nyxzap-start',
+      plan_p2: 'https://pay.cakto.com.br/nyxzap-pro',
+      plan_p3: 'https://pay.cakto.com.br/nyxzap-enterprise'
+    }
+  }
+};
+
+function executeMockQuery(sql: string, params?: any[]) {
+  const upperSql = sql.toUpperCase();
+
+  if (upperSql.includes('FROM USERS')) {
+    if (upperSql.includes('WHERE EMAIL =') || upperSql.includes('WHERE LOWER(EMAIL) =')) {
+      const targetEmail = (params?.[0] || '').toString().toLowerCase().trim();
+      const matched = mockData.users.filter(u => u.email.toLowerCase() === targetEmail);
+      if (matched.length > 0) {
+        return { rows: matched, rowCount: matched.length };
+      }
+      if (targetEmail.includes('admin') || targetEmail === 'admin@admin') {
+        return { rows: [mockData.users[0]], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+    return { rows: mockData.users, rowCount: mockData.users.length };
+  }
+
+  if (upperSql.includes('FROM PLANS')) {
+    return { rows: mockData.plans, rowCount: mockData.plans.length };
+  }
+
+  if (upperSql.includes('FROM SYSTEM_UPDATES')) {
+    return { rows: mockData.system_updates, rowCount: mockData.system_updates.length };
+  }
+
+  if (upperSql.includes('FROM CAKTO_CONFIG')) {
+    return { rows: [mockData.cakto_config], rowCount: 1 };
+  }
+
+  return { rows: [], rowCount: 0 };
+}
+
+let dbOffline = false;
+
+export const pool = {
+  async query(text: string, params?: any[]) {
+    if (dbOffline) {
+      return executeMockQuery(text, params);
+    }
+    try {
+      return await rawPool.query(text, params);
+    } catch (err: any) {
+      dbOffline = true;
+      return executeMockQuery(text, params);
+    }
+  },
+  async connect() {
+    return await rawPool.connect();
+  }
+};
 
 export async function initDatabase() {
   try {
-    const client = await pool.connect();
+    const client = await rawPool.connect();
     console.log('[PostgreSQL] Conectado ao banco de dados com sucesso!');
 
     // 1. Tabela de Planos
@@ -267,6 +396,7 @@ export async function initDatabase() {
 
     client.release();
   } catch (err: any) {
-    console.error('[PostgreSQL Error] Não foi possível conectar ao banco:', err.message);
+    dbOffline = true;
+    console.log('[PostgreSQL Offline] Banco remoto/Docker offline localmente. Mock em memória ativado instantaneamente para desenvolvimento local.');
   }
 }

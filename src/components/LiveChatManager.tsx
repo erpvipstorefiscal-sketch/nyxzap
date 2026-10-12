@@ -1479,9 +1479,9 @@ export const LiveChatManager: React.FC = () => {
           <div 
             ref={messagesContainerRef}
             onScroll={handleMessagesScroll}
-            className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#090A0F] bg-dot-grid relative"
+            className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#090A0F] bg-dot-grid relative chat-messages-container"
           >
-            <div className="absolute inset-0 bg-gradient-to-b from-[#090A0F]/90 via-transparent to-[#090A0F]/90 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-[#090A0F]/90 via-transparent to-[#090A0F]/90 pointer-events-none dark-vignette" />
             <div className="relative z-10 space-y-3.5">
               {activeChat.messages.map((m) => (
                 <div
@@ -1492,9 +1492,9 @@ export const LiveChatManager: React.FC = () => {
                     className={`max-w-[65%] px-4 py-3 rounded-2xl text-[13px] leading-relaxed transition-all ${
                       m.fromMe
                         ? m.isAiGenerated
-                          ? 'bg-gradient-to-br from-[#181A28] to-[#121422] text-slate-100 border border-indigo-500/30 rounded-tr-xs shadow-lg shadow-indigo-950/20'
-                          : 'bg-gradient-to-br from-[#242A42] to-[#1B2034] text-white border border-indigo-400/20 rounded-tr-xs shadow-md'
-                        : 'bg-[#151724] text-slate-200 border border-white/[0.08] rounded-tl-xs shadow-md'
+                          ? 'bg-gradient-to-br from-[#181A28] to-[#121422] text-slate-100 border border-indigo-500/30 rounded-tr-xs shadow-lg shadow-indigo-950/20 chat-bubble-ai'
+                          : 'bg-gradient-to-br from-[#242A42] to-[#1B2034] text-white border border-indigo-400/20 rounded-tr-xs shadow-md chat-bubble-me'
+                        : 'bg-[#151724] text-slate-200 border border-white/[0.08] rounded-tl-xs shadow-md chat-bubble-lead'
                     }`}
                   >
                     {m.fromMe && m.isAiGenerated && (

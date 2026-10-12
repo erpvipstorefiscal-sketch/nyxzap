@@ -26,7 +26,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { UserAuth, SystemUpdate } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -76,6 +78,32 @@ export function App() {
 
   // Manage Plan Modal Cycle: 'monthly' | 'annual'
   const [manageCycle, setManageCycle] = useState<'monthly' | 'annual'>('monthly');
+
+  // Theme Mode: 'dark' | 'light'
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      return (localStorage.getItem('nyxzap_theme') as 'dark' | 'light') || 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('theme-light', 'light');
+    } else {
+      document.documentElement.classList.remove('theme-light', 'light');
+    }
+    try {
+      localStorage.setItem('nyxzap_theme', theme);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
 
   // Activity tracking for 30-minute inactivity auto-logout
   useEffect(() => {
@@ -234,7 +262,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#0B0C10] text-zinc-100 flex flex-col md:flex-row font-sans">
+    <div className={`h-screen w-screen overflow-hidden ${theme === 'light' ? 'theme-light' : ''} bg-[#0B0C10] text-zinc-100 flex flex-col md:flex-row font-sans`}>
       {/* LEFT SIDEBAR NAVIGATION */}
       <aside className={`transition-all duration-300 ease-in-out bg-[#0E1017] border-r border-white/[0.06] flex flex-col justify-between shrink-0 z-40 md:h-screen md:sticky md:top-0 overflow-y-auto ${
         isSidebarCollapsed ? 'w-0 hidden md:hidden overflow-hidden' : 'w-full md:w-64 h-auto md:h-screen'
@@ -448,7 +476,30 @@ export function App() {
             </h2>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            {/* Botão de Alternar Cor do Sistema: Tema Claro (Branco) e Tema Escuro */}
+            <button
+              onClick={toggleTheme}
+              className={`p-1.5 sm:p-2 rounded-xl border transition-all flex items-center gap-1.5 text-xs shadow-sm cursor-pointer ${
+                theme === 'light'
+                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border-amber-500/30 shadow-amber-500/10'
+                  : 'bg-white/[0.04] hover:bg-white/[0.08] text-amber-400 border-white/[0.08] hover:border-white/[0.15]'
+              }`}
+              title={theme === 'dark' ? "Mudar cor do sistema para Claro (Branco)" : "Mudar cor do sistema para Escuro"}
+            >
+              {theme === 'dark' ? (
+                <>
+                  <Sun className="w-4 h-4 text-amber-400" />
+                  <span className="hidden xl:inline text-[11px] font-semibold text-zinc-300">Modo Claro</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-4 h-4 text-indigo-600" />
+                  <span className="hidden xl:inline text-[11px] font-semibold text-slate-800">Modo Escuro</span>
+                </>
+              )}
+            </button>
+
             {user.role === 'client' && (
               <div className="flex items-center gap-2 text-xs font-mono bg-white/[0.02] px-3 py-1 rounded-lg border border-white/[0.06]">
                 <span className="text-zinc-500">Validade:</span>
