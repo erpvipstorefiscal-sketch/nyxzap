@@ -1535,20 +1535,160 @@ async function executeNodeAction(
       recordFlowMessageInChat(remoteJid, reply, true);
     } else if (node.type === 'grupo_wa') {
       const action = node.data?.action || 'adicionar';
-      const groupId = node.data?.groupId;
-      console.log(`[Flow Engine] Executando Gerenciar Grupo (${action}) para ${remoteJid}`);
-      if (groupId && sock.groupParticipantsUpdate) {
-        try {
-          if (action === 'adicionar') {
-            await sock.groupParticipantsUpdate(groupId, [remoteJid], 'add');
-            recordFlowMessageInChat(remoteJid, `👥 [Lead adicionado ao grupo WhatsApp]`);
-          } else if (action === 'remover') {
-            await sock.groupParticipantsUpdate(groupId, [remoteJid], 'remove');
-            recordFlowMessageInChat(remoteJid, `👥 [Lead removido do grupo WhatsApp]`);
+      const targetInst = node.data?.instance || 'Inst. 1';
+      console.log(`[Flow Engine] Executando Gerenciar Grupo (ação: '${action}', instância: '${targetInst}') para ${remoteJid}`);
+
+      // 1. Localizar o socket correspondente à instância configurada ou fallback para qualquer conectado
+      let targetSock = sock;
+      if (targetInst && sessions.size > 0) {
+        const cleanInstNum = targetInst.replace(/[^0-9]/g, '');
+        for (const [sId, sData] of sessions.entries()) {
+          const sNum = sId.replace(/[^0-9]/g, '');
+          const sName = (sData.name || '').toLowerCase();
+          if (sData.status === 'connected' && sData.sock) {
+            if ((cleanInstNum && sNum === cleanInstNum) || (cleanInstNum && sName.includes(cleanInstNum)) || sId.includes(cleanInstNum)) {
+              targetSock = sData.sock;
+              break;
+            }
           }
-        } catch (grpErr) {
-          console.error('[Flow Engine] Erro na ação de grupo:', grpErr);
         }
+      }
+
+      if (!targetSock || (!targetSock.groupParticipantsUpdate && !targetSock.groupCreate)) {
+        for (const sData of sessions.values()) {
+          if (sData.status === 'connected' && sData.sock) {
+            targetSock = sData.sock;
+            break;
+          }
+        }
+      }
+
+      if (!targetSock) {
+        console.warn(`[Flow Engine] Nenhum WhatsApp conectado para executar ação de grupo '${action}'.`);
+        recordFlowMessageInChat(remoteJid, `⚠️ [Falha na automação de grupo: WhatsApp não está conectado]`);
+        return;
+      }
+
+      // 2. Normalizar número do lead (remover sufixos de device como :2 e formatar JID)
+      const cleanPhone = remoteJid.split('@')[0].split(':')[0].replace(/\D/g, '');
+      const participantJid = `${cleanPhone}@s.whatsapp.net`;
+
+      try {
+        if (action === 'criar') {
+          // Criar novo grupo com o lead
+          const rawGroupName = node.data?.newGroupName || 'Novo Grupo {nome}';
+          const groupSubject = replaceVariables(rawGroupName).slice(0, 100);
+
+          console.log(`[Flow Engine] Criando grupo WhatsApp '${groupSubject}' com participante ${participantJid}...`);
+          let groupRes: any = null;
+          try {
+            groupRes = await targetSock.groupCreate(groupSubject, [participantJid]);
+          } catch (createErr: any) {
+            console.warn(`[Flow Engine] groupCreate direto com participante falhou (${createErr.message}), criando grupo e gerando convite...`);
+            groupRes = await targetSock.groupCreate(groupSubject, []);
+          }
+
+          if (groupRes && groupRes.id) {
+            console.log(`[Flow Engine] Grupo criado com sucesso! ID: ${groupRes.id}`);
+            recordFlowMessageInChat(remoteJid, `👥 [Grupo WhatsApp '${groupSubject}' criado com sucesso!]`);
+
+            // Obter link de convite oficial do grupo
+            let inviteLink = '';
+            try {
+              const code = await targetSock.groupInviteCode(groupRes.id);
+              if (code) {
+                inviteLink = `https://chat.whatsapp.com/${code}`;
+              }
+            } catch (invErr) {
+              console.warn('[Flow Engine] Erro ao obter invite code do grupo recém-criado:', invErr);
+            }
+
+            // Enviar mensagem ao lead com o link de acesso ao grupo
+            if (inviteLink) {
+              const welcomeMsg = node.data?.welcomeMessage 
+                ? replaceVariables(node.data.welcomeMessage)
+                : `Olá ${replaceVariables('{nome}')}! Criamos seu grupo exclusivo *${groupSubject}*! Acesse através do link oficial abaixo:\n${inviteLink}`;
+              
+              await targetSock.sendMessage(remoteJid, { text: welcomeMsg });
+              recordFlowMessageInChat(remoteJid, `🔗 [Link do grupo enviado ao lead: ${inviteLink}]`);
+            }
+          } else {
+            recordFlowMessageInChat(remoteJid, `⚠️ [Não foi possível criar o grupo WhatsApp]`);
+          }
+        } else if (action === 'adicionar') {
+          const groupId = node.data?.groupId;
+          const groupName = node.data?.groupName || groupId;
+          if (!groupId) {
+            console.warn('[Flow Engine] groupId não configurado para ação adicionar');
+            recordFlowMessageInChat(remoteJid, `⚠️ [Falha no card de grupo: Nenhum grupo foi selecionado]`);
+            return;
+          }
+
+          console.log(`[Flow Engine] Adicionando participante ${participantJid} ao grupo ${groupId}...`);
+          try {
+            const updateRes = await targetSock.groupParticipantsUpdate(groupId, [participantJid], 'add');
+            console.log('[Flow Engine] Resultado adicionar ao grupo:', updateRes);
+
+            const isRestricted = Array.isArray(updateRes) && updateRes.some((r: any) => r.status === '403' || r.status === 403);
+            const isAlreadyIn = Array.isArray(updateRes) && updateRes.some((r: any) => r.status === '409' || r.status === 409);
+
+            if (isRestricted) {
+              // Lead tem restrição de privacidade no WhatsApp -> Gerar link de convite e enviar
+              let inviteLink = '';
+              try {
+                const code = await targetSock.groupInviteCode(groupId);
+                inviteLink = `https://chat.whatsapp.com/${code}`;
+              } catch (e) {}
+
+              if (inviteLink) {
+                await targetSock.sendMessage(remoteJid, {
+                  text: `Olá ${replaceVariables('{nome}')}! Devido às opções de privacidade da sua conta WhatsApp, você não pôde ser adicionado automaticamente. Clique no link para entrar no grupo *${groupName}*:\n${inviteLink}`
+                });
+                recordFlowMessageInChat(remoteJid, `🔗 [Privacidade ativada no lead: Link de convite enviado: ${inviteLink}]`);
+              } else {
+                recordFlowMessageInChat(remoteJid, `⚠️ [Lead tem restrição de privacidade e não foi possível gerar o link de convite]`);
+              }
+            } else if (isAlreadyIn) {
+              recordFlowMessageInChat(remoteJid, `👥 [Lead já faz parte do grupo '${groupName}']`);
+            } else {
+              recordFlowMessageInChat(remoteJid, `👥 [Lead adicionado com sucesso ao grupo '${groupName}']`);
+            }
+          } catch (addErr: any) {
+            console.error('[Flow Engine] Erro ao adicionar participante no grupo:', addErr);
+            // Se falhou (ex: bot não tem permissão de admin direta), tenta obter o link do grupo e mandar para o lead
+            try {
+              const code = await targetSock.groupInviteCode(groupId);
+              const inviteLink = `https://chat.whatsapp.com/${code}`;
+              await targetSock.sendMessage(remoteJid, {
+                text: `Olá ${replaceVariables('{nome}')}! Acesse seu grupo *${groupName}* pelo link oficial:\n${inviteLink}`
+              });
+              recordFlowMessageInChat(remoteJid, `🔗 [Link do grupo enviado ao lead: ${inviteLink}]`);
+            } catch (invErr) {
+              recordFlowMessageInChat(remoteJid, `⚠️ [Não foi possível adicionar ao grupo: verifique se o bot é administrador do grupo]`);
+            }
+          }
+        } else if (action === 'remover') {
+          const groupId = node.data?.groupId;
+          const groupName = node.data?.groupName || groupId;
+          if (!groupId) {
+            console.warn('[Flow Engine] groupId não configurado para ação remover');
+            recordFlowMessageInChat(remoteJid, `⚠️ [Falha no card de grupo: Nenhum grupo foi selecionado para remoção]`);
+            return;
+          }
+
+          console.log(`[Flow Engine] Removendo participante ${participantJid} do grupo ${groupId}...`);
+          try {
+            const updateRes = await targetSock.groupParticipantsUpdate(groupId, [participantJid], 'remove');
+            console.log('[Flow Engine] Resultado remover do grupo:', updateRes);
+            recordFlowMessageInChat(remoteJid, `👥 [Lead removido do grupo '${groupName}']`);
+          } catch (remErr: any) {
+            console.error('[Flow Engine] Erro ao remover do grupo:', remErr);
+            recordFlowMessageInChat(remoteJid, `⚠️ [Erro ao remover do grupo: verifique se o bot é administrador do grupo]`);
+          }
+        }
+      } catch (grpErr: any) {
+        console.error('[Flow Engine] Erro geral na ação de grupo:', grpErr);
+        recordFlowMessageInChat(remoteJid, `⚠️ [Erro na automação de grupo: ${grpErr.message}]`);
       }
     } else if (node.type === 'conectar_fluxo') {
       const targetFlowName = node.data?.targetFlow || 'Fluxo Principal';
@@ -2232,12 +2372,27 @@ async function resolveGroupParticipants(sock: any, participants: any[]): Promise
 
 // Endpoint para buscar grupos do WhatsApp conectado
 app.get('/api/whatsapp/groups', async (req, res) => {
-  const { sessionId } = req.query;
+  const { sessionId, instance } = req.query;
   let targetSession: SessionData | undefined;
 
   if (sessionId && typeof sessionId === 'string') {
     targetSession = sessions.get(sessionId);
   }
+
+  if (!targetSession && instance && typeof instance === 'string') {
+    const cleanNum = instance.replace(/[^0-9]/g, '');
+    for (const [sId, s] of sessions.entries()) {
+      const sNum = sId.replace(/[^0-9]/g, '');
+      const sName = (s.name || '').toLowerCase();
+      if (s.status === 'connected' && s.sock) {
+        if ((cleanNum && sNum === cleanNum) || (cleanNum && sName.includes(cleanNum)) || sId.includes(cleanNum)) {
+          targetSession = s;
+          break;
+        }
+      }
+    }
+  }
+
   if (!targetSession || !targetSession.sock || targetSession.status !== 'connected') {
     for (const s of sessions.values()) {
       if (s.status === 'connected' && s.sock) {
@@ -2251,7 +2406,7 @@ app.get('/api/whatsapp/groups', async (req, res) => {
     return res.json({ 
       success: false, 
       groups: [], 
-      error: 'Nenhum WhatsApp conectado. Conecte seu aparelho para sincronizar os grupos.' 
+      error: 'Nenhum WhatsApp conectado nesta instância. Conecte seu aparelho para sincronizar os grupos.' 
     });
   }
 

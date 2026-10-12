@@ -279,10 +279,13 @@ export const FlowBuilder: React.FC = () => {
   const [groupsList, setGroupsList] = useState<WhatsAppGroup[]>([]);
   const [isFetchingGroups, setIsFetchingGroups] = useState(false);
 
-  const fetchGroups = async () => {
+  const fetchGroups = async (targetInstance?: string) => {
     setIsFetchingGroups(true);
     try {
-      const res = await fetch('/api/whatsapp/groups');
+      const url = targetInstance 
+        ? `/api/whatsapp/groups?instance=${encodeURIComponent(targetInstance)}`
+        : '/api/whatsapp/groups';
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success && Array.isArray(data.groups)) {
         setGroupsList(data.groups);
@@ -2430,9 +2433,9 @@ export const FlowBuilder: React.FC = () => {
                             onChange={(e) => updateNodeData(node.id, { action: e.target.value })}
                             className="w-full bg-[#1c1d29] border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-semibold"
                           >
-                            <option value="adicionar">Adicionar lead a um grupo</option>
-                            <option value="remover">Remover lead de um grupo</option>
                             <option value="criar">Criar novo grupo com o lead</option>
+                            <option value="adicionar">Adicionar lead a um grupo existente</option>
+                            <option value="remover">Remover lead de um grupo</option>
                           </select>
                         </div>
 
@@ -2445,7 +2448,10 @@ export const FlowBuilder: React.FC = () => {
                               <button
                                 key={inst}
                                 type="button"
-                                onClick={() => updateNodeData(node.id, { instance: inst })}
+                                onClick={() => {
+                                  updateNodeData(node.id, { instance: inst });
+                                  fetchGroups(inst);
+                                }}
                                 className={`py-1 rounded-lg text-[10px] font-bold transition-all border ${
                                   (node.data.instance || 'Inst. 1') === inst
                                     ? 'bg-emerald-600 text-white border-emerald-500 shadow'
@@ -2457,36 +2463,81 @@ export const FlowBuilder: React.FC = () => {
                             ))}
                           </div>
                           <p className="text-[9px] text-slate-500">
-                            Escolha a instância para listar os grupos que você participa.
+                            Ação executada pelo WhatsApp conectado na instância selecionada.
                           </p>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="space-y-2">
                           <label className="text-[10px] font-bold text-slate-300 block">
                             {node.data.action === 'remover' ? 'Remover do grupo' : node.data.action === 'criar' ? 'Nome do novo grupo' : 'Adicionar ao grupo'}
                           </label>
+
                           {node.data.action === 'criar' ? (
-                            <input
-                              type="text"
-                              value={node.data.newGroupName || ''}
-                              onChange={(e) => updateNodeData(node.id, { newGroupName: e.target.value })}
-                              placeholder="Ex: VIP - Suporte {nome}"
-                              className="w-full bg-[#1c1d29] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                            />
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={node.data.newGroupName || ''}
+                                onChange={(e) => updateNodeData(node.id, { newGroupName: e.target.value })}
+                                placeholder="Ex: Mentoria - {nome}"
+                                className="w-full bg-[#1c1d29] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-semibold"
+                              />
+                              <div className="flex flex-wrap gap-1">
+                                {['{nome}', '{telefone}'].map((v) => (
+                                  <button
+                                    key={v}
+                                    type="button"
+                                    onClick={() => {
+                                      const current = node.data.newGroupName || '';
+                                      updateNodeData(node.id, { newGroupName: `${current} ${v}`.trim() });
+                                    }}
+                                    className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 hover:bg-emerald-600/30 text-slate-300 hover:text-emerald-300 border border-slate-700 transition-colors"
+                                  >
+                                    + {v}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <div className="space-y-1 pt-1 border-t border-slate-800/80">
+                                <label className="text-[9px] font-bold text-slate-400 block">
+                                  Mensagem de Boas-Vindas no Grupo (Opcional):
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  value={node.data.welcomeMessage || ''}
+                                  onChange={(e) => updateNodeData(node.id, { welcomeMessage: e.target.value })}
+                                  placeholder="Ex: Olá {nome}, seja muito bem-vindo ao seu grupo VIP exclusivo!"
+                                  className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none font-sans"
+                                />
+                              </div>
+                            </div>
                           ) : (
                             <div className="space-y-1.5">
+                              {node.data.groupName && (
+                                <div className="p-2 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-[11px] text-emerald-300 font-semibold flex items-center justify-between">
+                                  <span className="truncate">✓ Grupo: <strong>{node.data.groupName}</strong></span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateNodeData(node.id, { groupId: '', groupName: '' })}
+                                    className="text-[10px] text-rose-400 hover:text-rose-300 underline shrink-0 ml-2"
+                                  >
+                                    Trocar
+                                  </button>
+                                </div>
+                              )}
+
                               <div className="flex items-center justify-between">
-                                <span className="text-[9px] text-slate-400">Selecionar Grupo Real:</span>
+                                <span className="text-[9px] text-slate-400">Selecionar da lista sincronizada:</span>
                                 <button
                                   type="button"
-                                  onClick={fetchGroups}
+                                  onClick={() => fetchGroups(node.data.instance || 'Inst. 1')}
                                   disabled={isFetchingGroups}
-                                  className="text-[9px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 bg-[#10111a] px-2 py-0.5 rounded border border-emerald-500/30"
+                                  className="text-[9px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 bg-[#10111a] px-2 py-0.5 rounded border border-emerald-500/30 cursor-pointer"
                                 >
                                   <RefreshCw className={`w-2.5 h-2.5 ${isFetchingGroups ? 'animate-spin' : ''}`} />
-                                  <span>{isFetchingGroups ? 'Sincronizando...' : 'Sincronizar'}</span>
+                                  <span>{isFetchingGroups ? 'Sincronizando...' : 'Sincronizar Grupos'}</span>
                                 </button>
                               </div>
+
                               {groupsList.length > 0 ? (
                                 <select
                                   value={node.data.groupId || ''}
@@ -2513,7 +2564,7 @@ export const FlowBuilder: React.FC = () => {
                                   </p>
                                   <button
                                     type="button"
-                                    onClick={fetchGroups}
+                                    onClick={() => fetchGroups(node.data.instance || 'Inst. 1')}
                                     className="text-[10px] text-emerald-400 font-bold hover:underline"
                                   >
                                     Clique aqui para sincronizar agora
@@ -2522,10 +2573,13 @@ export const FlowBuilder: React.FC = () => {
                               )}
                             </div>
                           )}
+
                           <p className="text-[9px] text-slate-500">
-                            {node.data.action === 'remover' 
+                            {node.data.action === 'criar'
+                              ? 'O bot cria o grupo no WhatsApp com o lead e envia o link caso ele possua privacidade de contato.'
+                              : node.data.action === 'remover' 
                               ? 'O lead será removido do grupo selecionado.' 
-                              : 'O lead será adicionado ao grupo selecionado. Ele pode precisar aceitar o convite.'}
+                              : 'O lead será adicionado ao grupo selecionado (ou receberá o link se tiver privacidade ativa).'}
                           </p>
                         </div>
                       </div>
