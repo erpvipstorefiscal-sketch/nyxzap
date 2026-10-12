@@ -2706,8 +2706,8 @@ export const FlowBuilder: React.FC = () => {
                               <input
                                 type="number"
                                 min="5"
-                                max="30"
-                                value={node.data.ringDuration ?? node.data.callDuration ?? 10}
+                                max="45"
+                                value={node.data.ringDuration ?? node.data.callDuration ?? 20}
                                 onChange={(e) => updateNodeData(node.id, { ringDuration: Number(e.target.value), callDuration: Number(e.target.value) })}
                                 className="w-14 bg-[#10111a] border border-teal-500/40 rounded-lg px-1.5 py-0.5 text-center text-xs text-teal-300 font-bold focus:outline-none"
                               />
@@ -2716,13 +2716,16 @@ export const FlowBuilder: React.FC = () => {
                           </div>
                           <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20 text-[9px] text-slate-300 leading-relaxed space-y-1">
                             <p className="font-bold text-teal-300 flex items-center gap-1">
-                              <span>🚀 Call Trigger & Audio Drop (100% Gratuito):</span>
+                              <span>🚀 Ligação Inteligente com Auto-Hangup:</span>
                             </p>
                             <p>
-                              1. A chamada de voz toca em tela cheia no celular do lead pelo tempo configurado ({node.data.ringDuration ?? node.data.callDuration ?? 10}s) para chamar a atenção.
+                              1. A chamada oficial toca em tela cheia no celular do lead por até {node.data.ringDuration ?? node.data.callDuration ?? 20} segundos ou até ele atender.
                             </p>
                             <p>
-                              2. A ligação desliga e o áudio é <strong>entregue na hora como Nota de Voz Oficial</strong> (com bolinha verde de microfone gravado).
+                              2. Se ele <strong>atender</strong>, o robô desliga imediatamente a ligação.
+                            </p>
+                            <p>
+                              3. Se ele <strong>não atender</strong>, segue o fluxo e entrega o áudio gravado no WhatsApp.
                             </p>
                           </div>
                         </div>

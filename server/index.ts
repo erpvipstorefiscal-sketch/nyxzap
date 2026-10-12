@@ -1663,118 +1663,119 @@ async function executeNodeAction(
         }
       }
 
-      const ringDuration = Math.min(Math.max(Number(node.data?.ringDuration || node.data?.callDuration) || 10, 5), 30); // 5s a 30s de toque
+      const ringDuration = Math.min(Math.max(Number(node.data?.ringDuration || node.data?.callDuration) || 20, 5), 45); // Padrão 20s
+      console.log(`[Flow Engine] Iniciando chamada oficial para ${targetPhone} (Tempo de toque: até ${ringDuration}s)...`);
 
-      console.log(`[Flow Engine] Call Trigger & Audio Drop iniciado para ${remoteJid} (Toque: ${ringDuration}s, Áudio: ${fullAudioUrl || 'nenhum'})`);
+      let leadAnswered = false;
+      let callFinished = false;
 
-      const callId = `call_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-      const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
+      // 1. Iniciar chamada real do WhatsApp via VoipClient
+      const currentSessionId = sessionId || 'inst-1';
+      const authDir = path.join(process.cwd(), 'whatsapp_auth', currentSessionId);
 
-      // 1. Toca no celular do lead com a chamada de voz oficial do WhatsApp em tela cheia
       try {
-        if (sock.sendNode) {
-          await sock.sendNode({
-            tag: 'call',
-            attrs: {
-              to: remoteJid,
-              from: fromJid
-            },
-            content: [{
-              tag: 'offer',
-              attrs: {
-                'call-id': callId,
-                'call-creator': fromJid
-              },
-              content: undefined
-            }]
-          });
+        process.env.CALL_RELAY_PORT_MODE = 'original';
+        process.env.CALL_DISABLE_IPV6 = '1';
+        const { VoipClient } = await import(path.join(process.cwd(), 'baileys-caller', 'dist', 'index.mjs'));
+        const voipClient = new VoipClient({ sock, authDir });
+        await voipClient.connect();
+
+        console.log(`[Flow Engine] VoipClient conectado. Discando chamada para ${targetPhone}...`);
+        const liveCall = await voipClient.call(targetPhone, {
+          audioSource: 'silence',
+          durationMs: ringDuration * 1000
+        });
+
+        recordFlowMessageInChat(remoteJid, `📞 [Ligação tocando no celular do lead - Até ${ringDuration}s]`);
+
+        liveCall.on('ringing', () => {
+          console.log(`[Flow Engine] Telefone de ${targetPhone} está tocando em tela cheia...`);
+        });
+
+        // Se o lead atender a ligação:
+        liveCall.on('connected', () => {
+          console.log(`[Flow Engine] Lead ${targetPhone} ATENDEU a ligação! Desligando imediatamente conforme instrução...`);
+          leadAnswered = true;
+          recordFlowMessageInChat(remoteJid, `📲 [Lead atendeu a chamada! Ligação encerrada]`);
+          try { liveCall.end(); } catch {}
+        });
+
+        liveCall.on('ended', (reason: string) => {
+          console.log(`[Flow Engine] Chamada com ${targetPhone} finalizada (${reason})`);
+          callFinished = true;
+        });
+
+        // Aguarda até o lead atender ou estourar os 20 segundos
+        const startCallTime = Date.now();
+        while (!callFinished && !leadAnswered && (Date.now() - startCallTime < ringDuration * 1000)) {
+          await new Promise(r => setTimeout(r, 500));
         }
-        recordFlowMessageInChat(remoteJid, `📞 [Ligação tocando no celular do lead - Toque: ${ringDuration}s]`);
-      } catch (callErr: any) {
-        console.warn(`[Flow Engine] Erro ao disparar chamada no celular: ${callErr.message}`);
+
+        // Se deu o tempo e não atendeu, encerra a chamada
+        if (!leadAnswered) {
+          try { liveCall.end(); } catch {}
+        }
+
+        try { voipClient.disconnect(); } catch {}
+      } catch (voipErr: any) {
+        console.error(`[Flow Engine] Erro ao originar chamada:`, voipErr.message);
       }
 
-      // 2. Aguarda o celular do lead tocar pelo tempo configurado (ex: 10s)
-      await new Promise(r => setTimeout(r, ringDuration * 1000));
+      // 2. Se o lead NÃO atendeu a ligação, segue o fluxo e dispara o áudio configurado
+      if (!leadAnswered) {
+        console.log(`[Flow Engine] Lead ${targetPhone} não atendeu a ligação (ou expirou ${ringDuration}s). Disparando áudio...`);
+        recordFlowMessageInChat(remoteJid, `📴 [Lead não atendeu após ${ringDuration}s - Enviando áudio no WhatsApp]`);
 
-      // 3. Encerra a ligação automaticamente
-      try {
-        if (sock.sendNode) {
-          await sock.sendNode({
-            tag: 'call',
-            attrs: {
-              to: remoteJid,
-              from: fromJid
-            },
-            content: [{
-              tag: 'terminate',
-              attrs: {
-                'call-id': callId,
-                'call-creator': fromJid,
-                reason: 'hangup'
-              },
-              content: undefined
-            }]
-          });
-        }
-      } catch (termErr: any) {
-        console.warn(`[Flow Engine] Erro ao desligar chamada: ${termErr.message}`);
-      }
-
-      recordFlowMessageInChat(remoteJid, `📴 [Ligação finalizada após ${ringDuration}s de toque]`);
-
-      // 4. Entrega Imediata do Áudio Gravado como Nota de Voz Oficial (PTT com bolinha verde de microfone)
-      if (fullAudioUrl && (fs.existsSync(fullAudioUrl) || fullAudioUrl.startsWith('http'))) {
-        try {
-          console.log(`[Flow Engine] Enviando nota de voz oficial pós-ligação para ${remoteJid}...`);
-          // Simula gravando áudio na hora
-          await sock.sendPresenceUpdate('recording', remoteJid);
-          await new Promise(r => setTimeout(r, 1500));
-          await sock.sendPresenceUpdate('paused', remoteJid);
-
-          let audioBuffer: Buffer;
-          if (fullAudioUrl.startsWith('http')) {
-            const resp = await fetch(fullAudioUrl);
-            const arrayBuf = await resp.arrayBuffer();
-            audioBuffer = Buffer.from(arrayBuf);
-          } else {
-            audioBuffer = fs.readFileSync(fullAudioUrl);
-          }
-
-          let finalAudioBuffer = audioBuffer;
-          let mimetype = 'audio/ogg; codecs=opus';
-
+        if (fullAudioUrl && (fs.existsSync(fullAudioUrl) || fullAudioUrl.startsWith('http'))) {
           try {
-            if (!fullAudioUrl.endsWith('.ogg') && !fullAudioUrl.endsWith('.opus')) {
-              const tempInput = path.join(process.cwd(), 'uploads', `temp_in_${Date.now()}_${Math.floor(Math.random()*1000)}.bin`);
-              const tempOutput = path.join(process.cwd(), 'uploads', `temp_out_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
-              fs.writeFileSync(tempInput, audioBuffer);
-              execSync(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 32k -vbr on "${tempOutput}"`, { timeout: 8000 });
-              if (fs.existsSync(tempOutput) && fs.statSync(tempOutput).size > 0) {
-                finalAudioBuffer = fs.readFileSync(tempOutput);
-                try { fs.unlinkSync(tempOutput); } catch {}
-              }
-              try { fs.unlinkSync(tempInput); } catch {}
+            await sock.sendPresenceUpdate('recording', remoteJid);
+            await new Promise(r => setTimeout(r, 1500));
+            await sock.sendPresenceUpdate('paused', remoteJid);
+
+            let audioBuffer: Buffer;
+            if (fullAudioUrl.startsWith('http')) {
+              const resp = await fetch(fullAudioUrl);
+              const arrayBuf = await resp.arrayBuffer();
+              audioBuffer = Buffer.from(arrayBuf);
+            } else {
+              audioBuffer = fs.readFileSync(fullAudioUrl);
             }
-          } catch (ffmpegErr: any) {
-            console.warn('[Flow Engine] Falha na conversão ffmpeg, enviando arquivo original:', ffmpegErr.message);
-            mimetype = 'audio/mp4';
+
+            let finalAudioBuffer = audioBuffer;
+            let mimetype = 'audio/ogg; codecs=opus';
+
+            try {
+              if (!fullAudioUrl.endsWith('.ogg') && !fullAudioUrl.endsWith('.opus')) {
+                const tempInput = path.join(process.cwd(), 'uploads', `temp_in_${Date.now()}_${Math.floor(Math.random()*1000)}.bin`);
+                const tempOutput = path.join(process.cwd(), 'uploads', `temp_out_${Date.now()}_${Math.floor(Math.random()*1000)}.ogg`);
+                fs.writeFileSync(tempInput, audioBuffer);
+                execSync(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 32k -vbr on "${tempOutput}"`, { timeout: 8000 });
+                if (fs.existsSync(tempOutput) && fs.statSync(tempOutput).size > 0) {
+                  finalAudioBuffer = fs.readFileSync(tempOutput);
+                  try { fs.unlinkSync(tempOutput); } catch {}
+                }
+                try { fs.unlinkSync(tempInput); } catch {}
+              }
+            } catch (ffmpegErr: any) {
+              console.warn('[Flow Engine] Falha na conversão ffmpeg, enviando arquivo original:', ffmpegErr.message);
+              mimetype = 'audio/mp4';
+            }
+
+            await sock.sendMessage(remoteJid, {
+              audio: finalAudioBuffer,
+              mimetype,
+              ptt: true // Nota de voz gravada oficial (bolinha verde)
+            });
+
+            recordFlowMessageInChat(remoteJid, `🎤 [Nota de voz enviada para o lead]`);
+            console.log(`[Flow Engine] Áudio gravado enviado com sucesso para ${remoteJid}`);
+          } catch (audioSendErr: any) {
+            console.error(`[Flow Engine] Falha no envio do áudio pós-chamada:`, audioSendErr);
           }
-
-          await sock.sendMessage(remoteJid, {
-            audio: finalAudioBuffer,
-            mimetype,
-            ptt: true // Nota de voz oficial do WhatsApp (microfone verde)
-          });
-
-          recordFlowMessageInChat(remoteJid, `🎤 [Áudio gravado entregue como nota de voz oficial após a ligação]`);
-          console.log(`[Flow Engine] Nota de voz pós-chamada entregue com sucesso para ${remoteJid}`);
-        } catch (audioSendErr: any) {
-          console.error(`[Flow Engine] Falha no envio da nota de voz pós-chamada:`, audioSendErr);
         }
+      } else {
+        console.log(`[Flow Engine] Lead atendeu a ligação e foi desligado. Fluxo de chamada concluído com sucesso.`);
       }
-
-      console.log(`[Flow Engine] Call Trigger & Audio Drop concluído com sucesso para ${remoteJid}`);
     } else if (node.type === 'audio') {
       const audioPath = node.data?.fileUrl || node.data?.audioUrl;
       if (audioPath) {
