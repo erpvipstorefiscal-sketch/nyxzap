@@ -1604,30 +1604,54 @@ async function executeNodeAction(
             recordFlowMessageInChat(remoteJid, `👥 [Grupo WhatsApp '${groupSubject}' criado e lead adicionado com sucesso!]`);
 
             // Aplicar foto de perfil do grupo se configurada
-            if (node.data?.groupPhotoUrl) {
+            const photoRaw = node.data?.groupPhotoBase64 || node.data?.groupPhotoUrl;
+            if (photoRaw) {
+              console.log(`[Flow Engine] Processando foto de perfil para o grupo ${groupRes.id}...`);
+              let photoBuffer: Buffer | null = null;
               try {
-                let photoBuffer: Buffer | null = null;
-                const photoUrl = node.data.groupPhotoUrl;
-                if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
-                  const imgRes = await fetch(photoUrl);
+                if (photoRaw.startsWith('data:image')) {
+                  const base64Data = photoRaw.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
+                  photoBuffer = Buffer.from(base64Data, 'base64');
+                } else if (photoRaw.startsWith('http://') || photoRaw.startsWith('https://')) {
+                  const imgRes = await fetch(photoRaw);
                   const arrBuf = await imgRes.arrayBuffer();
                   photoBuffer = Buffer.from(arrBuf);
                 } else {
-                  const cleanPath = photoUrl.replace(/^\//, '');
-                  const localPath = path.isAbsolute(photoUrl) 
-                    ? photoUrl 
-                    : path.join(process.cwd(), cleanPath);
-                  if (fs.existsSync(localPath)) {
-                    photoBuffer = fs.readFileSync(localPath);
+                  const cleanPath = photoRaw.replace(/^\//, '');
+                  const candidatePaths = [
+                    photoRaw,
+                    path.join(process.cwd(), cleanPath),
+                    path.join(uploadsDir, path.basename(photoRaw)),
+                    path.join(process.cwd(), 'uploads', path.basename(photoRaw))
+                  ];
+                  for (const cPath of candidatePaths) {
+                    if (fs.existsSync(cPath)) {
+                      photoBuffer = fs.readFileSync(cPath);
+                      break;
+                    }
                   }
                 }
 
                 if (photoBuffer && targetSock.updateProfilePicture) {
+                  // Aguarda 1.5s para garantir que os servidores do WhatsApp propaguem os direitos de admin no grupo recém-criado
+                  await new Promise(r => setTimeout(r, 1500));
                   await targetSock.updateProfilePicture(groupRes.id, photoBuffer);
                   console.log(`[Flow Engine] Foto de perfil do grupo '${groupSubject}' aplicada com sucesso!`);
+                } else {
+                  console.warn('[Flow Engine] Buffer da foto não pôde ser gerado para a foto informada:', photoRaw.slice(0, 50));
                 }
               } catch (photoErr: any) {
-                console.warn('[Flow Engine] Erro ao aplicar foto do grupo:', photoErr.message);
+                console.error('[Flow Engine] Erro ao aplicar foto do grupo (1ª tentativa):', photoErr.message);
+                // Segunda tentativa após 2.5s caso a criação do grupo ainda estivesse sincronizando no WhatsApp
+                try {
+                  if (photoBuffer && targetSock.updateProfilePicture) {
+                    await new Promise(r => setTimeout(r, 2500));
+                    await targetSock.updateProfilePicture(groupRes.id, photoBuffer);
+                    console.log(`[Flow Engine] Foto de perfil do grupo '${groupSubject}' aplicada com sucesso na 2ª tentativa!`);
+                  }
+                } catch (retryErr: any) {
+                  console.error('[Flow Engine] Erro ao aplicar foto do grupo (2ª tentativa):', retryErr.message);
+                }
               }
             }
 

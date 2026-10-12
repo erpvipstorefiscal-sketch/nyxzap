@@ -917,6 +917,15 @@ export const FlowBuilder: React.FC = () => {
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
+    const readAsBase64 = (f: File): Promise<string> => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(f);
+      });
+    };
+
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -929,8 +938,10 @@ export const FlowBuilder: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (node.type === 'grupo_wa') {
+          const base64Data = await readAsBase64(file);
           updateNodeData(nodeId, {
             groupPhotoUrl: data.url,
+            groupPhotoBase64: base64Data,
             groupPhotoName: file.name
           });
         } else {
@@ -943,8 +954,10 @@ export const FlowBuilder: React.FC = () => {
       } else {
         const localUrl = URL.createObjectURL(file);
         if (node.type === 'grupo_wa') {
+          const base64Data = await readAsBase64(file);
           updateNodeData(nodeId, {
-            groupPhotoUrl: localUrl,
+            groupPhotoUrl: base64Data || localUrl,
+            groupPhotoBase64: base64Data,
             groupPhotoName: file.name
           });
         } else {
@@ -958,8 +971,10 @@ export const FlowBuilder: React.FC = () => {
     } catch {
       const localUrl = URL.createObjectURL(file);
       if (node.type === 'grupo_wa') {
+        const base64Data = await readAsBase64(file);
         updateNodeData(nodeId, {
-          groupPhotoUrl: localUrl,
+          groupPhotoUrl: base64Data || localUrl,
+          groupPhotoBase64: base64Data,
           groupPhotoName: file.name
         });
       } else {
@@ -2545,7 +2560,7 @@ export const FlowBuilder: React.FC = () => {
                                           <span className="text-slate-600">•</span>
                                           <button
                                             type="button"
-                                            onClick={() => updateNodeData(node.id, { groupPhotoUrl: '', groupPhotoName: '' })}
+                                            onClick={() => updateNodeData(node.id, { groupPhotoUrl: '', groupPhotoBase64: '', groupPhotoName: '' })}
                                             className="text-[9px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
                                           >
                                             Remover
