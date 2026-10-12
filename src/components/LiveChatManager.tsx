@@ -1017,9 +1017,9 @@ export const LiveChatManager: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Sugestão @todos idêntica ao WhatsApp (Foto 2) */}
+                  {/* Sugestão @todos idêntica ao WhatsApp (Foto e Vídeo) */}
                   {showMentionSuggestions && (
-                    <div className="bg-[#181b29] border border-emerald-500/50 rounded-2xl p-2 shadow-2xl shadow-emerald-900/30 animate-fadeIn">
+                    <div className="bg-[#181b29] border border-emerald-500/40 rounded-2xl p-1.5 shadow-2xl shadow-black/80 animate-fadeIn backdrop-blur-md">
                       <button
                         type="button"
                         onClick={() => {
@@ -1036,20 +1036,20 @@ export const LiveChatManager: React.FC = () => {
                           setMentionAll(true);
                           setShowMentionSuggestions(false);
                         }}
-                        className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-emerald-600/20 text-left transition-all border border-transparent hover:border-emerald-500/30 group cursor-pointer"
+                        className="w-full flex items-center gap-3.5 p-3 rounded-xl hover:bg-emerald-500/15 text-left transition-all border border-transparent hover:border-emerald-500/30 group cursor-pointer"
                       >
-                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <div className="w-10 h-10 rounded-full bg-slate-800/90 border border-slate-700 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:border-emerald-400 transition-all shadow-inner">
                           <Users className="w-5 h-5 text-emerald-400" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-white">todos</span>
-                            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">
+                            <span className="text-sm font-bold text-white tracking-wide">todos</span>
+                            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
                               @todos
                             </span>
                           </div>
-                          <p className="text-xs text-slate-400 truncate">
-                            Mencione todos os membros do grupo (envio automático 2s após a mensagem)
+                          <p className="text-xs text-slate-400 font-medium">
+                            Mencione todos os membros do grupo
                           </p>
                         </div>
                       </button>

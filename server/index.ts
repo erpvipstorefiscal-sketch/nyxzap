@@ -2190,9 +2190,18 @@ async function sendGroupBroadcastMessage(
       }
       await sock.sendMessage(groupId, {
         text: '@todos',
-        mentions: mentions.length > 0 ? mentions : undefined
+        mentions: mentions.length > 0 ? mentions : undefined,
+        contextInfo: {
+          groupMentions: [
+            {
+              groupJid: groupId,
+              groupSubject: 'todos'
+            }
+          ],
+          mentionedJid: mentions.length > 0 ? mentions : undefined
+        }
       });
-      console.log(`[Broadcast] Mensagem separada @todos enviada com sucesso no grupo ${groupId} marcando ${mentions.length} membros.`);
+      console.log(`[Broadcast] Mensagem oficial nativa @todos enviada com sucesso no grupo ${groupId} marcando ${mentions.length} membros.`);
     } catch (mentionErr) {
       console.error('[Broadcast @todos Error]', mentionErr);
     }
