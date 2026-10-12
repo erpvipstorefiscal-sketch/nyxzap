@@ -50,8 +50,16 @@ export interface WhatsAppSession {
   name: string;
   phone?: string;
   status: 'disconnected' | 'connecting' | 'connected';
+  automationMode?: 'flow' | 'ai' | 'none';
   qrCode?: string;
   connectedAt?: string;
+}
+
+export interface WhatsAppGroup {
+  id: string;
+  name: string;
+  participantsCount: number;
+  desc?: string;
 }
 
 export type LeadTag = 'frio' | 'morno' | 'quente' | 'comprou';

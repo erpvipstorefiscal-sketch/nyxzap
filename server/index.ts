@@ -869,26 +869,7 @@ export interface SystemUpdate {
   message: string;
 }
 
-const liveChats: Map<string, ChatConversation> = new Map([
-  ['5511984521190@s.whatsapp.net', {
-    id: '5511984521190@s.whatsapp.net',
-    leadPhone: '+55 11 98452-1190',
-    leadName: 'Carlos Eduardo',
-    tag: 'quente',
-    followUpDate: '2026-10-12T14:00',
-    internalNotes: 'Lead com 4 atendentes. Pediu chave Pix com desconto.',
-    aiAgentActive: false,
-    botFlowActive: false,
-    unreadCount: 0,
-    lastMessage: 'Vou pagar no Pix agora mesmo, me manda a chave?',
-    lastMessageTime: '10:42',
-    messages: [
-      { id: 'm1', fromMe: false, text: 'Olá! Quanto custa a ferramenta?', timestamp: '10:30' },
-      { id: 'm2', fromMe: true, text: 'Olá Carlos! O plano Pro custa R$ 197/mês e o Anual tem 30% OFF.', timestamp: '10:31', isAiGenerated: true },
-      { id: 'm5', fromMe: false, text: 'Vou pagar no Pix agora mesmo, me manda a chave?', timestamp: '10:42' }
-    ]
-  }]
-]);
+const liveChats: Map<string, ChatConversation> = new Map();
 
 // System Updates registered by Admin
 let systemUpdates: SystemUpdate[] = [
@@ -915,13 +896,14 @@ interface SessionData {
   id: string;
   name: string;
   status: 'disconnected' | 'connecting' | 'connected';
+  automationMode: 'flow' | 'ai' | 'none';
   qrCode?: string;
   phone?: string;
   sock?: any;
 }
 
 const sessions: Map<string, SessionData> = new Map([
-  ['inst-1', { id: 'inst-1', name: 'WhatsApp Principal', status: 'disconnected' }]
+  ['inst-1', { id: 'inst-1', name: 'WhatsApp Principal', status: 'disconnected', automationMode: 'flow' }]
 ]);
 
 // AI Agent Config In-Memory
@@ -1410,7 +1392,12 @@ async function startWhatsAppSession(sessionId: string) {
     syncFullHistory: true
   });
 
-  const session = sessions.get(sessionId) || { id: sessionId, name: `WhatsApp ${sessionId}`, status: 'connecting' };
+  const session: SessionData = sessions.get(sessionId) || { 
+    id: sessionId, 
+    name: `WhatsApp ${sessionId}`, 
+    status: 'connecting',
+    automationMode: 'flow' 
+  };
   session.sock = sock;
   session.status = 'connecting';
   sessions.set(sessionId, session);
@@ -1461,7 +1448,17 @@ async function startWhatsAppSession(sessionId: string) {
     for (const msg of messages) {
       if (!msg.message) continue;
       const remoteJid = msg.key.remoteJid;
-      if (!remoteJid || remoteJid.includes('@g.us')) continue;
+      // IGNORE groups, status stories, broadcasts, newsletters and system broadcasts
+      if (
+        !remoteJid || 
+        remoteJid.includes('@g.us') || 
+        remoteJid.includes('broadcast') || 
+        remoteJid.includes('status@') || 
+        remoteJid.includes('@newsletter') || 
+        remoteJid.includes('@lid')
+      ) {
+        continue;
+      }
 
       const text = msg.message.conversation 
         || msg.message.extendedTextMessage?.text 
@@ -1476,6 +1473,9 @@ async function startWhatsAppSession(sessionId: string) {
       const timeStr = getBrazilTimeString();
       const msgId = msg.key.id || `msg-${Date.now()}`;
 
+      const instSession = sessions.get(sessionId);
+      const instanceMode = instSession?.automationMode || 'flow';
+
       let chat = liveChats.get(remoteJid);
       if (!chat) {
         chat = {
@@ -1484,8 +1484,8 @@ async function startWhatsAppSession(sessionId: string) {
           leadName: pushName,
           tag: 'morno',
           internalNotes: '',
-          aiAgentActive: true,
-          botFlowActive: true,
+          aiAgentActive: instanceMode === 'ai',
+          botFlowActive: instanceMode === 'flow',
           unreadCount: fromMe ? 0 : 1,
           lastMessage: text,
           lastMessageTime: timeStr,
@@ -1538,9 +1538,9 @@ async function startWhatsAppSession(sessionId: string) {
           continue;
         }
 
-        // 1. CHECK PENDING FLOW RESPONSE OR EXECUTE NEW FLOW
-        let flowExecuted = false;
-        if (chat.botFlowActive !== false) {
+        // EXECUÇÃO EXCLUSIVA BASEADA NA ESCOLHA DA INSTÂNCIA (NUNCA AS DUAS JUNTAS)
+        if (instanceMode === 'flow' && chat.botFlowActive !== false) {
+          // MODO EXCLUSIVO: BOT DE FLUXO
           const pending = pendingFlowResponses.get(remoteJid);
           if (pending) {
             clearTimeout(pending.timeoutTimer);
@@ -1549,14 +1549,11 @@ async function startWhatsAppSession(sessionId: string) {
             if (pending.responseTargetId) {
               await resumeFlowChain(sock, remoteJid, pending.responseTargetId, chat.leadName, text, sessionId);
             }
-            flowExecuted = true;
           } else {
-            flowExecuted = await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
+            await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
           }
-        }
-
-        // 2. FALLBACK TO AI IF FLOW DID NOT MATCH A TRIGGER KEYWORD
-        if (!flowExecuted && chat.aiAgentActive && aiConfig.apiKey) {
+        } else if (instanceMode === 'ai' && chat.aiAgentActive !== false && aiConfig.apiKey) {
+          // MODO EXCLUSIVO: AGENTE DE IA
           try {
             const reply = await queryAI(text, aiConfig);
             await sock.sendMessage(remoteJid, { text: reply });
@@ -1855,7 +1852,93 @@ app.post('/api/flow/test', async (req, res) => {
 
 // REST API Endpoints
 app.get('/api/chats', (req, res) => {
-  res.json(Array.from(liveChats.values()));
+  const validChats = Array.from(liveChats.values()).filter(c => 
+    c.id && 
+    !c.id.includes('broadcast') && 
+    !c.id.includes('@newsletter') && 
+    !c.id.includes('@lid') &&
+    !c.leadPhone.includes('broadcast')
+  );
+  res.json(validChats);
+});
+
+// Endpoint para buscar grupos do WhatsApp conectado
+app.get('/api/whatsapp/groups', async (req, res) => {
+  const { sessionId } = req.query;
+  let targetSession: SessionData | undefined;
+
+  if (sessionId && typeof sessionId === 'string') {
+    targetSession = sessions.get(sessionId);
+  }
+  if (!targetSession || !targetSession.sock || targetSession.status !== 'connected') {
+    for (const s of sessions.values()) {
+      if (s.status === 'connected' && s.sock) {
+        targetSession = s;
+        break;
+      }
+    }
+  }
+
+  if (!targetSession || !targetSession.sock || targetSession.status !== 'connected') {
+    return res.json({ 
+      success: false, 
+      groups: [], 
+      error: 'Nenhum WhatsApp conectado. Conecte seu aparelho para sincronizar os grupos.' 
+    });
+  }
+
+  try {
+    const rawGroups = await targetSession.sock.groupFetchAllParticipating();
+    const groups = Object.values(rawGroups).map((g: any) => ({
+      id: g.id,
+      name: g.subject || 'Grupo sem nome',
+      participantsCount: Array.isArray(g.participants) ? g.participants.length : 0,
+      desc: g.desc || '',
+      owner: g.owner || ''
+    }));
+
+    res.json({ success: true, sessionId: targetSession.id, groups });
+  } catch (err: any) {
+    console.error('[WhatsApp Groups Error]', err);
+    res.status(500).json({ success: false, groups: [], error: 'Erro ao buscar grupos: ' + err.message });
+  }
+});
+
+// Ações no Grupo (Adicionar ou Remover Lead)
+app.post('/api/whatsapp/groups/manage', async (req, res) => {
+  const { groupId, phone, action, sessionId } = req.body;
+  if (!groupId || !phone) {
+    return res.status(400).json({ error: 'Grupo e telefone são obrigatórios.' });
+  }
+
+  let targetSession: SessionData | undefined;
+  if (sessionId && typeof sessionId === 'string') {
+    targetSession = sessions.get(sessionId);
+  }
+  if (!targetSession || !targetSession.sock || targetSession.status !== 'connected') {
+    for (const s of sessions.values()) {
+      if (s.status === 'connected' && s.sock) {
+        targetSession = s;
+        break;
+      }
+    }
+  }
+
+  if (!targetSession || !targetSession.sock) {
+    return res.status(400).json({ error: 'WhatsApp não está conectado para gerenciar grupos.' });
+  }
+
+  const cleanNum = phone.replace(/\D/g, '');
+  const participantJid = `${cleanNum}@s.whatsapp.net`;
+
+  try {
+    const act = action === 'remove' ? 'remove' : 'add';
+    const result = await targetSession.sock.groupParticipantsUpdate(groupId, [participantJid], act);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    console.error('[Group Manage Error]', err);
+    res.status(500).json({ error: 'Erro ao alterar participante no grupo: ' + err.message });
+  }
 });
 
 // Delete chat endpoint
@@ -1983,15 +2066,59 @@ app.delete('/api/updates/:id', async (req, res) => {
 });
 
 // Sessions API
-app.get('/api/sessions', (req, res) => {
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const dbInsts = await pool.query('SELECT id, name, automation_mode FROM whatsapp_instances');
+    dbInsts.rows.forEach(r => {
+      const s = sessions.get(r.id);
+      if (s) {
+        if (r.automation_mode) s.automationMode = r.automation_mode;
+        if (r.name) s.name = r.name;
+      } else {
+        sessions.set(r.id, {
+          id: r.id,
+          name: r.name || `WhatsApp ${r.id}`,
+          status: 'disconnected',
+          automationMode: r.automation_mode || 'flow'
+        });
+      }
+    });
+  } catch (e) {}
+
   const list = Array.from(sessions.values()).map(s => ({
     id: s.id,
     name: s.name,
     status: s.status,
+    automationMode: s.automationMode || 'flow',
     qrCode: s.qrCode,
     phone: s.phone
   }));
   res.json(list);
+});
+
+// Update instance automation mode (Exclusividade: 'flow' | 'ai' | 'none')
+app.put('/api/sessions/:id/automation-mode', async (req, res) => {
+  const { id } = req.params;
+  const { mode } = req.body;
+  const validMode = (mode === 'flow' || mode === 'ai' || mode === 'none') ? mode : 'flow';
+
+  const session = sessions.get(id);
+  if (session) {
+    session.automationMode = validMode;
+    sessions.set(id, session);
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO whatsapp_instances (id, name, status, automation_mode)
+       VALUES ($1, $2, 'disconnected', $3)
+       ON CONFLICT (id) DO UPDATE SET automation_mode = $3`,
+      [id, session?.name || id, validMode]
+    );
+  } catch (e) {}
+
+  broadcast('session_update', { id, automationMode: validMode });
+  res.json({ success: true, mode: validMode });
 });
 
 // Create new WhatsApp session with plan verification
@@ -2001,10 +2128,11 @@ app.post('/api/sessions/create', (req, res) => {
   const newSession: SessionData = {
     id: newId,
     name: name || `WhatsApp ${sessions.size + 1}`,
-    status: 'disconnected'
+    status: 'disconnected',
+    automationMode: 'flow'
   };
   sessions.set(newId, newSession);
-  broadcast('session_update', { id: newId, status: 'disconnected', name: newSession.name });
+  broadcast('session_update', { id: newId, status: 'disconnected', name: newSession.name, automationMode: 'flow' });
   res.json({ success: true, session: newSession });
 });
 

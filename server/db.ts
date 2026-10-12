@@ -110,8 +110,10 @@ export async function initDatabase() {
         name VARCHAR(150) NOT NULL,
         phone VARCHAR(50),
         status VARCHAR(30) DEFAULT 'disconnected',
+        automation_mode VARCHAR(20) DEFAULT 'flow',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE whatsapp_instances ADD COLUMN IF NOT EXISTS automation_mode VARCHAR(20) DEFAULT 'flow';
     `);
 
     // 4. Tabela de Configurações do Agente IA
@@ -167,6 +169,7 @@ export async function initDatabase() {
         last_message_time VARCHAR(50) DEFAULT '',
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      DELETE FROM chats WHERE id LIKE '%broadcast%' OR lead_phone LIKE '%broadcast%';
     `);
 
     // 6. Tabela de Mensagens do Chat

@@ -49,9 +49,10 @@ import {
   Workflow,
   Send,
   AlertCircle,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
-import { FlowNode, FlowEdge } from '../types';
+import { FlowNode, FlowEdge, WhatsAppGroup } from '../types';
 
 // Standard dimensions for calculating port positions precisely
 const getNodeDimensions = (type: FlowNode['type'], waitForResponse?: boolean) => {
@@ -238,8 +239,28 @@ export const FlowBuilder: React.FC = () => {
     }
   };
 
+  // WhatsApp groups state for grupo_wa nodes
+  const [groupsList, setGroupsList] = useState<WhatsAppGroup[]>([]);
+  const [isFetchingGroups, setIsFetchingGroups] = useState(false);
+
+  const fetchGroups = async () => {
+    setIsFetchingGroups(true);
+    try {
+      const res = await fetch('/api/whatsapp/groups');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.groups)) {
+        setGroupsList(data.groups);
+      }
+    } catch (err) {
+      console.error('[FlowBuilder] Erro ao sincronizar grupos:', err);
+    } finally {
+      setIsFetchingGroups(false);
+    }
+  };
+
   useEffect(() => {
     fetchFlows();
+    fetchGroups();
   }, []);
 
   const openFlowEditor = (flow: FlowSummary) => {
@@ -2311,10 +2332,52 @@ export const FlowBuilder: React.FC = () => {
                               className="w-full bg-[#1c1d29] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                             />
                           ) : (
-                            <div className="bg-[#10111a] border border-slate-800 rounded-xl p-2.5 text-center space-y-1">
-                              <p className="text-[10px] text-slate-400 leading-relaxed">
-                                Nenhum grupo encontrado. Abra o WhatsApp → aba <strong>WhatsApp Grupos</strong> para sincronizar seus grupos.
-                              </p>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] text-slate-400">Selecionar Grupo Real:</span>
+                                <button
+                                  type="button"
+                                  onClick={fetchGroups}
+                                  disabled={isFetchingGroups}
+                                  className="text-[9px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 bg-[#10111a] px-2 py-0.5 rounded border border-emerald-500/30"
+                                >
+                                  <RefreshCw className={`w-2.5 h-2.5 ${isFetchingGroups ? 'animate-spin' : ''}`} />
+                                  <span>{isFetchingGroups ? 'Sincronizando...' : 'Sincronizar'}</span>
+                                </button>
+                              </div>
+                              {groupsList.length > 0 ? (
+                                <select
+                                  value={node.data.groupId || ''}
+                                  onChange={(e) => {
+                                    const selected = groupsList.find(g => g.id === e.target.value);
+                                    updateNodeData(node.id, { 
+                                      groupId: e.target.value,
+                                      groupName: selected ? selected.name : ''
+                                    });
+                                  }}
+                                  className="w-full bg-[#1c1d29] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-medium"
+                                >
+                                  <option value="">Selecione um grupo...</option>
+                                  {groupsList.map(g => (
+                                    <option key={g.id} value={g.id}>
+                                      {g.name} ({g.participantsCount} membros)
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div className="bg-[#10111a] border border-slate-800 rounded-xl p-2.5 text-center space-y-1">
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                    Nenhum grupo sincronizado no momento.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={fetchGroups}
+                                    className="text-[10px] text-emerald-400 font-bold hover:underline"
+                                  >
+                                    Clique aqui para sincronizar agora
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
                           <p className="text-[9px] text-slate-500">

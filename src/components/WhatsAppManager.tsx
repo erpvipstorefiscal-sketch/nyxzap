@@ -15,7 +15,10 @@ import {
   CreditCard,
   X,
   Edit2,
-  ExternalLink
+  ExternalLink,
+  Bot,
+  Workflow,
+  UserCheck
 } from 'lucide-react';
 import { WhatsAppSession, UserAuth } from '../types';
 import { trackEvent } from '../lib/telemetry';
@@ -174,6 +177,22 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
       }
     } catch (err) {
       console.error('Erro ao renomear sessão:', err);
+    }
+  };
+
+  const handleUpdateAutomationMode = async (id: string, mode: 'flow' | 'ai' | 'none') => {
+    try {
+      const res = await fetch(`/api/sessions/${id}/automation-mode`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode })
+      });
+      if (res.ok) {
+        await fetchSessions();
+        trackEvent('whatsapp_automation_mode_updated', 'whatsapp_manager', { id, mode });
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar modo de automação:', err);
     }
   };
 
@@ -349,6 +368,59 @@ export const WhatsAppManager: React.FC<WhatsAppManagerProps> = ({ user, onUpdate
                 </p>
               </div>
             )}
+
+            {/* Modo de Automação Exclusivo (Bot de Fluxo OU Agente de IA) */}
+            <div className="bg-[#141624] border border-slate-800 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-300">Modo de Automação:</span>
+                <span className="text-[10px] text-amber-400 font-semibold">Exclusivo (1 por conexão)</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleUpdateAutomationMode(session.id, 'flow')}
+                  className={`py-2 px-2 rounded-lg text-[11px] font-bold flex flex-col items-center gap-1 border transition-all ${
+                    (session.automationMode || 'flow') === 'flow'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md shadow-amber-900/20'
+                      : 'bg-[#10111a] text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Workflow className="w-4 h-4 text-amber-400" />
+                  <span>Bot Fluxo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleUpdateAutomationMode(session.id, 'ai')}
+                  className={`py-2 px-2 rounded-lg text-[11px] font-bold flex flex-col items-center gap-1 border transition-all ${
+                    session.automationMode === 'ai'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-md shadow-purple-900/20'
+                      : 'bg-[#10111a] text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Bot className="w-4 h-4 text-purple-400" />
+                  <span>Agente IA</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleUpdateAutomationMode(session.id, 'none')}
+                  className={`py-2 px-2 rounded-lg text-[11px] font-bold flex flex-col items-center gap-1 border transition-all ${
+                    session.automationMode === 'none'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-md shadow-emerald-900/20'
+                      : 'bg-[#10111a] text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                >
+                  <UserCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Manual</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 text-center">
+                {(session.automationMode || 'flow') === 'flow' && '⚡ Esta conexão responderá exclusivamente pelos funis do Fluxo Builder.'}
+                {session.automationMode === 'ai' && '🤖 Esta conexão responderá exclusivamente com o Agente de IA Gemini Concierge.'}
+                {session.automationMode === 'none' && '👤 Automações pausadas nesta conexão. Somente respostas manuais no chat.'}
+              </p>
+            </div>
 
             {/* Actions */}
             <div className="flex items-center gap-3 pt-2">
