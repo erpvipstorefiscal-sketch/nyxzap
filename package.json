@@ -11,6 +11,7 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
   },
   "dependencies": {
+    "@roamhq/wrtc": "^0.10.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/multer": "^1.4.12",
@@ -19,6 +20,7 @@
     "@types/pg": "^8.23.1",
     "@types/ws": "^8.5.13",
     "@whiskeysockets/baileys": "7.0.0-rc14",
+    "@roamhq/wrtc": "^0.10.0",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

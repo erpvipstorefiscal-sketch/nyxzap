@@ -15,6 +15,7 @@ import makeWASocket, {
 import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import multer from 'multer';
 import { pool, initDatabase } from './db.js';
 import { sendPasswordRecoveryEmail } from './mailer.js';
@@ -1261,7 +1262,7 @@ async function resumeFlowChain(
     if (!currentNode) continue;
 
     // Execute node action
-    await executeNodeAction(sock, remoteJid, currentNode, senderName, incomingText);
+    await executeNodeAction(sock, remoteJid, currentNode, senderName, incomingText, sessionId);
 
     // If node is Finalizar Fluxo, stop chain immediately
     if (currentNode.type === 'finalizar') {
@@ -1425,7 +1426,8 @@ async function executeNodeAction(
   remoteJid: string,
   node: FlowNodeServer,
   senderName: string,
-  incomingText: string
+  incomingText: string,
+  sessionId?: string
 ) {
   const replaceVariables = (str: string) => {
     const firstName = (senderName || 'Amigo').split(' ')[0];
@@ -1480,87 +1482,122 @@ async function executeNodeAction(
       }
     } else if (node.type === 'ligacao') {
       const audioPath = node.data?.fileUrl || node.data?.audioUrl;
-      const configuredDuration = Number(node.data?.callDuration) || 30;
-      const durationSeconds = Math.min(Math.max(configuredDuration, 5), 300); // 5s a 300s (5 minutos)
-      const callId = `call_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+      const targetPhone = remoteJid.split('@')[0].split(':')[0].replace(/\D/g, '');
+      let fullAudioUrl = '';
 
-      console.log(`[Flow Engine] Iniciando chamada WhatsApp para ${remoteJid} com áudio gravado (Duração: ${durationSeconds}s)`);
-
-      // 1. Sinalização de chamada no WhatsApp via Baileys (stanza oficial de call offer)
-      try {
-        const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
-        if (sock.sendNode) {
-          await sock.sendNode({
-            tag: 'call',
-            attrs: {
-              to: remoteJid,
-              from: fromJid
-            },
-            content: [{
-              tag: 'offer',
-              attrs: {
-                'call-id': callId,
-                'call-creator': fromJid
-              },
-              content: undefined
-            }]
-          });
-        }
-      } catch (callErr: any) {
-        console.warn(`[Flow Engine] Sinalização de chamada direta (offer): ${callErr.message}`);
-      }
-
-      // 2. Disparo da mídia de voz / áudio associado à ligação
       if (audioPath) {
-        const fullAudioUrl = audioPath.startsWith('http') 
+        fullAudioUrl = audioPath.startsWith('http') 
           ? audioPath 
           : path.join(process.cwd(), audioPath.replace(/^\//, ''));
+      }
 
-        if (fs.existsSync(fullAudioUrl)) {
-          try {
-            await sock.sendPresenceUpdate('recording', remoteJid);
-            await new Promise(r => setTimeout(r, 1500));
-            await sock.sendPresenceUpdate('paused', remoteJid);
-
-            await sock.sendMessage(remoteJid, {
-              audio: fs.readFileSync(fullAudioUrl),
-              mimetype: 'audio/mp4',
-              ptt: true // Nota de voz direta reproduzida na chamada
-            });
-          } catch (e: any) {
-            console.warn(`[Flow Engine] Envio do áudio da ligação: ${e.message}`);
+      // 1. Detectar duração exata do arquivo de áudio via ffprobe
+      let detectedDuration = 0;
+      if (fullAudioUrl && fs.existsSync(fullAudioUrl)) {
+        try {
+          const probeOut = execSync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${fullAudioUrl}"`, { timeout: 4000 });
+          const sec = parseFloat(probeOut.toString().trim());
+          if (!isNaN(sec) && sec > 0) {
+            detectedDuration = Math.round(sec);
           }
+        } catch (probeErr: any) {
+          console.warn('[Flow Engine] ffprobe não pôde calcular a duração do áudio:', probeErr.message);
         }
       }
 
-      recordFlowMessageInChat(remoteJid, `📞 [Ligação iniciada com áudio gravado - Duração: ${durationSeconds}s]`);
+      const configuredDuration = Number(node.data?.callDuration) || 30;
+      const durationSeconds = Math.min(Math.max(detectedDuration || configuredDuration, 5), 300); // 5s a 300s (5 min)
 
-      // 3. Aguarda o tempo exato do áudio / chamada configurada (até 5 min)
-      await new Promise(r => setTimeout(r, durationSeconds * 1000));
+      console.log(`[Flow Engine] Iniciando ligação WhatsApp para ${targetPhone} (Áudio: ${fullAudioUrl || 'silêncio'}, Duração exata: ${durationSeconds}s)`);
 
-      // 4. Desliga e encerra a ligação no WhatsApp
-      try {
-        const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
-        if (sock.sendNode) {
-          await sock.sendNode({
-            tag: 'call',
-            attrs: {
-              to: remoteJid,
-              from: fromJid
-            },
-            content: [{
-              tag: 'terminate',
-              attrs: {
-                'call-id': callId,
-                'call-creator': fromJid,
-                reason: 'hangup'
-              },
-              content: undefined
-            }]
+      // 2. Tentar efetuar chamada de voz real com áudio ao vivo via VoipClient (baileys-caller WASM VoIP)
+      let voipCallSuccess = false;
+      const currentSessionId = sessionId || 'inst-1';
+      const authDir = path.join(process.cwd(), 'whatsapp_auth', currentSessionId);
+
+      if (fs.existsSync(authDir) && fullAudioUrl && fs.existsSync(fullAudioUrl)) {
+        try {
+          const { VoipClient } = await import(path.join(process.cwd(), 'baileys-caller', 'dist', 'index.mjs'));
+          const voipClient = new VoipClient({ authDir });
+          await voipClient.connect();
+
+          console.log(`[Flow Engine] VoipClient conectado para ${targetPhone}. Discando ligação de voz com áudio gravado...`);
+          const liveCall = await voipClient.call(targetPhone, {
+            audioSource: fullAudioUrl,
+            durationMs: durationSeconds * 1000
           });
+
+          recordFlowMessageInChat(remoteJid, `📞 [Ligação de voz WhatsApp discada para o lead tocando áudio - Duração: ${durationSeconds}s]`);
+
+          liveCall.on('ringing', () => console.log(`[Flow Engine] Chamando telefone de ${targetPhone}...`));
+          liveCall.on('connected', () => console.log(`[Flow Engine] Lead atendeu a ligação! Reproduzindo áudio gravado...`));
+          liveCall.on('ended', (reason: string) => console.log(`[Flow Engine] Ligação encerrada (${reason})`));
+
+          // Aguarda o término da chamada ou o tempo do áudio
+          await liveCall.waitForEnd();
+          try { voipClient.disconnect(); } catch {}
+          voipCallSuccess = true;
+          console.log(`[Flow Engine] Chamada VoIP concluída com sucesso para ${targetPhone}`);
+        } catch (voipErr: any) {
+          console.warn(`[Flow Engine] VoipClient direto falhou (${voipErr.message}), aplicando sinalização direta Baileys...`);
         }
-      } catch (termErr: any) {
-        console.warn(`[Flow Engine] Encerramento da chamada (terminate): ${termErr.message}`);
+      }
+
+      // 3. Fallback: Se o WebRTC WASM falhar, emite a sinalização oficial de ligação direta (toca o celular do lead)
+      if (!voipCallSuccess) {
+        const callId = `call_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+        try {
+          const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
+          if (sock.sendNode) {
+            await sock.sendNode({
+              tag: 'call',
+              attrs: {
+                to: remoteJid,
+                from: fromJid
+              },
+              content: [{
+                tag: 'offer',
+                attrs: {
+                  'call-id': callId,
+                  'call-creator': fromJid
+                },
+                content: undefined
+              }]
+            });
+          }
+        } catch (callErr: any) {
+          console.warn(`[Flow Engine] Sinalização de chamada offer: ${callErr.message}`);
+        }
+
+        recordFlowMessageInChat(remoteJid, `📞 [Ligação WhatsApp iniciada - Duração: ${durationSeconds}s]`);
+
+        // Aguarda a duração exata do áudio
+        await new Promise(r => setTimeout(r, durationSeconds * 1000));
+
+        // Desliga a chamada após o tempo exato
+        try {
+          const fromJid = (sock.user && sock.user.id) ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : remoteJid;
+          if (sock.sendNode) {
+            await sock.sendNode({
+              tag: 'call',
+              attrs: {
+                to: remoteJid,
+                from: fromJid
+              },
+              content: [{
+                tag: 'terminate',
+                attrs: {
+                  'call-id': callId,
+                  'call-creator': fromJid,
+                  reason: 'hangup'
+                },
+                content: undefined
+              }]
+            });
+          }
+        } catch (termErr: any) {
+          console.warn(`[Flow Engine] Encerramento da chamada (terminate): ${termErr.message}`);
+        }
       }
 
       console.log(`[Flow Engine] Chamada para ${remoteJid} finalizada e desligada após ${durationSeconds}s`);

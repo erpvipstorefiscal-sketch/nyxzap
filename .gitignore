@@ -1,6 +1,8 @@
 node_modules
 whatsapp_auth
-dist
+/dist
 .env
 *.log
 .DS_Store
+screenshot_*.png
+scripts/
