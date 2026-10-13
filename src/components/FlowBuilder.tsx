@@ -1002,10 +1002,11 @@ export const FlowBuilder: React.FC = () => {
         body: formData
       });
 
+      const base64Data = await readAsBase64(file);
+
       if (res.ok) {
         const data = await res.json();
         if (node.type === 'grupo_wa') {
-          const base64Data = await readAsBase64(file);
           updateNodeData(nodeId, {
             groupPhotoUrl: data.url,
             groupPhotoBase64: base64Data,
@@ -1014,39 +1015,41 @@ export const FlowBuilder: React.FC = () => {
         } else {
           updateNodeData(nodeId, {
             fileUrl: data.url,
+            fileBase64: base64Data,
             fileName: file.name,
             fileSize: formatBytes(file.size)
           });
         }
       } else {
-        const localUrl = URL.createObjectURL(file);
+        const localUrl = base64Data || URL.createObjectURL(file);
         if (node.type === 'grupo_wa') {
-          const base64Data = await readAsBase64(file);
           updateNodeData(nodeId, {
-            groupPhotoUrl: base64Data || localUrl,
+            groupPhotoUrl: localUrl,
             groupPhotoBase64: base64Data,
             groupPhotoName: file.name
           });
         } else {
           updateNodeData(nodeId, {
             fileUrl: localUrl,
+            fileBase64: base64Data,
             fileName: file.name,
             fileSize: formatBytes(file.size)
           });
         }
       }
     } catch {
-      const localUrl = URL.createObjectURL(file);
+      const base64Data = await readAsBase64(file).catch(() => '');
+      const localUrl = base64Data || URL.createObjectURL(file);
       if (node.type === 'grupo_wa') {
-        const base64Data = await readAsBase64(file);
         updateNodeData(nodeId, {
-          groupPhotoUrl: base64Data || localUrl,
+          groupPhotoUrl: localUrl,
           groupPhotoBase64: base64Data,
           groupPhotoName: file.name
         });
       } else {
         updateNodeData(nodeId, {
           fileUrl: localUrl,
+          fileBase64: base64Data,
           fileName: file.name,
           fileSize: formatBytes(file.size)
         });

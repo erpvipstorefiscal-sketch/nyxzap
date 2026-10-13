@@ -13,6 +13,7 @@ services:
       - DATABASE_URL=postgresql://nyx_user:nyx_secret_password@postgres:5432/nyxzap_db?schema=public
     volumes:
       - nyxzap_whatsapp_sessions:/app/whatsapp_auth
+      - nyxzap_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,4 +36,5 @@ services:
 
 volumes:
   nyxzap_whatsapp_sessions:
+  nyxzap_uploads:
   nyxzap_postgres_data:

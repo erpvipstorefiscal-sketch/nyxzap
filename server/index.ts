@@ -1640,6 +1640,177 @@ async function triggerFlowForWebhookEvent(
   return { success: true, matchedFlows: matchedFlowCount };
 }
 
+// Interface para retorno da resolução de mídia universal
+interface ResolvedMedia {
+  buffer: Buffer;
+  mimeType: string;
+  fileName?: string;
+}
+
+// Resolvedor universal de mídia para o Flow Engine (Base64, disco local, volume Docker e URLs HTTP)
+async function resolveMediaBuffer(
+  filePathOrUrl?: string,
+  base64Data?: string,
+  expectedType: 'image' | 'video' | 'audio' | 'document' | 'any' = 'any',
+  customFileName?: string
+): Promise<ResolvedMedia | null> {
+  try {
+    let buffer: Buffer | null = null;
+    let detectedMime: string | undefined = undefined;
+
+    // 1. Tenta carregar a partir de base64 ou Data URI
+    const rawBase64 = base64Data || (filePathOrUrl?.startsWith('data:') ? filePathOrUrl : '');
+    if (rawBase64 && typeof rawBase64 === 'string') {
+      const mimeMatch = rawBase64.match(/^data:([^;]+);base64,/);
+      if (mimeMatch) {
+        detectedMime = mimeMatch[1];
+      }
+      const cleanData = rawBase64.replace(/^data:[^;]+;base64,/, '');
+      try {
+        buffer = Buffer.from(cleanData, 'base64');
+      } catch (bErr) {
+        buffer = null;
+      }
+    }
+
+    // Se temos buffer oriundo do base64 e um filePath relativo (ex: /uploads/nome.ext),
+    // restaura no disco persistente (/app/uploads) caso tenha sido apagado em redeploys anteriores
+    if (buffer && buffer.length > 0 && filePathOrUrl && !filePathOrUrl.startsWith('http') && !filePathOrUrl.startsWith('data:')) {
+      try {
+        const destFileName = path.basename(filePathOrUrl);
+        const destPath = path.join(uploadsDir, destFileName);
+        if (!fs.existsSync(destPath)) {
+          fs.writeFileSync(destPath, buffer);
+          console.log(`[Media Resolver] Arquivo restaurado do base64 para o disco persistente: ${destPath}`);
+        }
+      } catch (cacheErr) {
+        // Ignora erro de restauração de cache
+      }
+    }
+
+    // 2. Se não veio de base64, tenta localizar no sistema de arquivos local em múltiplos caminhos
+    if (!buffer && filePathOrUrl && !filePathOrUrl.startsWith('http') && !filePathOrUrl.startsWith('data:')) {
+      const directName = path.basename(filePathOrUrl);
+      const candidates = [
+        filePathOrUrl,
+        path.join(process.cwd(), filePathOrUrl.replace(/^\//, '')),
+        path.join(uploadsDir, directName),
+        path.join(process.cwd(), 'uploads', directName),
+        path.join(uploadsDir, filePathOrUrl.replace(/^\//, '')),
+        path.join(process.cwd(), 'uploads', filePathOrUrl.replace(/^\//, ''))
+      ];
+
+      if (customFileName) {
+        candidates.push(path.join(uploadsDir, customFileName));
+        candidates.push(path.join(process.cwd(), 'uploads', customFileName));
+      }
+
+      for (const cand of candidates) {
+        if (cand && fs.existsSync(cand)) {
+          try {
+            const stat = fs.statSync(cand);
+            if (stat.isFile() && stat.size > 0) {
+              buffer = fs.readFileSync(cand);
+              console.log(`[Media Resolver] Mídia encontrada com sucesso no disco: ${cand} (${buffer.length} bytes)`);
+              break;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    // 3. Se não encontrou no disco e é uma URL HTTP/HTTPS, faz o download via fetch
+    if (!buffer && filePathOrUrl && (filePathOrUrl.startsWith('http://') || filePathOrUrl.startsWith('https://'))) {
+      try {
+        console.log(`[Media Resolver] Baixando mídia via HTTP: ${filePathOrUrl}`);
+        const resp = await fetch(filePathOrUrl);
+        if (resp.ok) {
+          const arr = await resp.arrayBuffer();
+          buffer = Buffer.from(arr);
+          const headerMime = resp.headers.get('content-type');
+          if (headerMime && !headerMime.includes('octet-stream')) {
+            detectedMime = headerMime.split(';')[0].trim();
+          }
+          // Salva uma cópia no uploadsDir para acelerar próximos disparos
+          try {
+            const parsedUrl = new URL(filePathOrUrl);
+            const safeName = path.basename(parsedUrl.pathname) || `download-${Date.now()}`;
+            fs.writeFileSync(path.join(uploadsDir, safeName), buffer);
+          } catch {}
+        } else {
+          console.warn(`[Media Resolver] Resposta HTTP ${resp.status} ao baixar ${filePathOrUrl}`);
+        }
+      } catch (httpErr: any) {
+        console.warn(`[Media Resolver] Falha ao baixar mídia da URL:`, httpErr.message);
+      }
+    }
+
+    if (!buffer || buffer.length === 0) {
+      return null;
+    }
+
+    // 4. Detecção e normalização precisa de MimeType
+    if (!detectedMime) {
+      // Checagem por Magic Bytes
+      if (buffer.length >= 4) {
+        if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+          detectedMime = 'image/png';
+        } else if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+          detectedMime = 'image/jpeg';
+        } else if (buffer.slice(0, 4).toString('ascii') === 'GIF8') {
+          detectedMime = 'image/gif';
+        } else if (buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.length >= 12 && buffer.slice(8, 12).toString('ascii') === 'WEBP') {
+          detectedMime = 'image/webp';
+        } else if (buffer.slice(0, 4).toString('ascii') === '%PDF') {
+          detectedMime = 'application/pdf';
+        } else if (buffer.slice(0, 4).toString('ascii') === 'OggS') {
+          detectedMime = 'audio/ogg; codecs=opus';
+        } else if (buffer.slice(0, 3).toString('ascii') === 'ID3' || (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)) {
+          detectedMime = 'audio/mpeg';
+        } else if (buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.length >= 12 && buffer.slice(8, 12).toString('ascii') === 'WAVE') {
+          detectedMime = 'audio/wav';
+        } else if (buffer.length >= 8 && buffer.slice(4, 8).toString('ascii') === 'ftyp') {
+          detectedMime = expectedType === 'audio' ? 'audio/mp4' : 'video/mp4';
+        }
+      }
+
+      // Detecção por extensão de arquivo
+      const nameToCheck = customFileName || (filePathOrUrl ? path.basename(filePathOrUrl) : '');
+      const ext = path.extname(nameToCheck).toLowerCase();
+      if (!detectedMime && ext) {
+        if (ext === '.png') detectedMime = 'image/png';
+        else if (ext === '.jpg' || ext === '.jpeg') detectedMime = 'image/jpeg';
+        else if (ext === '.webp') detectedMime = 'image/webp';
+        else if (ext === '.gif') detectedMime = 'image/gif';
+        else if (ext === '.mp4') detectedMime = expectedType === 'audio' ? 'audio/mp4' : 'video/mp4';
+        else if (ext === '.ogg' || ext === '.opus') detectedMime = 'audio/ogg; codecs=opus';
+        else if (ext === '.mp3') detectedMime = 'audio/mpeg';
+        else if (ext === '.wav') detectedMime = 'audio/wav';
+        else if (ext === '.m4a' || ext === '.aac') detectedMime = 'audio/mp4';
+        else if (ext === '.pdf') detectedMime = 'application/pdf';
+      }
+
+      // Fallbacks finais baseados em expectedType
+      if (!detectedMime) {
+        if (expectedType === 'image') detectedMime = 'image/jpeg';
+        else if (expectedType === 'video') detectedMime = 'video/mp4';
+        else if (expectedType === 'audio') detectedMime = 'audio/mp4';
+        else if (expectedType === 'document') detectedMime = 'application/pdf';
+        else detectedMime = 'application/octet-stream';
+      }
+    }
+
+    return {
+      buffer,
+      mimeType: detectedMime,
+      fileName: customFileName || (filePathOrUrl ? path.basename(filePathOrUrl) : undefined)
+    };
+  } catch (err: any) {
+    console.error('[Media Resolver] Erro inesperado ao resolver mídia:', err?.message || err);
+    return null;
+  }
+}
+
 // Helper to execute specific node type (message, media, audio, delay, etc.)
 async function executeNodeAction(
   sock: any,
@@ -1661,7 +1832,7 @@ async function executeNodeAction(
   };
 
   try {
-    if (node.type === 'sms' || node.type === 'whatsapp' || node.type === 'mensagem') {
+    if (node.type === 'sms' || node.type === 'whatsapp' || node.type === 'mensagem' || node.type === 'texto' || node.type === 'resposta' || node.type === 'email') {
       const rawText = node.data?.message || 'Olá, como posso te ajudar?';
       const finalText = replaceVariables(rawText);
 
@@ -1795,64 +1966,21 @@ async function executeNodeAction(
       recordFlowMessageInChat(remoteJid, `📴 [Ligação encerrada (${leadAnswered ? 'atendida' : 'não atendeu'}) - Enviando áudio no WhatsApp]`);
 
       const targetRecipient = remoteJid.includes('@') ? remoteJid : `${remoteJid}@s.whatsapp.net`;
+      const base64Audio = node.data?.fileBase64 || node.data?.audioBase64;
+      const customFileName = node.data?.fileName;
+      const resolved = await resolveMediaBuffer(audioPath, base64Audio, 'audio', customFileName);
 
-      // Busca o arquivo de áudio no disco em múltiplos locais possíveis
-      let resolvedAudioBuffer: Buffer | null = null;
-      if (fullAudioUrl && fs.existsSync(fullAudioUrl)) {
-        try { resolvedAudioBuffer = fs.readFileSync(fullAudioUrl); } catch {}
-      }
-
-      if (!resolvedAudioBuffer && audioPath) {
-        const directName = path.basename(audioPath);
-        const candidates = [
-          path.join(process.cwd(), 'uploads', directName),
-          path.join(uploadsDir, directName),
-          path.join(process.cwd(), audioPath.replace(/^\//, '')),
-          path.join(uploadsDir, audioPath.replace(/^\//, ''))
-        ];
-        for (const cand of candidates) {
-          if (fs.existsSync(cand)) {
-            try {
-              resolvedAudioBuffer = fs.readFileSync(cand);
-              break;
-            } catch {}
-          }
-        }
-      }
-
-      // Se ainda não encontrou no disco e temos URL HTTP, baixa via fetch
-      if (!resolvedAudioBuffer) {
-        const fetchUrl = (audioPath && audioPath.startsWith('http')) 
-          ? audioPath 
-          : (fullAudioUrl && fullAudioUrl.startsWith('http')) 
-            ? fullAudioUrl 
-            : null;
-
-        if (fetchUrl) {
-          try {
-            console.log(`[Flow Engine] Baixando áudio da URL: ${fetchUrl}`);
-            const resp = await fetch(fetchUrl);
-            if (resp.ok) {
-              const arrayBuf = await resp.arrayBuffer();
-              resolvedAudioBuffer = Buffer.from(arrayBuf);
-            }
-          } catch (fetchErr: any) {
-            console.warn('[Flow Engine] Erro ao baixar áudio da URL:', fetchErr.message);
-          }
-        }
-      }
-
-      if (resolvedAudioBuffer && resolvedAudioBuffer.length > 0) {
+      if (resolved && resolved.buffer.length > 0) {
         try {
           await sock.sendPresenceUpdate('recording', targetRecipient);
           await new Promise(r => setTimeout(r, 1200));
           await sock.sendPresenceUpdate('paused', targetRecipient);
 
-          const isOgg = audioPath && (audioPath.endsWith('.ogg') || audioPath.endsWith('.opus'));
-          const mimetype = isOgg ? 'audio/ogg; codecs=opus' : 'audio/mp4';
+          const isOgg = (audioPath && (audioPath.endsWith('.ogg') || audioPath.endsWith('.opus'))) || (resolved.mimeType?.includes('ogg') || resolved.mimeType?.includes('opus'));
+          const mimetype = isOgg ? 'audio/ogg; codecs=opus' : (resolved.mimeType || 'audio/mp4');
 
           await sock.sendMessage(targetRecipient, {
-            audio: resolvedAudioBuffer,
+            audio: resolved.buffer,
             mimetype,
             ptt: true // Nota de voz gravada oficial (microfone verde)
           });
@@ -1868,89 +1996,105 @@ async function executeNodeAction(
       }
     } else if (node.type === 'audio') {
       const audioPath = node.data?.fileUrl || node.data?.audioUrl;
-      if (audioPath) {
-        const fullAudioUrl = audioPath.startsWith('http') 
-          ? audioPath 
-          : path.join(process.cwd(), audioPath.replace(/^\//, ''));
+      const base64Audio = node.data?.fileBase64 || node.data?.audioBase64;
+      const customFileName = node.data?.fileName;
+      console.log(`[Flow Engine] Executando envio de Áudio para ${remoteJid}... (path: ${audioPath || 'n/a'}, base64: ${!!base64Audio})`);
 
-        if (fs.existsSync(fullAudioUrl)) {
-          // Simulate "gravando áudio..."
-          try {
-            await sock.sendPresenceUpdate('recording', remoteJid);
-            await new Promise(r => setTimeout(r, (node.data?.delaySeconds || 3) * 1000));
-            await sock.sendPresenceUpdate('paused', remoteJid);
-          } catch (e) {}
+      const resolved = await resolveMediaBuffer(audioPath, base64Audio, 'audio', customFileName);
+      if (resolved && resolved.buffer.length > 0) {
+        try {
+          const delaySecs = Number(node.data?.delaySeconds) || 3;
+          await sock.sendPresenceUpdate('recording', remoteJid);
+          await new Promise(r => setTimeout(r, Math.min(delaySecs, 60) * 1000));
+          await sock.sendPresenceUpdate('paused', remoteJid);
+
+          const isOgg = (audioPath && (audioPath.endsWith('.ogg') || audioPath.endsWith('.opus'))) || (resolved.mimeType?.includes('ogg') || resolved.mimeType?.includes('opus'));
+          const mimetype = isOgg ? 'audio/ogg; codecs=opus' : (resolved.mimeType || 'audio/mp4');
 
           await sock.sendMessage(remoteJid, {
-            audio: fs.readFileSync(fullAudioUrl),
-            mimetype: 'audio/mp4',
-            ptt: true // Sent as voice note (áudio gravado na hora)
+            audio: resolved.buffer,
+            mimetype,
+            ptt: true // Nota de voz gravada na hora (microfone verde)
           });
           recordFlowMessageInChat(remoteJid, '🎵 [Áudio gravado enviado]');
+          console.log(`[Flow Engine] Áudio enviado com sucesso para ${remoteJid}`);
+        } catch (audioErr: any) {
+          console.error(`[Flow Engine] Erro ao enviar áudio para ${remoteJid}:`, audioErr);
         }
+      } else {
+        console.warn(`[Flow Engine] Áudio não encontrado no card ${node.id}`);
+        recordFlowMessageInChat(remoteJid, `⚠️ [Áudio do fluxo não encontrado para envio]`);
       }
     } else if (node.type === 'imagem') {
       const imgPath = node.data?.fileUrl || node.data?.imageUrl;
-      if (imgPath) {
-        const fullImgPath = imgPath.startsWith('http')
-          ? imgPath
-          : path.join(process.cwd(), imgPath.replace(/^\//, ''));
+      const base64Img = node.data?.fileBase64 || node.data?.imageBase64;
+      const customFileName = node.data?.fileName;
+      console.log(`[Flow Engine] Executando envio de Imagem para ${remoteJid}... (path: ${imgPath || 'n/a'}, base64: ${!!base64Img})`);
 
-        if (fs.existsSync(fullImgPath)) {
-          // Natural typing delay for photo dispatch
-          await simulateTyping(sock, remoteJid, 2000);
-
-          const caption = replaceVariables(node.data?.caption || '');
-          await sock.sendMessage(remoteJid, {
-            image: fs.readFileSync(fullImgPath),
-            caption
-          });
-          recordFlowMessageInChat(remoteJid, `🖼️ [Imagem enviada: ${caption || 'Sem legenda'}]`);
-        } else {
-          console.error(`[Flow Engine] Arquivo de imagem não encontrado no disco: ${fullImgPath}`);
-        }
+      const resolved = await resolveMediaBuffer(imgPath, base64Img, 'image', customFileName);
+      if (resolved && resolved.buffer.length > 0) {
+        await simulateTyping(sock, remoteJid, 2000);
+        const caption = replaceVariables(node.data?.caption || '');
+        await sock.sendMessage(remoteJid, {
+          image: resolved.buffer,
+          caption: caption || undefined,
+          mimetype: resolved.mimeType || 'image/jpeg'
+        });
+        recordFlowMessageInChat(remoteJid, `🖼️ [Imagem enviada: ${caption || 'Sem legenda'}]`);
+        console.log(`[Flow Engine] Imagem enviada com sucesso para ${remoteJid}`);
+      } else {
+        console.error(`[Flow Engine] Arquivo de imagem não encontrado no disco/base64: ${imgPath || 'vazio'}`);
+        recordFlowMessageInChat(remoteJid, `⚠️ [Não foi possível carregar a imagem do fluxo]`);
       }
     } else if (node.type === 'video') {
       const vidPath = node.data?.fileUrl || node.data?.videoUrl;
-      if (vidPath) {
-        const fullVideoPath = vidPath.startsWith('http')
-          ? vidPath
-          : path.join(process.cwd(), vidPath.replace(/^\//, ''));
+      const base64Vid = node.data?.fileBase64 || node.data?.videoBase64;
+      const customFileName = node.data?.fileName;
+      console.log(`[Flow Engine] Executando envio de Vídeo para ${remoteJid}... (path: ${vidPath || 'n/a'}, base64: ${!!base64Vid})`);
 
-        if (fs.existsSync(fullVideoPath)) {
-          await simulateTyping(sock, remoteJid, 2500);
-
-          const caption = replaceVariables(node.data?.caption || '');
-          await sock.sendMessage(remoteJid, {
-            video: fs.readFileSync(fullVideoPath),
-            caption
-          });
-          recordFlowMessageInChat(remoteJid, `🎥 [Vídeo enviado: ${caption || 'Sem legenda'}]`);
-        }
+      const resolved = await resolveMediaBuffer(vidPath, base64Vid, 'video', customFileName);
+      if (resolved && resolved.buffer.length > 0) {
+        await simulateTyping(sock, remoteJid, 2500);
+        const caption = replaceVariables(node.data?.caption || '');
+        await sock.sendMessage(remoteJid, {
+          video: resolved.buffer,
+          caption: caption || undefined,
+          mimetype: resolved.mimeType || 'video/mp4'
+        });
+        recordFlowMessageInChat(remoteJid, `🎥 [Vídeo enviado: ${caption || 'Sem legenda'}]`);
+        console.log(`[Flow Engine] Vídeo enviado com sucesso para ${remoteJid}`);
+      } else {
+        console.error(`[Flow Engine] Arquivo de vídeo não encontrado no disco/base64: ${vidPath || 'vazio'}`);
+        recordFlowMessageInChat(remoteJid, `⚠️ [Não foi possível carregar o vídeo do fluxo]`);
       }
-    } else if (node.type === 'pdf') {
+    } else if (node.type === 'pdf' || node.type === 'documento') {
       const docPath = node.data?.fileUrl || node.data?.pdfUrl;
-      if (docPath) {
-        const fullPdfPath = docPath.startsWith('http')
-          ? docPath
-          : path.join(process.cwd(), docPath.replace(/^\//, ''));
+      const base64Doc = node.data?.fileBase64 || node.data?.pdfBase64;
+      const customFileName = node.data?.fileName || 'documento.pdf';
+      console.log(`[Flow Engine] Executando envio de Documento/PDF para ${remoteJid}... (path: ${docPath || 'n/a'}, base64: ${!!base64Doc})`);
 
-        if (fs.existsSync(fullPdfPath)) {
-          await simulateTyping(sock, remoteJid, 2000);
-
-          await sock.sendMessage(remoteJid, {
-            document: fs.readFileSync(fullPdfPath),
-            mimetype: 'application/pdf',
-            fileName: node.data?.fileName || 'documento.pdf'
-          });
-          recordFlowMessageInChat(remoteJid, `📄 [Documento PDF: ${node.data?.fileName || 'documento.pdf'}]`);
-        }
+      const resolved = await resolveMediaBuffer(docPath, base64Doc, 'document', customFileName);
+      if (resolved && resolved.buffer.length > 0) {
+        await simulateTyping(sock, remoteJid, 2000);
+        const caption = replaceVariables(node.data?.caption || '');
+        await sock.sendMessage(remoteJid, {
+          document: resolved.buffer,
+          mimetype: resolved.mimeType || 'application/pdf',
+          fileName: customFileName,
+          caption: caption || undefined
+        });
+        recordFlowMessageInChat(remoteJid, `📄 [Documento PDF enviado: ${customFileName}${caption ? ` - ${caption}` : ''}]`);
+        console.log(`[Flow Engine] Documento PDF enviado com sucesso para ${remoteJid}`);
+      } else {
+        console.error(`[Flow Engine] Arquivo PDF não encontrado no disco/base64: ${docPath || 'vazio'}`);
+        recordFlowMessageInChat(remoteJid, `⚠️ [Não foi possível carregar o documento PDF do fluxo]`);
       }
-    } else if (node.type === 'timer') {
-      const delayAmount = node.data?.delay || 5;
+    } else if (node.type === 'timer' || node.type === 'intervalo') {
+      const delayAmount = Number(node.data?.delay || 5);
       const unit = node.data?.unit || 'segundos';
-      const ms = unit === 'segundos' ? delayAmount * 1000 : unit === 'minutos' ? delayAmount * 60000 : 5000;
-      await new Promise(r => setTimeout(r, Math.min(ms, 60000))); // Wait configured timer
+      const ms = unit === 'segundos' ? delayAmount * 1000 : unit === 'minutos' ? delayAmount * 60000 : unit === 'horas' ? delayAmount * 3600000 : 5000;
+      console.log(`[Flow Engine] Aguardando temporizador de ${delayAmount} ${unit} (${ms}ms) para ${remoteJid}...`);
+      await new Promise(r => setTimeout(r, Math.min(ms, 3600000))); // Wait configured timer (máx 1 hora)
     } else if (node.type === 'ia' || node.type === 'ia_audio') {
       await simulateTyping(sock, remoteJid, 3000);
 
@@ -2107,28 +2251,8 @@ async function executeNodeAction(
               console.log(`[Flow Engine] Processando foto de perfil para o grupo ${groupRes.id}...`);
               let photoBuffer: Buffer | null = null;
               try {
-                if (photoRaw.startsWith('data:image')) {
-                  const base64Data = photoRaw.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
-                  photoBuffer = Buffer.from(base64Data, 'base64');
-                } else if (photoRaw.startsWith('http://') || photoRaw.startsWith('https://')) {
-                  const imgRes = await fetch(photoRaw);
-                  const arrBuf = await imgRes.arrayBuffer();
-                  photoBuffer = Buffer.from(arrBuf);
-                } else {
-                  const cleanPath = photoRaw.replace(/^\//, '');
-                  const candidatePaths = [
-                    photoRaw,
-                    path.join(process.cwd(), cleanPath),
-                    path.join(uploadsDir, path.basename(photoRaw)),
-                    path.join(process.cwd(), 'uploads', path.basename(photoRaw))
-                  ];
-                  for (const cPath of candidatePaths) {
-                    if (fs.existsSync(cPath)) {
-                      photoBuffer = fs.readFileSync(cPath);
-                      break;
-                    }
-                  }
-                }
+                const resolved = await resolveMediaBuffer(node.data?.groupPhotoUrl, node.data?.groupPhotoBase64, 'image', node.data?.groupPhotoName);
+                photoBuffer = resolved?.buffer || null;
 
                 if (photoBuffer && photoBuffer.length > 0) {
                   // Aguarda 2.2s para garantir sincronização do grupo e privilégios de admin nos servidores do WhatsApp
@@ -2877,27 +3001,11 @@ app.post('/api/flow/test', async (req, res) => {
   }
 
   // Determine starting node:
-  const triggerNode = testNodes.find(n => n.type === 'inicio' || n.type === 'webhook');
-  let startNodeId: string | null = null;
-
-  if (triggerNode) {
-    const outgoing = testEdges.filter(e => e.from === triggerNode.id);
-    if (outgoing.length > 0) {
-      startNodeId = outgoing[0].to;
-    } else {
-      const firstAction = testNodes.find(n => n.type !== 'inicio' && n.type !== 'webhook');
-      startNodeId = firstAction ? firstAction.id : triggerNode.id;
-    }
-  } else {
-    startNodeId = testNodes[0].id;
-  }
-
-  if (!startNodeId) {
-    return res.status(400).json({ error: 'Não foi possível identificar o card inicial do funil.' });
-  }
+  const triggerNode = testNodes.find(n => n.type === 'inicio' || n.type === 'webhook' || n.type === 'cakto');
+  const targetFlowObj = { nodes: testNodes, edges: testEdges };
 
   const remoteJid = `${cleanNumber}@s.whatsapp.net`;
-  console.log(`[Flow Test Engine] Disparando teste do fluxo '${flowId || activeFlow.id}' para ${remoteJid} a partir do card '${startNodeId}'`);
+  console.log(`[Flow Test Engine] Disparando teste do fluxo '${flowId || activeFlow.id}' para ${remoteJid}`);
 
   try {
     // Sync activeFlow in memory
@@ -2909,9 +3017,24 @@ app.post('/api/flow/test', async (req, res) => {
     activeFlow.execution_count = (activeFlow.execution_count || 0) + 1;
     await pool.query('UPDATE flow_definitions SET execution_count = COALESCE(execution_count, 0) + 1 WHERE id = $1', [targetFlowId]);
 
-    // Execute flow chain
-    resumeFlowChain(connectedSession.sock, remoteJid, startNodeId, 'Lead Teste', 'Teste de Funil', connectedSession.id)
-      .catch(err => console.error('[Flow Test Error]', err));
+    // Execute flow chain:
+    if (triggerNode) {
+      const outgoing = testEdges.filter(e => e.from === triggerNode.id);
+      if (outgoing.length > 0) {
+        for (const outEdge of outgoing) {
+          resumeFlowChain(connectedSession.sock, remoteJid, outEdge.to, 'Lead Teste', 'Teste de Funil', connectedSession.id, targetFlowObj)
+            .catch(err => console.error('[Flow Test Error]', err));
+        }
+      } else {
+        const firstAction = testNodes.find(n => n.type !== 'inicio' && n.type !== 'webhook' && n.type !== 'cakto');
+        const startId = firstAction ? firstAction.id : triggerNode.id;
+        resumeFlowChain(connectedSession.sock, remoteJid, startId, 'Lead Teste', 'Teste de Funil', connectedSession.id, targetFlowObj)
+          .catch(err => console.error('[Flow Test Error]', err));
+      }
+    } else {
+      resumeFlowChain(connectedSession.sock, remoteJid, testNodes[0].id, 'Lead Teste', 'Teste de Funil', connectedSession.id, targetFlowObj)
+        .catch(err => console.error('[Flow Test Error]', err));
+    }
 
     res.json({
       success: true,
