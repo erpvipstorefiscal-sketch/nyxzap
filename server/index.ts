@@ -1277,7 +1277,7 @@ const sessions: Map<string, SessionData> = new Map([
 let aiConfig: any = {
   provider: 'gemini',
   apiKey: '',
-  model: 'gemini-1.5-flash',
+  model: 'gemini-2.5-flash',
   reasoningLevel: 'high',
   mediaResolution: 'maximo',
   webSearchEnabled: true,
@@ -1441,7 +1441,7 @@ async function saveAIConfigToDB() {
       [
         aiConfig.provider || 'gemini',
         aiConfig.apiKey || '',
-        aiConfig.model || 'gemini-1.5-flash',
+        aiConfig.model || 'gemini-2.5-flash',
         aiConfig.reasoningLevel || 'high',
         aiConfig.mediaResolution || 'maximo',
         aiConfig.webSearchEnabled !== false,
@@ -1471,8 +1471,8 @@ async function loadSavedAIConfig() {
       const googleCal = typeof row.google_calendar === 'object' && row.google_calendar !== null ? row.google_calendar : {};
 
       let savedModel = row.model || aiConfig.model;
-      if (savedModel === 'gemini-3.8-flash' || savedModel === 'gemini-2.5-flash') {
-        savedModel = 'gemini-1.5-flash';
+      if (savedModel === 'gemini-3.8-flash' || savedModel === 'gemini-1.5-flash') {
+        savedModel = 'gemini-2.5-flash';
       }
 
       aiConfig = {
@@ -3381,23 +3381,26 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
       const rawKey = process.env.GEMINI_API_KEY || config.apiKey || '';
       const key = rawKey.trim();
       if (key) {
-        try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt || 'Você é a NyxzapIA, assistente virtual inteligente e consultor de vendas via WhatsApp.'}\n\nCliente: ${prompt}` }] }],
-              generationConfig: {
-                temperature: 0.7
-              }
-            })
-          });
-          const data = await res.json();
-          const generated = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (generated) return generated;
-        } catch (e) {
-          console.error('[NyxzapIA Error]', e);
+        for (const modelToTry of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite']) {
+          try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToTry}:generateContent?key=${encodeURIComponent(key)}`;
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'x-goog-api-key': key
+              },
+              body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt || 'Você é a NyxzapIA, assistente virtual inteligente e consultor de vendas via WhatsApp.'}\n\nCliente: ${prompt}` }] }],
+                generationConfig: { temperature: 0.7 }
+              })
+            });
+            const data = await res.json();
+            const generated = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (generated) return generated;
+          } catch (e) {
+            console.error(`[NyxzapIA Error with ${modelToTry}]`, e);
+          }
         }
       }
       return `Olá! Sou a NyxzapIA, inteligência artificial integrada do NyxZap. Como posso ajudar com sua solicitação?`;
@@ -3412,47 +3415,90 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
         return 'Por favor, insira sua chave da API do Google Gemini nas configurações.';
       }
 
-      // Validação e mapeamento do nome do modelo para modelos reais do Google API v1beta
-      let model = (config.model || 'gemini-1.5-flash').trim();
-      if (model === 'gemini-3.8-flash' || model === 'gemini-2.5-flash') {
-        model = 'gemini-1.5-flash';
+      // Modelos suportados na API ativa do Google
+      let requestedModel = (config.model || 'gemini-2.5-flash').trim();
+      if (requestedModel === 'gemini-3.8-flash' || requestedModel === 'gemini-1.5-flash') {
+        requestedModel = 'gemini-2.5-flash';
       }
 
-      console.log(`[Gemini AI] Chamando Google API com modelo ${model}...`);
-
-      let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt ? `${config.systemPrompt}\n\n` : ''}Cliente: ${prompt}` }] }],
-          generationConfig: {
-            temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
-          }
-        })
-      });
-
-      let data = await res.json();
-
-      // Se der erro 404 (modelo não existe), tenta fallback para gemini-1.5-flash
-      if (res.status === 404 && model !== 'gemini-1.5-flash') {
-        console.warn(`[Gemini AI] Modelo ${model} retornou 404. Tentando com gemini-1.5-flash...`);
-        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+      const callGeminiEndpoint = async (modelName: string) => {
+        const cleanName = modelName.replace('models/', '');
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanName}:generateContent?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': key
+          },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt ? `${config.systemPrompt}\n\n` : ''}Cliente: ${prompt}` }] }],
-            generationConfig: { temperature: 0.7 }
+            generationConfig: {
+              temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
+            }
           })
         });
-        data = await res.json();
+        const data = await res.json();
+        return { status: res.status, data, modelName: cleanName };
+      };
+
+      console.log(`[Gemini AI] Chamando Google API com modelo ${requestedModel}...`);
+      let { status, data, modelName: usedModel } = await callGeminiEndpoint(requestedModel);
+
+      // Se der erro 404 de modelo não encontrado, tenta modelos populares ou consulta ListModels dinamicamente
+      if (status === 404 || data?.error?.code === 404) {
+        console.warn(`[Gemini AI] Modelo ${requestedModel} não encontrado (404). Buscando modelos ativos via ListModels...`);
+        try {
+          const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`, {
+            headers: { 'x-goog-api-key': key }
+          });
+          const listData = await listRes.json();
+          if (Array.isArray(listData.models)) {
+            const availableModels: string[] = listData.models
+              .filter((m: any) => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+              .map((m: any) => m.name.replace('models/', ''));
+            console.log(`[Gemini AI] Modelos suportados encontrados para esta chave (${availableModels.length}):`, availableModels);
+
+            const fallbackModel = availableModels.find((m: string) => m.includes('2.5-flash')) ||
+                                  availableModels.find((m: string) => m.includes('2.0-flash')) ||
+                                  availableModels.find((m: string) => m.includes('flash')) ||
+                                  availableModels.find((m: string) => m.includes('pro')) ||
+                                  availableModels[0];
+
+            if (fallbackModel && fallbackModel !== requestedModel) {
+              console.log(`[Gemini AI] Executando fallback para o modelo disponível: ${fallbackModel}...`);
+              const retry = await callGeminiEndpoint(fallbackModel);
+              status = retry.status;
+              data = retry.data;
+              usedModel = retry.modelName;
+              aiConfig.model = usedModel;
+            }
+          } else {
+            // Se ListModels não retornar array, tenta candidatos universais em ordem
+            for (const candidate of ['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash-lite']) {
+              if (candidate !== requestedModel) {
+                console.log(`[Gemini AI] Tentando candidato fallback: ${candidate}...`);
+                const retry = await callGeminiEndpoint(candidate);
+                if (retry.status === 200 && !retry.data?.error) {
+                  status = retry.status;
+                  data = retry.data;
+                  usedModel = candidate;
+                  aiConfig.model = usedModel;
+                  break;
+                }
+              }
+            }
+          }
+        } catch (listErr) {
+          console.error('[Gemini AI ListModels Fallback Error]', listErr);
+        }
       }
 
-      if (data.error) {
+      if (data?.error) {
         console.error('[Gemini AI Error Details]:', data.error);
         return `Aviso: Falha ao consultar Gemini (${data.error.message || 'Verifique sua chave de API'}).`;
       }
 
-      const generated = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const generated = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!generated) {
         console.warn('[Gemini AI] Nenhum candidato retornado:', JSON.stringify(data));
         return 'Olá! Como posso ajudar você hoje?';
@@ -4758,8 +4804,8 @@ app.get('/api/ai-config', (req, res) => {
 
 app.post('/api/ai-config', async (req, res) => {
   aiConfig = { ...aiConfig, ...req.body };
-  if (aiConfig.provider === 'gemini' && (aiConfig.model === 'gemini-3.8-flash' || aiConfig.model === 'gemini-2.5-flash')) {
-    aiConfig.model = 'gemini-1.5-flash';
+  if (aiConfig.provider === 'gemini' && (aiConfig.model === 'gemini-3.8-flash' || aiConfig.model === 'gemini-1.5-flash')) {
+    aiConfig.model = 'gemini-2.5-flash';
   }
   await saveAIConfigToDB();
 

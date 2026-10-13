@@ -138,7 +138,7 @@ export const AIAgentManager: React.FC<AIAgentManagerProps> = ({
   const [config, setConfig] = useState<AIAgentConfig>({
     provider: 'gemini',
     apiKey: '',
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.5-flash',
     reasoningLevel: 'high',
     mediaResolution: 'maximo',
     webSearchEnabled: true,
@@ -623,7 +623,7 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
 
             {/* 2. Google Gemini */}
             <div
-              onClick={() => setConfig({ ...config, provider: 'gemini', model: 'gemini-1.5-flash' })}
+              onClick={() => setConfig({ ...config, provider: 'gemini', model: 'gemini-2.5-flash' })}
               className={`p-5 rounded-2xl border cursor-pointer transition-all ${
                 config.provider === 'gemini'
                   ? 'bg-surface-card border-indigo-500/80 shadow-subtle'
@@ -635,7 +635,7 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                   <Brain className="w-4 h-4 text-indigo-400" /> Google Gemini
                 </span>
                 <span className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded font-medium">
-                  Gemini 1.5
+                  Gemini 2.5
                 </span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
@@ -709,11 +709,10 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                   )}
                   {config.provider === 'gemini' && (
                     <>
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Mais Rápido & Econômico - Recomendado)</option>
-                      <option value="gemini-2.0-flash">Gemini 2.0 Flash (Nova Geração)</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro (Alta Capacidade de Contexto)</option>
-                      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
-                      <option value="gemini-3.8-flash">Gemini 3.8 Flash (Compatibilidade)</option>
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Mais Inteligente & Rápido - Recomendado)</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash (Geração Estável)</option>
+                      <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Super Econômico)</option>
+                      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite</option>
                     </>
                   )}
                   {config.provider === 'openai' && (
