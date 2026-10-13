@@ -500,16 +500,16 @@ export const LiveChatManager: React.FC = () => {
     }
   };
 
-  // Mutually exclusive automation mode: 'flow' | 'ai' | 'none'
-  const setChatAutomationMode = async (mode: 'flow' | 'ai' | 'none') => {
+  // Automation modes: 'both' (IA + Fluxo) | 'flow' | 'ai' | 'none'
+  const setChatAutomationMode = async (mode: 'both' | 'flow' | 'ai' | 'none') => {
     if (!activeChat) return;
     try {
       await fetch(`/api/chats/${encodeURIComponent(activeChat.id)}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          aiAgentActive: mode === 'ai',
-          botFlowActive: mode === 'flow'
+          aiAgentActive: mode === 'ai' || mode === 'both',
+          botFlowActive: mode === 'flow' || mode === 'both'
         })
       });
       fetchChats();
@@ -1482,42 +1482,55 @@ export const LiveChatManager: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Mutually exclusive 3-mode selector: Bot Fluxo OR Agente IA OR Manual */}
+              {/* 4-mode selector: IA + Fluxo (both) OR Bot Fluxo OR Agente IA OR Manual */}
               <div className="flex items-center gap-1 bg-[#12141D] p-1 rounded-xl border border-white/[0.06]">
                 <button
-                  onClick={() => setChatAutomationMode(activeChat.botFlowActive ? 'none' : 'flow')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                    activeChat.botFlowActive
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  onClick={() => setChatAutomationMode(activeChat.botFlowActive && activeChat.aiAgentActive ? 'none' : 'both')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    activeChat.botFlowActive && activeChat.aiAgentActive
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                       : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                   }`}
-                  title="Ativar Bot de Fluxo (desativa IA automaticamente)"
+                  title="Ativar ambos: Agente IA atende dúvidas e Bot de Fluxo dispara funis/webhooks"
                 >
-                  <Workflow className="w-3.5 h-3.5" />
-                  <span>{activeChat.botFlowActive ? 'Bot Fluxo Ativo' : 'Bot Fluxo'}</span>
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span>IA + Fluxo</span>
                 </button>
 
                 <button
-                  onClick={() => setChatAutomationMode(activeChat.aiAgentActive ? 'none' : 'ai')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                    activeChat.aiAgentActive
+                  onClick={() => setChatAutomationMode(activeChat.botFlowActive && !activeChat.aiAgentActive ? 'none' : 'flow')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    activeChat.botFlowActive && !activeChat.aiAgentActive
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                  }`}
+                  title="Ativar somente Bot de Fluxo"
+                >
+                  <Workflow className="w-3.5 h-3.5" />
+                  <span>Fluxo</span>
+                </button>
+
+                <button
+                  onClick={() => setChatAutomationMode(activeChat.aiAgentActive && !activeChat.botFlowActive ? 'none' : 'ai')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    activeChat.aiAgentActive && !activeChat.botFlowActive
                       ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
                       : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                   }`}
-                  title="Ativar Agente IA (desativa Bot de Fluxo automaticamente)"
+                  title="Ativar somente Agente IA"
                 >
                   <Bot className="w-3.5 h-3.5" />
-                  <span>{activeChat.aiAgentActive ? 'Agente IA Ativo' : 'Agente IA'}</span>
+                  <span>Agente IA</span>
                 </button>
 
                 <button
                   onClick={() => setChatAutomationMode('none')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
                     !activeChat.botFlowActive && !activeChat.aiAgentActive
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                       : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                   }`}
-                  title="Atendimento manual (desativa Bot e IA)"
+                  title="Atendimento manual (pausa Bot e IA neste chat)"
                 >
                   <UserCheck className="w-3.5 h-3.5" />
                   <span>Manual</span>

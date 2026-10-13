@@ -50,7 +50,7 @@ export interface WhatsAppSession {
   name: string;
   phone?: string;
   status: 'disconnected' | 'connecting' | 'connected';
-  automationMode?: 'flow' | 'ai' | 'none';
+  automationMode?: 'both' | 'flow' | 'ai' | 'none';
   qrCode?: string;
   connectedAt?: string;
 }

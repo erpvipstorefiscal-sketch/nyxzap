@@ -1264,7 +1264,7 @@ interface SessionData {
   id: string;
   name: string;
   status: 'disconnected' | 'connecting' | 'connected';
-  automationMode: 'flow' | 'ai' | 'none';
+  automationMode: 'both' | 'flow' | 'ai' | 'none';
   qrCode?: string;
   phone?: string;
   sock?: any;
@@ -2954,8 +2954,8 @@ async function startWhatsAppSession(sessionId: string) {
           leadName: pushName,
           tag: 'morno',
           internalNotes: '',
-          aiAgentActive: instanceMode === 'ai',
-          botFlowActive: instanceMode === 'flow',
+          aiAgentActive: instanceMode === 'ai' || instanceMode === 'both',
+          botFlowActive: instanceMode === 'flow' || instanceMode === 'both',
           unreadCount: fromMe ? 0 : 1,
           lastMessage: text,
           lastMessageTime: timeStr,
@@ -3089,17 +3089,26 @@ async function startWhatsAppSession(sessionId: string) {
           if (pending.responseTargetId) {
             await resumeFlowChain(sock, remoteJid, pending.responseTargetId, chat.leadName, text, sessionId, pending.flow);
           }
-        } else if (instanceMode === 'flow' && chat.botFlowActive !== false) {
-          // MODO EXCLUSIVO: BOT DE FLUXO (INÍCIO DE NOVO FLUXO POR GATILHO)
-          await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
-        } else if (instanceMode === 'ai' && chat.aiAgentActive !== false && aiConfig.apiKey) {
-          // MODO EXCLUSIVO: AGENTE DE IA
-          try {
-            const reply = await queryAI(text, aiConfig);
-            await sock.sendMessage(remoteJid, { text: reply });
-            recordFlowMessageInChat(remoteJid, reply, true);
-          } catch (err) {
-            console.error('Erro ao responder com IA:', err);
+        } else {
+          // MODOS DE AUTOMAÇÃO: 'both' (Agente IA + Fluxo), 'flow' (Somente Fluxo), 'ai' (Somente IA), 'none' (Manual)
+          const isFlowAllowed = (instanceMode === 'flow' || instanceMode === 'both') && chat.botFlowActive !== false;
+          const isAiAllowed = (instanceMode === 'ai' || instanceMode === 'both') && chat.aiAgentActive !== false && aiConfig.apiKey;
+
+          let handledByFlow = false;
+          if (isFlowAllowed) {
+            // Tenta acionar fluxo visual por palavras-chave ou gatilhos de início
+            handledByFlow = await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
+          }
+
+          // Se o fluxo não foi ativado por nenhuma palavra-chave e o Agente de IA está habilitado:
+          if (!handledByFlow && isAiAllowed) {
+            try {
+              const reply = await queryAI(text, aiConfig);
+              await sock.sendMessage(remoteJid, { text: reply });
+              recordFlowMessageInChat(remoteJid, reply, true);
+            } catch (err) {
+              console.error('Erro ao responder com IA:', err);
+            }
           }
         }
       }
@@ -4257,7 +4266,7 @@ app.get('/api/sessions', async (req, res) => {
 app.put('/api/sessions/:id/automation-mode', async (req, res) => {
   const { id } = req.params;
   const { mode } = req.body;
-  const validMode = (mode === 'flow' || mode === 'ai' || mode === 'none') ? mode : 'flow';
+  const validMode = (mode === 'both' || mode === 'flow' || mode === 'ai' || mode === 'none') ? mode : 'flow';
 
   const session = sessions.get(id);
   if (session) {
