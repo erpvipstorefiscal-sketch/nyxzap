@@ -1559,23 +1559,27 @@ async function triggerFlowForWebhookEvent(
       flowsList = res.rows.map(r => ({
         id: r.id,
         name: r.name || 'Fluxo',
-        nodes: r.nodes || [],
-        edges: r.edges || []
+        nodes: typeof r.nodes === 'string' ? JSON.parse(r.nodes) : (r.nodes || []),
+        edges: typeof r.edges === 'string' ? JSON.parse(r.edges) : (r.edges || [])
       }));
     }
-  } catch {}
+  } catch (dbErr) {
+    console.error('[Flow Webhook] Erro ao carregar fluxos do banco:', dbErr);
+  }
 
-  if (flowsList.length === 0 && activeFlow.active && activeFlow.nodes?.length > 0) {
+  if (flowsList.length === 0 && activeFlow.nodes?.length > 0) {
     flowsList = [activeFlow];
   }
 
   let matchedFlowCount = 0;
+  console.log(`[Flow Webhook Engine] Avaliando ${flowsList.length} fluxo(s) ativo(s) para evento '${normEvent}' (Plataforma: ${platform}, Lead: ${cleanPhone})`);
 
   for (const flow of flowsList) {
     const webhookNode = flow.nodes.find(n => {
       if (n.type !== 'webhook' && n.type !== 'cakto') return false;
       const nodePlatform = (n.data?.platform || '').toLowerCase().trim();
-      if (nodePlatform && nodePlatform !== 'personalizado' && platform && nodePlatform !== platform.toLowerCase().trim()) {
+      const inPlatform = (platform || '').toLowerCase().trim();
+      if (nodePlatform && nodePlatform !== 'personalizado' && inPlatform && inPlatform !== 'vendas' && inPlatform !== 'checkout' && inPlatform !== 'flow' && nodePlatform !== inPlatform) {
         return false;
       }
       const activeEvents: string[] = (n.data?.activeEvents || ['Compra Aprovada', 'Pix Gerado', 'Pedido Realizado']).map((e: string) => normalizeWebhookEventName(e));
@@ -1598,9 +1602,11 @@ async function triggerFlowForWebhookEvent(
       }
 
       const runChain = async () => {
-        const activeSockEntry = sessions.entries().next().value;
-        const sock = activeSockEntry ? activeSockEntry[1]?.sock : null;
-        const sessionId = activeSockEntry ? activeSockEntry[0] : 'inst-1';
+        const connectedSessionEntry = Array.from(sessions.entries()).find(([_, s]) => s.sock && s.status === 'connected')
+          || Array.from(sessions.entries()).find(([_, s]) => s.sock)
+          || sessions.entries().next().value;
+        const sock = connectedSessionEntry ? connectedSessionEntry[1]?.sock : null;
+        const sessionId = connectedSessionEntry ? connectedSessionEntry[0] : 'inst-1';
 
         if (!sock) {
           console.warn('[Flow Webhook] Nenhum WhatsApp conectado para disparar o fluxo');
