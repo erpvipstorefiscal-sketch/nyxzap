@@ -45,6 +45,8 @@ export declare class VoipClient {
         audioSource?: string;
         durationMs?: number;
     }) => Promise<ActiveCall>;
+    /** Clear active call state safely without tearing down workers or engine */
+    clearActiveCall: () => void;
     /** Tear down the WhatsApp socket and release resources. */
     disconnect: () => void;
 }

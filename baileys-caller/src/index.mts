@@ -105,8 +105,9 @@ export class ActiveCall extends EventEmitter {
     if (this.#ended) return;
     this.#ended = true;
     if (this.#endTimer) { clearTimeout(this.#endTimer); this.#endTimer = null; }
-    try { this.engine.endCall(0, true); } catch {}
-    this._forceEnd("ended");
+    try { this.engine.endCall(0, false); } catch {}
+    this.emit("ended", "ended");
+    try { this.#endResolver?.("ended"); } catch {}
   };
 
   mute = (muted: boolean): void => {
@@ -135,7 +136,7 @@ export class ActiveCall extends EventEmitter {
     this.#ended = true;
     if (this.#endTimer) { clearTimeout(this.#endTimer); this.#endTimer = null; }
     this.emit("ended", reason);
-    this.#endResolver(reason);
+    try { this.#endResolver?.(reason); } catch {}
   };
 }
 
@@ -255,8 +256,13 @@ export class VoipClient {
 
     this.#engine = new WasmEngine({
       callbacks: {
-        onSignalingXmpp: (peerJid, callId, xmlPayload) =>
-          this.#signaling!.sendSignaling(peerJid, callId, xmlPayload),
+        onSignalingXmpp: (peerJid, callId, xmlPayload) => {
+          try {
+            this.#signaling?.sendSignaling(peerJid, callId, xmlPayload);
+          } catch (err: any) {
+            console.warn("[VoipClient] Erro ao enviar sinalização XMPP:", err?.message);
+          }
+        },
         onCallEvent: (eventType, eventData) => this.#handleCallEvent(eventType, eventData),
         sendDataToRelay: (data, ip, port) => this.#relay!.send(data, ip, port),
         onAudioCaptureInit: (config) => this.#handleAudioCaptureInit(config),
@@ -281,14 +287,18 @@ export class VoipClient {
       if (!this.#signaling || !this.#engine) return;
       try {
         this.#signaling.processIncomingCall(node, this.#engine, this.#activeCall?.callId ?? "");
-      } catch {}
+      } catch (err: any) {
+        console.warn("[VoipClient] Erro ao processar CB:call:", err?.message);
+      }
     });
     this.#sock.ws.on("CB:receipt", (node: any) => {
       if (!isCallReceiptNode(node)) return;
       if (!this.#signaling || !this.#engine) return;
       try {
         this.#signaling.processIncomingReceipt(node, this.#engine, this.#activeCall?.callId ?? "");
-      } catch {}
+      } catch (err: any) {
+        console.warn("[VoipClient] Erro ao processar CB:receipt:", err?.message);
+      }
     });
   };
 

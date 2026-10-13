@@ -20,6 +20,13 @@ import multer from 'multer';
 import { pool, initDatabase } from './db.js';
 import { sendPasswordRecoveryEmail } from './mailer.js';
 
+process.on('uncaughtException', (err: any) => {
+  console.error('[Process UncaughtException Guard]', err?.message || err);
+});
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[Process UnhandledRejection Guard]', reason?.message || reason);
+});
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -1697,7 +1704,7 @@ async function executeNodeAction(
         console.log(`[Flow Engine] VoipClient pronto. Discando chamada para ${targetPhone} (Tempo de toque: até ${ringDuration}s)...`);
         const liveCall = await voipClient.call(targetPhone, {
           audioSource: 'silence',
-          durationMs: ringDuration * 1000
+          durationMs: (ringDuration + 5) * 1000
         });
 
         recordFlowMessageInChat(remoteJid, `📞 [Ligação tocando no celular do lead - Até ${ringDuration}s]`);
@@ -1711,7 +1718,9 @@ async function executeNodeAction(
           console.log(`[Flow Engine] Lead ${targetPhone} ATENDEU a ligação! Desligando imediatamente conforme instrução...`);
           leadAnswered = true;
           recordFlowMessageInChat(remoteJid, `📲 [Lead atendeu a chamada! Ligação encerrada]`);
-          try { liveCall.end(); } catch {}
+          setTimeout(() => {
+            try { liveCall.end(); } catch {}
+          }, 300);
         });
 
         liveCall.on('ended', (reason: string) => {
@@ -1721,8 +1730,9 @@ async function executeNodeAction(
 
         // Aguarda até o lead atender ou estourar o tempo de toque
         const startCallTime = Date.now();
-        while (!callFinished && !leadAnswered && (Date.now() - startCallTime < ringDuration * 1000)) {
-          await new Promise(r => setTimeout(r, 500));
+        const maxWaitMs = ringDuration * 1000;
+        while (!callFinished && !leadAnswered && (Date.now() - startCallTime < maxWaitMs)) {
+          await new Promise(r => setTimeout(r, 400));
         }
 
         // Se deu o tempo e não atendeu, encerra a chamada
@@ -1732,11 +1742,11 @@ async function executeNodeAction(
 
         try { voipClient.clearActiveCall(); } catch {}
       } catch (voipErr: any) {
-        console.error(`[Flow Engine] Erro ao originar chamada:`, voipErr.message);
+        console.error(`[Flow Engine] Aviso ao executar chamada VoIP (prosseguindo fluxo):`, voipErr?.message || voipErr);
       }
 
-      // Aguarda 1.5s para a chamada finalizar totalmente nos servidores do WhatsApp
-      await new Promise(r => setTimeout(r, 1500));
+      // Aguarda 1s para a chamada sincronizar totalmente nos servidores do WhatsApp
+      await new Promise(r => setTimeout(r, 1000));
 
       // 2. Envia o áudio gravado configurado como Nota de Voz Oficial (tanto se atendeu quanto se não atendeu)
       console.log(`[Flow Engine] Ligação com ${targetPhone} concluída (${leadAnswered ? 'lead ATENDEU e chamada foi desligada' : 'lead NÃO atendeu / tempo esgotado'}). Preparando envio do áudio no WhatsApp...`);
@@ -1793,7 +1803,7 @@ async function executeNodeAction(
       if (resolvedAudioBuffer && resolvedAudioBuffer.length > 0) {
         try {
           await sock.sendPresenceUpdate('recording', targetRecipient);
-          await new Promise(r => setTimeout(r, 1500));
+          await new Promise(r => setTimeout(r, 1200));
           await sock.sendPresenceUpdate('paused', targetRecipient);
 
           const isOgg = audioPath && (audioPath.endsWith('.ogg') || audioPath.endsWith('.opus'));
@@ -1812,6 +1822,7 @@ async function executeNodeAction(
         }
       } else {
         console.warn(`[Flow Engine] Nenhum arquivo de áudio encontrado para o card ligação (${audioPath || 'sem áudio'})`);
+        recordFlowMessageInChat(remoteJid, `⚠️ [Áudio não encontrado para disparo pós-chamada]`);
       }
     } else if (node.type === 'audio') {
       const audioPath = node.data?.fileUrl || node.data?.audioUrl;

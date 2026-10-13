@@ -318,12 +318,21 @@ export class SignalingBridge {
     effectivePeerJid: string,
     callbackPeerJid: string,
   ): Promise<void> => {
+    if (!routeTo || !routeTo.includes("@")) {
+      console.warn(`[SignalingBridge] Ignorando envio de stanza '${signalingTag}' para rota inválida '${routeTo}'`);
+      return;
+    }
     const stanzaId = this.#sock.generateMessageTag();
-    await this.#sock.sendNode({
-      tag: "call",
-      attrs: { to: routeTo, id: stanzaId },
-      content: [voipNode],
-    });
+    try {
+      await this.#sock.sendNode({
+        tag: "call",
+        attrs: { to: routeTo, id: stanzaId },
+        content: [voipNode],
+      });
+    } catch (sendErr: any) {
+      console.warn(`[SignalingBridge] Falha ao enviar stanza '${signalingTag}':`, sendErr?.message);
+      return;
+    }
 
     void (async () => {
       try {

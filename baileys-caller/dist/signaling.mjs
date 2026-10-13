@@ -266,12 +266,22 @@ export class SignalingBridge {
      * without this, the WASM stalls and never receives the relay-list update.
      */
     #sendCallStanza = async (routeTo, voipNode, signalingTag, effectivePeerJid, callbackPeerJid) => {
+        if (!routeTo || !routeTo.includes("@")) {
+            console.warn(`[SignalingBridge] Ignorando envio de stanza '${signalingTag}' para rota inválida '${routeTo}'`);
+            return;
+        }
         const stanzaId = this.#sock.generateMessageTag();
-        await this.#sock.sendNode({
-            tag: "call",
-            attrs: { to: routeTo, id: stanzaId },
-            content: [voipNode],
-        });
+        try {
+            await this.#sock.sendNode({
+                tag: "call",
+                attrs: { to: routeTo, id: stanzaId },
+                content: [voipNode],
+            });
+        }
+        catch (sendErr) {
+            console.warn(`[SignalingBridge] Falha ao enviar stanza '${signalingTag}':`, sendErr?.message);
+            return;
+        }
         void (async () => {
             try {
                 const ackNode = await this.#sock.waitForMessage(stanzaId, ACK_TIMEOUT_MS);

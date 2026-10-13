@@ -93,10 +93,14 @@ export class ActiveCall extends EventEmitter {
             this.#endTimer = null;
         }
         try {
-            this.engine.endCall(0, true);
+            this.engine.endCall(0, false);
         }
         catch { }
-        this._forceEnd("ended");
+        this.emit("ended", "ended");
+        try {
+            this.#endResolver?.("ended");
+        }
+        catch { }
     };
     mute = (muted) => {
         try {
@@ -129,7 +133,10 @@ export class ActiveCall extends EventEmitter {
             this.#endTimer = null;
         }
         this.emit("ended", reason);
-        this.#endResolver(reason);
+        try {
+            this.#endResolver?.(reason);
+        }
+        catch { }
     };
 }
 /** Top-level client. Connects to WhatsApp and lets you place calls. */
@@ -235,7 +242,14 @@ export class VoipClient {
         });
         this.#engine = new WasmEngine({
             callbacks: {
-                onSignalingXmpp: (peerJid, callId, xmlPayload) => this.#signaling.sendSignaling(peerJid, callId, xmlPayload),
+                onSignalingXmpp: (peerJid, callId, xmlPayload) => {
+                    try {
+                        this.#signaling?.sendSignaling(peerJid, callId, xmlPayload);
+                    }
+                    catch (err) {
+                        console.warn("[VoipClient] Erro ao enviar sinalização XMPP:", err?.message);
+                    }
+                },
                 onCallEvent: (eventType, eventData) => this.#handleCallEvent(eventType, eventData),
                 sendDataToRelay: (data, ip, port) => this.#relay.send(data, ip, port),
                 onAudioCaptureInit: (config) => this.#handleAudioCaptureInit(config),
@@ -257,18 +271,26 @@ export class VoipClient {
         }
         catch { }
         this.#sock.ws.on("CB:call", (node) => {
-            if (!this.#signaling || !this.#engine) return;
+            if (!this.#signaling || !this.#engine)
+                return;
             try {
                 this.#signaling.processIncomingCall(node, this.#engine, this.#activeCall?.callId ?? "");
-            } catch { }
+            }
+            catch (err) {
+                console.warn("[VoipClient] Erro ao processar CB:call:", err?.message);
+            }
         });
         this.#sock.ws.on("CB:receipt", (node) => {
             if (!isCallReceiptNode(node))
                 return;
-            if (!this.#signaling || !this.#engine) return;
+            if (!this.#signaling || !this.#engine)
+                return;
             try {
                 this.#signaling.processIncomingReceipt(node, this.#engine, this.#activeCall?.callId ?? "");
-            } catch { }
+            }
+            catch (err) {
+                console.warn("[VoipClient] Erro ao processar CB:receipt:", err?.message);
+            }
         });
     };
     /** Place an outbound voice call. */
@@ -322,15 +344,24 @@ export class VoipClient {
     /** Clear active call state safely without tearing down workers or engine */
     clearActiveCall = () => {
         if (this.#activeCall) {
-            try { this.#activeCall.end(); } catch {}
+            try {
+                this.#activeCall.end();
+            }
+            catch { }
             this.#activeCall = null;
         }
     };
     /** Tear down the WhatsApp socket and release resources. */
     disconnect = () => {
-        try { this.#activeCall?._forceEnd("disconnect"); } catch {}
+        try {
+            this.#activeCall?._forceEnd("disconnect");
+        }
+        catch { }
         this.#activeCall = null;
-        try { this.#relay?.closeAll(); } catch {}
+        try {
+            this.#relay?.closeAll();
+        }
+        catch { }
         this.#relay = null;
         this.#signaling = null;
     };
