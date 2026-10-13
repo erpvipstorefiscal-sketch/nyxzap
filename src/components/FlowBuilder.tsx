@@ -2260,7 +2260,11 @@ export const FlowBuilder: React.FC = () => {
                               onClick={() => {
                                 const targetUrl = `${window.location.origin}/api/webhook/${node.data.platform || 'cakto'}`;
                                 navigator.clipboard.writeText(targetUrl);
-                                alertDialog('URL Copiada!', `A URL do Webhook foi copiada com sucesso:\n${targetUrl}\n\nCole esta URL na configuração de webhook da sua plataforma de vendas.`);
+                                alertDialog({
+                                  title: 'URL Copiada!',
+                                  message: `A URL do Webhook foi copiada com sucesso:\n${targetUrl}\n\nCole esta URL na configuração de webhook da sua plataforma de vendas.`,
+                                  variant: 'success'
+                                });
                               }}
                               className="text-slate-400 hover:text-white p-0.5 shrink-0"
                               title="Copiar URL"

@@ -424,7 +424,7 @@ export const AdminDashboard: React.FC = () => {
   const activeSubscribers = subscribers.filter(s => s.status === 'active').length;
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <div className="space-y-8 animate-fadeIn pb-16">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>

@@ -211,6 +211,7 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
   const [smtpSender, setSmtpSender] = useState('Atendimento NyxZap <contato@nyxzap.com.br>');
 
   const baseUrl = window.location.origin;
+  const userToken = user?.id ? `usr_${user.id.substring(0, 8)}` : 'usr_default';
 
   const getPostbackUrl = (platformId: string) => {
     return `${baseUrl}/api/webhook/${platformId}`;

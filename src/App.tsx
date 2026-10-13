@@ -515,9 +515,11 @@ export function App() {
 
         {/* Main View Container */}
         <main className={`flex-1 w-full min-h-0 ${
-          activeClientTab === 'flow' || activeClientTab === 'chat'
-            ? 'p-0 max-w-none h-full overflow-hidden flex flex-col' 
-            : 'p-6 max-w-7xl mx-auto overflow-y-auto'
+          user.role === 'admin'
+            ? 'p-6 max-w-7xl mx-auto overflow-y-auto'
+            : activeClientTab === 'flow' || activeClientTab === 'chat'
+              ? 'p-0 max-w-none h-full overflow-hidden flex flex-col' 
+              : 'p-6 max-w-7xl mx-auto overflow-y-auto'
         }`}>
           {user.role === 'admin' ? (
             <AdminDashboard />

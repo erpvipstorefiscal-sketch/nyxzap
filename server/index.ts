@@ -3349,13 +3349,14 @@ async function resolveGroupParticipants(sock: any, participants: any[]): Promise
   for (const item of result) {
     if (!item.phone && item.id) {
       const lidClean = item.id.split('@')[0];
-      const matchChat = liveChats.find(c => 
+      const matchChat: any = Array.from(liveChats.values()).find((c: any) => 
         c.remoteJid === item.id || 
         c.id === item.id || 
-        (c.customerPhone && c.customerPhone !== lidClean && (c.remoteJid?.includes(lidClean) || c.id?.includes(lidClean)))
+        ((c.customerPhone || c.leadPhone) && (c.customerPhone || c.leadPhone) !== lidClean && (c.remoteJid?.includes(lidClean) || c.id?.includes(lidClean)))
       );
-      if (matchChat && matchChat.customerPhone && !matchChat.customerPhone.startsWith('175') && matchChat.customerPhone.length >= 8) {
-        item.phone = matchChat.customerPhone.replace(/\D/g, '');
+      const candPhone = matchChat?.customerPhone || matchChat?.leadPhone;
+      if (matchChat && candPhone && !candPhone.startsWith('175') && candPhone.length >= 8) {
+        item.phone = candPhone.replace(/\D/g, '');
       }
     }
   }
@@ -3911,7 +3912,7 @@ app.delete('/api/chats/:id/follow-up', async (req, res) => {
     chat.followUpDate = undefined;
     chat.followUpText = '';
     chat.followUpMediaPath = '';
-    chat.followUpMediaType = '';
+    chat.followUpMediaType = undefined;
     chat.followUpFileName = '';
     chat.followUpStatus = 'idle';
     liveChats.set(id, chat);

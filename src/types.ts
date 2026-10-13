@@ -117,7 +117,7 @@ export interface AIAgentConfig {
   apiKey?: string;
   model: string;
   reasoningLevel: 'low' | 'medium' | 'high';
-  mediaResolution: 'baixo' | 'medium' | 'maximo';
+  mediaResolution: 'baixo' | 'medio' | 'medium' | 'maximo';
   webSearchEnabled: boolean;
   systemPrompt: string;
   escapeKeywords: string[];
