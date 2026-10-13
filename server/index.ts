@@ -1447,6 +1447,24 @@ async function executeFlowForMessage(
 // Fila de disparos agendados de abandono de carrinho (Phone -> Timeout)
 const pendingCartTimers = new Map<string, NodeJS.Timeout>();
 
+// Gerenciador de VoipClients (Singleton por sessão WhatsApp para evitar recriação de workers WASM)
+const voipClientsBySession = new Map<string, any>();
+
+async function getVoipClientForSession(sessionId: string, sock: any) {
+  let client = voipClientsBySession.get(sessionId);
+  if (!client) {
+    const authDir = path.join(process.cwd(), 'whatsapp_auth', sessionId);
+    process.env.CALL_RELAY_PORT_MODE = 'original';
+    process.env.CALL_DISABLE_IPV6 = '1';
+    const { VoipClient } = await import(path.join(process.cwd(), 'baileys-caller', 'dist', 'index.mjs'));
+    client = new VoipClient({ sock, authDir });
+    await client.connect();
+    voipClientsBySession.set(sessionId, client);
+    console.log(`[Flow Engine] VoipClient singleton conectado para sessão ${sessionId}`);
+  }
+  return client;
+}
+
 function normalizeWebhookEventName(raw: string): string {
   const s = (raw || '').toLowerCase().trim();
   if (s.includes('boleto')) return 'boleto gerado';
@@ -1669,18 +1687,14 @@ async function executeNodeAction(
       let leadAnswered = false;
       let callFinished = false;
 
-      // 1. Iniciar chamada real do WhatsApp via VoipClient
+      // 1. Iniciar chamada real do WhatsApp via VoipClient Singleton
       const currentSessionId = sessionId || 'inst-1';
-      const authDir = path.join(process.cwd(), 'whatsapp_auth', currentSessionId);
 
       try {
-        process.env.CALL_RELAY_PORT_MODE = 'original';
-        process.env.CALL_DISABLE_IPV6 = '1';
-        const { VoipClient } = await import(path.join(process.cwd(), 'baileys-caller', 'dist', 'index.mjs'));
-        const voipClient = new VoipClient({ sock, authDir });
-        await voipClient.connect();
+        const voipClient = await getVoipClientForSession(currentSessionId, sock);
+        try { voipClient.clearActiveCall(); } catch {}
 
-        console.log(`[Flow Engine] VoipClient conectado. Discando chamada para ${targetPhone}...`);
+        console.log(`[Flow Engine] VoipClient pronto. Discando chamada para ${targetPhone} (Tempo de toque: até ${ringDuration}s)...`);
         const liveCall = await voipClient.call(targetPhone, {
           audioSource: 'silence',
           durationMs: ringDuration * 1000
@@ -1705,7 +1719,7 @@ async function executeNodeAction(
           callFinished = true;
         });
 
-        // Aguarda até o lead atender ou estourar os 20 segundos
+        // Aguarda até o lead atender ou estourar o tempo de toque
         const startCallTime = Date.now();
         while (!callFinished && !leadAnswered && (Date.now() - startCallTime < ringDuration * 1000)) {
           await new Promise(r => setTimeout(r, 500));
@@ -1716,19 +1730,17 @@ async function executeNodeAction(
           try { liveCall.end(); } catch {}
         }
 
-        // Aguarda 1.5s para a chamada finalizar totalmente nos servidores do WhatsApp
-        await new Promise(r => setTimeout(r, 1500));
-        try { voipClient.disconnect(); } catch {}
+        try { voipClient.clearActiveCall(); } catch {}
       } catch (voipErr: any) {
         console.error(`[Flow Engine] Erro ao originar chamada:`, voipErr.message);
       }
 
+      // Aguarda 1.5s para a chamada finalizar totalmente nos servidores do WhatsApp
+      await new Promise(r => setTimeout(r, 1500));
+
       // 2. Envia o áudio gravado configurado como Nota de Voz Oficial (tanto se atendeu quanto se não atendeu)
       console.log(`[Flow Engine] Ligação com ${targetPhone} concluída (${leadAnswered ? 'lead ATENDEU e chamada foi desligada' : 'lead NÃO atendeu / tempo esgotado'}). Preparando envio do áudio no WhatsApp...`);
       recordFlowMessageInChat(remoteJid, `📴 [Ligação encerrada (${leadAnswered ? 'atendida' : 'não atendeu'}) - Enviando áudio no WhatsApp]`);
-
-      // Pausa de 1s para garantir liberação completa do canal de mídia após chamada VoIP
-      await new Promise(r => setTimeout(r, 1000));
 
       const targetRecipient = remoteJid.includes('@') ? remoteJid : `${remoteJid}@s.whatsapp.net`;
 
@@ -1736,29 +1748,45 @@ async function executeNodeAction(
       let resolvedAudioBuffer: Buffer | null = null;
       if (fullAudioUrl && fs.existsSync(fullAudioUrl)) {
         try { resolvedAudioBuffer = fs.readFileSync(fullAudioUrl); } catch {}
-      } else if (audioPath) {
+      }
+
+      if (!resolvedAudioBuffer && audioPath) {
         const directName = path.basename(audioPath);
-        const p1 = path.join(process.cwd(), 'uploads', directName);
-        const p2 = path.join(uploadsDir, directName);
-        const p3 = path.join(process.cwd(), audioPath.replace(/^\//, ''));
-        if (fs.existsSync(p1)) {
-          try { resolvedAudioBuffer = fs.readFileSync(p1); } catch {}
-        } else if (fs.existsSync(p2)) {
-          try { resolvedAudioBuffer = fs.readFileSync(p2); } catch {}
-        } else if (fs.existsSync(p3)) {
-          try { resolvedAudioBuffer = fs.readFileSync(p3); } catch {}
+        const candidates = [
+          path.join(process.cwd(), 'uploads', directName),
+          path.join(uploadsDir, directName),
+          path.join(process.cwd(), audioPath.replace(/^\//, '')),
+          path.join(uploadsDir, audioPath.replace(/^\//, ''))
+        ];
+        for (const cand of candidates) {
+          if (fs.existsSync(cand)) {
+            try {
+              resolvedAudioBuffer = fs.readFileSync(cand);
+              break;
+            } catch {}
+          }
         }
       }
 
-      if (!resolvedAudioBuffer && fullAudioUrl && fullAudioUrl.startsWith('http')) {
-        try {
-          const resp = await fetch(fullAudioUrl);
-          if (resp.ok) {
-            const arrayBuf = await resp.arrayBuffer();
-            resolvedAudioBuffer = Buffer.from(arrayBuf);
+      // Se ainda não encontrou no disco e temos URL HTTP, baixa via fetch
+      if (!resolvedAudioBuffer) {
+        const fetchUrl = (audioPath && audioPath.startsWith('http')) 
+          ? audioPath 
+          : (fullAudioUrl && fullAudioUrl.startsWith('http')) 
+            ? fullAudioUrl 
+            : null;
+
+        if (fetchUrl) {
+          try {
+            console.log(`[Flow Engine] Baixando áudio da URL: ${fetchUrl}`);
+            const resp = await fetch(fetchUrl);
+            if (resp.ok) {
+              const arrayBuf = await resp.arrayBuffer();
+              resolvedAudioBuffer = Buffer.from(arrayBuf);
+            }
+          } catch (fetchErr: any) {
+            console.warn('[Flow Engine] Erro ao baixar áudio da URL:', fetchErr.message);
           }
-        } catch (fetchErr: any) {
-          console.warn('[Flow Engine] Erro ao baixar áudio da URL:', fetchErr.message);
         }
       }
 

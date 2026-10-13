@@ -106,6 +106,7 @@ export class ActiveCall extends EventEmitter {
     this.#ended = true;
     if (this.#endTimer) { clearTimeout(this.#endTimer); this.#endTimer = null; }
     try { this.engine.endCall(0, true); } catch {}
+    this._forceEnd("ended");
   };
 
   mute = (muted: boolean): void => {
@@ -327,6 +328,11 @@ export class VoipClient {
     const call = new ActiveCall(callId, this.#engine, durationMs);
     call._audioSource = audioSource;
     this.#activeCall = call;
+    call.on("ended", () => {
+      if (this.#activeCall === call) {
+        this.#activeCall = null;
+      }
+    });
 
     this.#engine.startCall({
       peerJid: peerLid,
@@ -342,16 +348,19 @@ export class VoipClient {
     return call;
   };
 
+  /** Clear active call state safely without tearing down workers or engine */
+  clearActiveCall = (): void => {
+    if (this.#activeCall) {
+      try { this.#activeCall.end(); } catch {}
+      this.#activeCall = null;
+    }
+  };
+
   /** Tear down the WhatsApp socket and release resources. */
   disconnect = (): void => {
     try { this.#activeCall?._forceEnd("disconnect"); } catch {}
     this.#activeCall = null;
     try { this.#relay?.closeAll(); } catch {}
-    try { this.#engine?.destroy(); } catch {}
-    if (!this.#config.sock) {
-      try { this.#sock?.end?.(); } catch {}
-    }
-    this.#engine = null;
     this.#relay = null;
     this.#signaling = null;
   };
