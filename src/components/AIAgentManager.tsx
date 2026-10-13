@@ -117,12 +117,14 @@ interface AIAgentManagerProps {
   user?: UserAuth | null;
   activeTab?: AIAgentSubTab;
   onTabChange?: (tab: AIAgentSubTab) => void;
+  onProviderChange?: (provider: string) => void;
 }
 
 export const AIAgentManager: React.FC<AIAgentManagerProps> = ({ 
   user,
   activeTab: controlledTab,
-  onTabChange: onControlledTabChange
+  onTabChange: onControlledTabChange,
+  onProviderChange
 }) => {
   const isProUser = Boolean(user?.role === 'admin' || user?.planName?.toLowerCase().includes('pro'));
   
@@ -278,13 +280,23 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
             ...data,
             googleCalendar: { ...prev.googleCalendar, ...(data.googleCalendar || {}) }
           }));
+          if (data.provider && onProviderChange) {
+            onProviderChange(data.provider);
+          }
           if (data.followUpPrompt) {
             setTempFollowUpPrompt(data.followUpPrompt);
           }
         }
       })
       .catch(console.error);
-  }, []);
+  }, [onProviderChange]);
+
+  // Notify parent component when user selects a different provider
+  useEffect(() => {
+    if (config.provider && onProviderChange) {
+      onProviderChange(config.provider);
+    }
+  }, [config.provider, onProviderChange]);
 
   // Fetch scheduled broadcasts when tab is selected
   useEffect(() => {
@@ -612,7 +624,7 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                 )}
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                IA 100% nativa e autônoma, hospedada em servidor próprio (Ollama). Respostas ilimitadas sem custos de API por mensagem.
+                IA 100% nativa e autônoma, hospedada em servidor próprio de alta performance. Respostas ilimitadas sem custos de API por mensagem.
               </p>
               {!isProUser && (
                 <div className="mt-3 pt-3 border-t border-white/[0.06] text-[10px] text-amber-400 font-medium">
@@ -703,10 +715,10 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                 >
                   {config.provider === 'nyxzapia' && (
                     <>
-                      <option value="llama3.2:3b">NyxzapIA Ultra (Llama 3.2 3B - Rápido, Leve & Fluido - Recomendado)</option>
-                      <option value="qwen2.5:7b">NyxzapIA Pro (Qwen 2.5 7B - Especialista em Vendas & Negociação)</option>
-                      <option value="llama3.2:1b">NyxzapIA Fast (Llama 3.2 1B - Velocidade Extrema)</option>
-                      <option value="deepseek-r1:7b">NyxzapIA DeepThink (DeepSeek R1 7B - Raciocínio Profundo)</option>
+                      <option value="llama3.2:3b">NyxzapIA Ultra (Rápido, Leve & Fluido - Recomendado)</option>
+                      <option value="qwen2.5:7b">NyxzapIA Pro (Especialista em Vendas & Negociação)</option>
+                      <option value="llama3.2:1b">NyxzapIA Fast (Velocidade Extrema)</option>
+                      <option value="deepseek-r1:7b">NyxzapIA DeepThink (Raciocínio Profundo)</option>
                     </>
                   )}
                   {config.provider === 'gemini' && (

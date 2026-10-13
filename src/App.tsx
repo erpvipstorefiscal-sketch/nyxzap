@@ -84,6 +84,36 @@ export function App() {
     { id: 'playground', label: 'Playground', icon: Sparkles }
   ];
 
+  const [currentAiProvider, setCurrentAiProvider] = useState<string>('nyxzapia');
+
+  // Carrega o provedor de IA atual salvo no banco de dados
+  useEffect(() => {
+    if (user) {
+      fetch('/api/ai-config')
+        .then(res => res.json())
+        .then(data => {
+          if (data?.provider) {
+            setCurrentAiProvider(data.provider);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user]);
+
+  const getProviderBadge = (provider: string) => {
+    switch (provider) {
+      case 'nyxzapia':
+        return { label: 'NYXZAPIA', color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' };
+      case 'openai':
+        return { label: 'OPENAI', color: 'bg-teal-500/15 text-teal-300 border-teal-500/30' };
+      case 'claude':
+        return { label: 'CLAUDE', color: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' };
+      case 'gemini':
+      default:
+        return { label: 'GEMINI', color: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' };
+    }
+  };
+
   const handleSelectClientTab = (tab: 'chat' | 'whatsapp' | 'flow' | 'integrations' | 'ai') => {
     setActiveClientTab(tab);
   };
@@ -406,9 +436,14 @@ export function App() {
                     <span className="font-semibold">Agente de IA</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 uppercase">
-                      Gemini
-                    </span>
+                    {(() => {
+                      const badge = getProviderBadge(currentAiProvider);
+                      return (
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border uppercase font-bold tracking-wider ${badge.color}`}>
+                          {badge.label}
+                        </span>
+                      );
+                    })()}
                     <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${activeClientTab === 'ai' ? 'rotate-180 text-indigo-400' : ''}`} />
                   </div>
                 </button>
@@ -595,6 +630,7 @@ export function App() {
                   user={user} 
                   activeTab={aiSubTab} 
                   onTabChange={setAiSubTab} 
+                  onProviderChange={setCurrentAiProvider}
                 />
               )}
             </div>
