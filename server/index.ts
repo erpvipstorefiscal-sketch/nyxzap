@@ -1270,14 +1270,14 @@ interface SessionData {
 }
 
 const sessions: Map<string, SessionData> = new Map([
-  ['inst-1', { id: 'inst-1', name: 'WhatsApp Principal', status: 'disconnected', automationMode: 'flow' }]
+  ['inst-1', { id: 'inst-1', name: 'WhatsApp Principal', status: 'disconnected', automationMode: 'both' }]
 ]);
 
 // AI Agent Config In-Memory
 let aiConfig: any = {
   provider: 'gemini',
   apiKey: '',
-  model: 'gemini-3.8-flash',
+  model: 'gemini-1.5-flash',
   reasoningLevel: 'high',
   mediaResolution: 'maximo',
   webSearchEnabled: true,
@@ -1441,7 +1441,7 @@ async function saveAIConfigToDB() {
       [
         aiConfig.provider || 'gemini',
         aiConfig.apiKey || '',
-        aiConfig.model || 'gemini-3.8-flash',
+        aiConfig.model || 'gemini-1.5-flash',
         aiConfig.reasoningLevel || 'high',
         aiConfig.mediaResolution || 'maximo',
         aiConfig.webSearchEnabled !== false,
@@ -1470,11 +1470,16 @@ async function loadSavedAIConfig() {
       const audioConfig = typeof row.audio_config === 'object' && row.audio_config !== null ? row.audio_config : {};
       const googleCal = typeof row.google_calendar === 'object' && row.google_calendar !== null ? row.google_calendar : {};
 
+      let savedModel = row.model || aiConfig.model;
+      if (savedModel === 'gemini-3.8-flash' || savedModel === 'gemini-2.5-flash') {
+        savedModel = 'gemini-1.5-flash';
+      }
+
       aiConfig = {
         ...aiConfig,
         provider: row.provider || aiConfig.provider,
         apiKey: row.api_key !== null ? row.api_key : aiConfig.apiKey,
-        model: row.model || aiConfig.model,
+        model: savedModel,
         reasoningLevel: row.reasoning_level || aiConfig.reasoningLevel,
         mediaResolution: row.media_resolution || aiConfig.mediaResolution,
         webSearchEnabled: row.web_search !== false,
@@ -1487,7 +1492,7 @@ async function loadSavedAIConfig() {
         aiMediaList: Array.isArray(row.ai_media) ? row.ai_media : (aiConfig.aiMediaList || []),
         googleCalendar: { ...aiConfig.googleCalendar, ...googleCal }
       };
-      console.log('[AI Config] Configurações de IA carregadas do PostgreSQL com sucesso.');
+      console.log('[AI Config] Configurações de IA carregadas do PostgreSQL com sucesso. Modelo:', aiConfig.model);
     } else {
       await saveAIConfigToDB();
     }
@@ -3014,7 +3019,7 @@ async function startWhatsAppSession(sessionId: string) {
     id: sessionId, 
     name: `WhatsApp ${sessionId}`, 
     status: 'connecting',
-    automationMode: 'flow' 
+    automationMode: 'both' 
   };
   session.sock = sock;
   session.status = 'connecting';
@@ -3077,7 +3082,7 @@ async function startWhatsAppSession(sessionId: string) {
               leadName: c.name || 'Contato WhatsApp',
               tag: 'morno',
               internalNotes: '',
-              aiAgentActive: false,
+              aiAgentActive: true,
               botFlowActive: true,
               unreadCount: c.unreadCount || 0,
               lastMessage: '',
@@ -3151,7 +3156,7 @@ async function startWhatsAppSession(sessionId: string) {
       const msgId = msg.key.id || `msg-${Date.now()}`;
 
       const instSession = sessions.get(sessionId);
-      const instanceMode = instSession?.automationMode || 'flow';
+      const instanceMode = instSession?.automationMode || 'both';
 
       let chat = liveChats.get(remoteJid);
       if (!chat) {
@@ -3161,8 +3166,8 @@ async function startWhatsAppSession(sessionId: string) {
           leadName: pushName,
           tag: 'morno',
           internalNotes: '',
-          aiAgentActive: instanceMode === 'ai' || instanceMode === 'both',
-          botFlowActive: instanceMode === 'flow' || instanceMode === 'both',
+          aiAgentActive: instanceMode !== 'none',
+          botFlowActive: instanceMode !== 'none',
           unreadCount: fromMe ? 0 : 1,
           lastMessage: text,
           lastMessageTime: timeStr,
@@ -3173,6 +3178,11 @@ async function startWhatsAppSession(sessionId: string) {
         chat.lastMessageTime = timeStr;
         if (!fromMe) chat.unreadCount += 1;
         if (pushName && (chat.leadName === 'Contato WhatsApp' || !chat.leadName)) chat.leadName = pushName;
+        // Make sure AI and Bot Flow remain active unless manually paused by attendant
+        if (!chat.pausedByHuman && instanceMode !== 'none') {
+          chat.aiAgentActive = true;
+          chat.botFlowActive = true;
+        }
       }
 
       // Detect incoming/outgoing media in message
@@ -3328,9 +3338,6 @@ async function startWhatsAppSession(sessionId: string) {
         } else {
           // MODOS DE AUTOMAÇÃO: 'both' (Agente IA + Fluxo), 'flow' (Somente Fluxo), 'ai' (Somente IA), 'none' (Manual)
           const isFlowAllowed = (instanceMode === 'flow' || instanceMode === 'both') && chat.botFlowActive !== false;
-          const isAiAllowed = (instanceMode === 'ai' || instanceMode === 'both') && 
-            chat.aiAgentActive !== false && 
-            (aiConfig.provider === 'nyxzapia' || Boolean(aiConfig.apiKey));
 
           let handledByFlow = false;
           if (isFlowAllowed) {
@@ -3338,14 +3345,26 @@ async function startWhatsAppSession(sessionId: string) {
             handledByFlow = await executeFlowForMessage(sock, remoteJid, text, chat.leadName, sessionId);
           }
 
+          // Verificação de permissão e credencial para IA
+          const hasValidAiKey = aiConfig.provider === 'nyxzapia' || Boolean(aiConfig.apiKey && aiConfig.apiKey.trim());
+          const isAiAllowed = !chat.pausedByHuman && 
+            chat.aiAgentActive !== false && 
+            hasValidAiKey && 
+            instanceMode !== 'none';
+
+          console.log(`[Message Routing] Sessão: ${sessionId}, Lead: ${remoteJid}, instanceMode: ${instanceMode}, handledByFlow: ${handledByFlow}, isAiAllowed: ${isAiAllowed}, provider: ${aiConfig.provider}`);
+
           // Se o fluxo não foi ativado por nenhuma palavra-chave e o Agente de IA está habilitado:
           if (!handledByFlow && isAiAllowed) {
             try {
+              console.log(`[AI Engine] Disparando IA (${aiConfig.provider}/${aiConfig.model}) para ${remoteJid}...`);
               const reply = await queryAI(text, aiConfig);
+              console.log(`[AI Engine] Resposta obtida (${reply.length} chars): "${reply.slice(0, 100)}..."`);
               await sock.sendMessage(remoteJid, { text: reply });
               recordFlowMessageInChat(remoteJid, reply, true);
+              console.log(`[AI Engine] Resposta enviada com sucesso para ${remoteJid}!`);
             } catch (err) {
-              console.error('Erro ao responder com IA:', err);
+              console.error('[AI Engine Error] Erro ao responder com IA:', err);
             }
           }
         }
@@ -3359,7 +3378,8 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
   try {
     // 1. NyxzapIA (IA Própria NyxZap no plano PRO - Sem necessidade de API do cliente)
     if (config.provider === 'nyxzapia') {
-      const key = process.env.GEMINI_API_KEY || config.apiKey;
+      const rawKey = process.env.GEMINI_API_KEY || config.apiKey || '';
+      const key = rawKey.trim();
       if (key) {
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
@@ -3385,32 +3405,71 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
 
     // 2. Google Gemini
     if (config.provider === 'gemini') {
-      const key = config.apiKey || process.env.GEMINI_API_KEY;
-      if (!key) return 'Por favor, insira sua chave da API do Google Gemini nas configurações.';
-      const model = config.model || 'gemini-1.5-flash';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-      const res = await fetch(url, {
+      const rawKey = config.apiKey || process.env.GEMINI_API_KEY || '';
+      const key = rawKey.trim();
+      if (!key) {
+        console.warn('[Gemini AI] Nenhuma chave de API configurada para o Gemini!');
+        return 'Por favor, insira sua chave da API do Google Gemini nas configurações.';
+      }
+
+      // Validação e mapeamento do nome do modelo para modelos reais do Google API v1beta
+      let model = (config.model || 'gemini-1.5-flash').trim();
+      if (model === 'gemini-3.8-flash' || model === 'gemini-2.5-flash') {
+        model = 'gemini-1.5-flash';
+      }
+
+      console.log(`[Gemini AI] Chamando Google API com modelo ${model}...`);
+
+      let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt || ''}\n\nCliente: ${prompt}` }] }],
+          contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt ? `${config.systemPrompt}\n\n` : ''}Cliente: ${prompt}` }] }],
           generationConfig: {
             temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
           }
         })
       });
-      const data = await res.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Olá! Como posso te ajudar hoje?';
+
+      let data = await res.json();
+
+      // Se der erro 404 (modelo não existe), tenta fallback para gemini-1.5-flash
+      if (res.status === 404 && model !== 'gemini-1.5-flash') {
+        console.warn(`[Gemini AI] Modelo ${model} retornou 404. Tentando com gemini-1.5-flash...`);
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt ? `${config.systemPrompt}\n\n` : ''}Cliente: ${prompt}` }] }],
+            generationConfig: { temperature: 0.7 }
+          })
+        });
+        data = await res.json();
+      }
+
+      if (data.error) {
+        console.error('[Gemini AI Error Details]:', data.error);
+        return `Aviso: Falha ao consultar Gemini (${data.error.message || 'Verifique sua chave de API'}).`;
+      }
+
+      const generated = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!generated) {
+        console.warn('[Gemini AI] Nenhum candidato retornado:', JSON.stringify(data));
+        return 'Olá! Como posso ajudar você hoje?';
+      }
+      return generated;
     }
 
     // 3. OpenAI GPT
     if (config.provider === 'openai') {
-      if (!config.apiKey) return 'Por favor, insira sua chave da API da OpenAI nas configurações.';
+      const rawKey = config.apiKey || process.env.OPENAI_API_KEY || '';
+      const key = rawKey.trim();
+      if (!key) return 'Por favor, insira sua chave da API da OpenAI nas configurações.';
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`
+          'Authorization': `Bearer ${key}`
         },
         body: JSON.stringify({
           model: config.model || 'gpt-4o',
@@ -3422,17 +3481,23 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
         })
       });
       const data = await res.json();
+      if (data.error) {
+        console.error('[OpenAI Error Details]:', data.error);
+        return `Aviso: Erro na API OpenAI (${data.error.message}).`;
+      }
       return data.choices?.[0]?.message?.content || 'Olá! Em que posso ajudar?';
     }
 
     // 4. Anthropic Claude
     if (config.provider === 'claude') {
-      if (!config.apiKey) return 'Por favor, insira sua chave da API da Anthropic Claude nas configurações.';
+      const rawKey = config.apiKey || process.env.ANTHROPIC_API_KEY || '';
+      const key = rawKey.trim();
+      if (!key) return 'Por favor, insira sua chave da API da Anthropic Claude nas configurações.';
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': config.apiKey,
+          'x-api-key': key,
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
@@ -3444,6 +3509,10 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
         })
       });
       const data = await res.json();
+      if (data.error) {
+        console.error('[Claude Error Details]:', data.error);
+        return `Aviso: Erro na API Claude (${data.error.message}).`;
+      }
       return data.content?.[0]?.text || 'Olá! Em que posso ajudar?';
     }
   } catch (err: any) {
@@ -4563,7 +4632,7 @@ app.get('/api/sessions', async (req, res) => {
           id: r.id,
           name: r.name || `WhatsApp ${r.id}`,
           status: 'disconnected',
-          automationMode: r.automation_mode || 'flow'
+          automationMode: r.automation_mode || 'both'
         });
       }
     });
@@ -4573,7 +4642,7 @@ app.get('/api/sessions', async (req, res) => {
     id: s.id,
     name: s.name,
     status: s.status,
-    automationMode: s.automationMode || 'flow',
+    automationMode: s.automationMode || 'both',
     qrCode: s.qrCode,
     phone: s.phone
   }));
@@ -4584,7 +4653,7 @@ app.get('/api/sessions', async (req, res) => {
 app.put('/api/sessions/:id/automation-mode', async (req, res) => {
   const { id } = req.params;
   const { mode } = req.body;
-  const validMode = (mode === 'both' || mode === 'flow' || mode === 'ai' || mode === 'none') ? mode : 'flow';
+  const validMode = (mode === 'both' || mode === 'flow' || mode === 'ai' || mode === 'none') ? mode : 'both';
 
   const session = sessions.get(id);
   if (session) {
@@ -4613,10 +4682,10 @@ app.post('/api/sessions/create', (req, res) => {
     id: newId,
     name: name || `WhatsApp ${sessions.size + 1}`,
     status: 'disconnected',
-    automationMode: 'flow'
+    automationMode: 'both'
   };
   sessions.set(newId, newSession);
-  broadcast('session_update', { id: newId, status: 'disconnected', name: newSession.name, automationMode: 'flow' });
+  broadcast('session_update', { id: newId, status: 'disconnected', name: newSession.name, automationMode: 'both' });
   res.json({ success: true, session: newSession });
 });
 
@@ -4689,7 +4758,29 @@ app.get('/api/ai-config', (req, res) => {
 
 app.post('/api/ai-config', async (req, res) => {
   aiConfig = { ...aiConfig, ...req.body };
+  if (aiConfig.provider === 'gemini' && (aiConfig.model === 'gemini-3.8-flash' || aiConfig.model === 'gemini-2.5-flash')) {
+    aiConfig.model = 'gemini-1.5-flash';
+  }
   await saveAIConfigToDB();
+
+  // Se o usuário configurou IA (chave informada ou NyxzapIA), garante que as instâncias e conversas ativas permitam IA
+  const hasAi = aiConfig.provider === 'nyxzapia' || Boolean(aiConfig.apiKey && aiConfig.apiKey.trim());
+  if (hasAi) {
+    for (const [_, s] of sessions.entries()) {
+      if (s.automationMode === 'flow' || !s.automationMode) {
+        s.automationMode = 'both';
+      }
+    }
+    for (const [_, c] of liveChats.entries()) {
+      if (!c.pausedByHuman) {
+        c.aiAgentActive = true;
+      }
+    }
+    try {
+      await pool.query(`UPDATE whatsapp_instances SET automation_mode = 'both' WHERE automation_mode = 'flow' OR automation_mode IS NULL`);
+    } catch (e) {}
+  }
+
   res.json({ success: true, config: aiConfig });
 });
 
