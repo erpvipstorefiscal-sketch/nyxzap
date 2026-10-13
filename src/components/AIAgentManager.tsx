@@ -37,12 +37,103 @@ import {
 } from 'lucide-react';
 import { AIAgentConfig, UserAuth, AIMediaItem, GoogleCalendarConfig } from '../types';
 
+export type AIAgentSubTab = 'config' | 'human_alert' | 'follow_up' | 'audio' | 'media' | 'group_broadcasts' | 'calendar' | 'knowledge' | 'playground';
+
+// Componente ToggleSwitch idﾃｪntico ao modelo da Foto 3 (chave verde esmeralda com botﾃ｣o branco)
+export const ToggleSwitch: React.FC<{
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  title: string;
+  description?: string;
+  disabled?: boolean;
+}> = ({ checked, onChange, title, description, disabled }) => {
+  return (
+    <div
+      onClick={() => !disabled && onChange(!checked)}
+      className={`p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between gap-4 transition-all ${
+        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-white/10'
+      }`}
+    >
+      <div className="flex-1 pr-2">
+        <span className="text-xs font-bold text-white block select-none">{title}</span>
+        {description && (
+          <span className="text-[11px] text-slate-400 block mt-0.5 select-none leading-relaxed">
+            {description}
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!disabled) onChange(!checked);
+        }}
+        className={`w-11 h-6 rounded-full transition-colors relative focus:outline-none shrink-0 cursor-pointer ${
+          checked ? 'bg-[#009b62]' : 'bg-zinc-700'
+        } ${disabled ? 'cursor-not-allowed' : ''}`}
+      >
+        <span
+          className={`block w-5 h-5 bg-white rounded-full transition-transform shadow-md absolute top-0.5 left-0.5 ${
+            checked ? 'translate-x-5' : 'translate-x-0'
+          }`}
+        />
+      </button>
+    </div>
+  );
+};
+
+export const InlineToggle: React.FC<{
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}> = ({ checked, onChange, disabled }) => {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!disabled) onChange(!checked);
+      }}
+      className={`w-11 h-6 rounded-full transition-colors relative focus:outline-none shrink-0 cursor-pointer ${
+        checked ? 'bg-[#009b62]' : 'bg-zinc-700'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+    >
+      <span
+        className={`block w-5 h-5 bg-white rounded-full transition-transform shadow-md absolute top-0.5 left-0.5 ${
+          checked ? 'translate-x-5' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  );
+};
+
 interface AIAgentManagerProps {
   user?: UserAuth | null;
+  activeTab?: AIAgentSubTab;
+  onTabChange?: (tab: AIAgentSubTab) => void;
 }
 
-export const AIAgentManager: React.FC<AIAgentManagerProps> = ({ user }) => {
+export const AIAgentManager: React.FC<AIAgentManagerProps> = ({ 
+  user,
+  activeTab: controlledTab,
+  onTabChange: onControlledTabChange
+}) => {
   const isProUser = Boolean(user?.role === 'admin' || user?.planName?.toLowerCase().includes('pro'));
+  
+  const [internalTab, setInternalTab] = useState<AIAgentSubTab>('config');
+  const activeTab = controlledTab || internalTab;
+  const setActiveTab = (tab: AIAgentSubTab) => {
+    if (onControlledTabChange) {
+      onControlledTabChange(tab);
+    }
+    setInternalTab(tab);
+  };
 
   const [config, setConfig] = useState<AIAgentConfig>({
     provider: 'gemini',
@@ -148,8 +239,6 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
     }
   });
 
-  type TabType = 'config' | 'human_alert' | 'follow_up' | 'audio' | 'media' | 'group_broadcasts' | 'calendar' | 'knowledge' | 'playground';
-  const [activeTab, setActiveTab] = useState<TabType>('config');
   const [newKeyword, setNewKeyword] = useState('');
   const [saveToast, setSaveToast] = useState(false);
 
@@ -435,119 +524,58 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
         </button>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin border-b border-white/[0.06] text-xs font-medium">
-        <button
-          onClick={() => setActiveTab('config')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'config'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <Cpu className="w-4 h-4" />
-          <span>Modelos & IA</span>
-        </button>
+      {/* Sub-menu Breadcrumb & Quick Switch */}
+      {(() => {
+        const tabList: { id: AIAgentSubTab; label: string; icon: any; color?: string }[] = [
+          { id: 'config', label: 'Modelos & IA', icon: Cpu, color: 'text-indigo-400' },
+          { id: 'human_alert', label: 'Alerta Humano', icon: PhoneCall, color: 'text-amber-400' },
+          { id: 'follow_up', label: 'Follow-up IA', icon: Clock, color: 'text-cyan-400' },
+          { id: 'audio', label: 'ﾃ「dio com IA', icon: Volume2, color: 'text-purple-400' },
+          { id: 'media', label: `Mﾃｭdias da IA (${config.aiMediaList?.length || 0})`, icon: ImageIcon, color: 'text-blue-400' },
+          { id: 'group_broadcasts', label: 'Postagens em Grupos', icon: Radio, color: 'text-pink-400' },
+          { id: 'calendar', label: 'Google Calendar', icon: Calendar, color: 'text-emerald-400' },
+          { id: 'knowledge', label: `Base de Conhecimento (${config.knowledgeDocs?.length || 0})`, icon: FileText, color: 'text-zinc-400' },
+          { id: 'playground', label: 'Playground', icon: Sparkles, color: 'text-emerald-400' }
+        ];
+        const currentTabInfo = tabList.find(t => t.id === activeTab) || tabList[0];
+        const CurrentTabIcon = currentTabInfo.icon;
 
-        <button
-          onClick={() => setActiveTab('human_alert')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'human_alert'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <PhoneCall className="w-4 h-4 text-amber-400" />
-          <span>Alerta Humano</span>
-          {config.humanAlertEnabled && (
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-          )}
-        </button>
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+            <div className="flex items-center gap-2 text-xs">
+              <Bot className="w-4 h-4 text-indigo-400" />
+              <span className="text-zinc-500 font-medium">Agente de IA</span>
+              <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />
+              <span className="text-white font-bold flex items-center gap-1.5">
+                <CurrentTabIcon className={`w-3.5 h-3.5 ${currentTabInfo.color || 'text-indigo-400'}`} />
+                <span>{currentTabInfo.label}</span>
+              </span>
+            </div>
 
-        <button
-          onClick={() => setActiveTab('follow_up')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'follow_up'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <Clock className="w-4 h-4 text-cyan-400" />
-          <span>Follow-up IA</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('audio')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'audio'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <Volume2 className="w-4 h-4 text-purple-400" />
-          <span>ﾃ「dio com IA</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('media')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'media'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <ImageIcon className="w-4 h-4 text-blue-400" />
-          <span>Mﾃｭdias da IA ({config.aiMediaList?.length || 0})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('group_broadcasts')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'group_broadcasts'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <Radio className="w-4 h-4 text-pink-400" />
-          <span>Postagens em Grupos</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('calendar')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'calendar'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <Calendar className="w-4 h-4 text-emerald-400" />
-          <span>Google Calendar</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('knowledge')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'knowledge'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <FileText className="w-4 h-4 text-zinc-400" />
-          <span>Base de Conhecimento ({config.knowledgeDocs.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('playground')}
-          className={`py-2 px-3.5 rounded-xl transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeTab === 'playground'
-              ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
-              : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-emerald-400" />
-          <span>Playground</span>
-        </button>
-      </div>
+            {/* Quick pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto max-w-full text-xs">
+              {tabList.map(tab => {
+                const TabIcon = tab.icon;
+                const isTabActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`py-1.5 px-3 rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 text-[11px] ${
+                      isTabActive
+                        ? 'bg-indigo-600 text-white font-semibold shadow-subtle'
+                        : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <TabIcon className="w-3.5 h-3.5" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ============================================================== */}
       {/* TAB 1: MODELOS & IA                                             */}
@@ -803,8 +831,11 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
             </div>
 
             {/* Google Search Grounding */}
-            <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-              <div className="space-y-1">
+            <div 
+              onClick={() => setConfig({ ...config, webSearchEnabled: !config.webSearchEnabled })}
+              className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between cursor-pointer hover:border-white/10 transition-colors"
+            >
+              <div className="space-y-1 select-none pr-3">
                 <div className="flex items-center gap-2">
                   <Globe className="w-4 h-4 text-emerald-400" />
                   <span className="text-xs font-bold text-white">Pesquisa na Web (Google Search Grounding)</span>
@@ -814,11 +845,9 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
                 </p>
               </div>
 
-              <input
-                type="checkbox"
+              <InlineToggle
                 checked={config.webSearchEnabled}
-                onChange={(e) => setConfig({ ...config, webSearchEnabled: e.target.checked })}
-                className="w-5 h-5 accent-indigo-600 cursor-pointer"
+                onChange={(val) => setConfig({ ...config, webSearchEnabled: val })}
               />
             </div>
           </div>
@@ -906,20 +935,12 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
             </div>
 
             {/* Toggle 1: Ativar Alerta de Atendimento Humano */}
-            <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-white block">Ativar Alerta de Atendimento Humano</span>
-                <span className="text-[11px] text-slate-400">
-                  Envia mensagens de alerta para os nﾃｺmeros do WhatsApp cadastrados abaixo.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={config.humanAlertEnabled}
-                onChange={(e) => setConfig({ ...config, humanAlertEnabled: e.target.checked })}
-                className="w-5 h-5 accent-indigo-600 cursor-pointer"
-              />
-            </div>
+            <ToggleSwitch
+              title="Ativar Alerta de Atendimento Humano"
+              description="Envia mensagens de alerta para os nﾃｺmeros do WhatsApp cadastrados abaixo."
+              checked={config.humanAlertEnabled}
+              onChange={(val) => setConfig({ ...config, humanAlertEnabled: val })}
+            />
 
             {/* Nﾃｺmeros do WhatsApp para receber o alerta */}
             <div className="space-y-3">
@@ -967,22 +988,12 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
 
             {/* Toggle 2: Pausar o Agente de IA ao solicitar atendimento humano */}
             <div className="space-y-3 pt-2 border-t border-white/[0.06]">
-              <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-white block">
-                    Pausar o Agente de IA ao solicitar atendimento humano
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    Evita que a IA continue respondendo enquanto um humano assume a conversa.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={config.pauseAiOnHumanRequest}
-                  onChange={(e) => setConfig({ ...config, pauseAiOnHumanRequest: e.target.checked })}
-                  className="w-5 h-5 accent-indigo-600 cursor-pointer"
-                />
-              </div>
+              <ToggleSwitch
+                title="Pausar o Agente de IA ao solicitar atendimento humano"
+                description="Evita que a IA continue respondendo enquanto um humano assume a conversa."
+                checked={config.pauseAiOnHumanRequest}
+                onChange={(val) => setConfig({ ...config, pauseAiOnHumanRequest: val })}
+              />
 
               {/* Seletor de Duraﾃｧﾃ｣o da pausa */}
               {config.pauseAiOnHumanRequest && (
@@ -1004,39 +1015,21 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
             </div>
 
             {/* Toggle 3: Incluir resumo da conversa no alerta */}
-            <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-white block">Incluir resumo da conversa no alerta</span>
-                <span className="text-[11px] text-slate-400">
-                  Gera um resumo dos tﾃｳpicos abordados para o atendente humano ler antes de assumir o chat.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={config.includeChatSummaryInAlert}
-                onChange={(e) => setConfig({ ...config, includeChatSummaryInAlert: e.target.checked })}
-                className="w-5 h-5 accent-indigo-600 cursor-pointer"
-              />
-            </div>
+            <ToggleSwitch
+              title="Incluir resumo da conversa no alerta"
+              description="Gera um resumo dos tﾃｳpicos abordados para o atendente humano ler antes de assumir o chat."
+              checked={config.includeChatSummaryInAlert}
+              onChange={(val) => setConfig({ ...config, includeChatSummaryInAlert: val })}
+            />
 
             {/* Toggle 4: Usar regras customizadas de intervenﾃｧﾃ｣o */}
             <div className="space-y-3 pt-2 border-t border-white/[0.06]">
-              <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-white block">
-                    Usar regras customizadas de intervenﾃｧﾃ｣o
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    Instruﾃｧﾃｵes especﾃｭficas para a IA identificar a hora certa de chamar um humano.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={config.useCustomInterventionRules}
-                  onChange={(e) => setConfig({ ...config, useCustomInterventionRules: e.target.checked })}
-                  className="w-5 h-5 accent-indigo-600 cursor-pointer"
-                />
-              </div>
+              <ToggleSwitch
+                title="Usar regras customizadas de intervenﾃｧﾃ｣o"
+                description="Instruﾃｧﾃｵes especﾃｭficas para a IA identificar a hora certa de chamar um humano."
+                checked={config.useCustomInterventionRules}
+                onChange={(val) => setConfig({ ...config, useCustomInterventionRules: val })}
+              />
 
               {/* Textarea com o texto exato da Foto 1 */}
               {config.useCustomInterventionRules && (
@@ -1074,20 +1067,12 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
             </div>
 
             {/* Toggle de Ativaﾃｧﾃ｣o do Follow-up */}
-            <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-white block">Ativar Mensagens de Follow-up por IA</span>
-                <span className="text-[11px] text-slate-400">
-                  A IA analisa conversas sem resposta recente e cria abordagens naturais para reaquecer o contato.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={config.followUpAiEnabled}
-                onChange={(e) => setConfig({ ...config, followUpAiEnabled: e.target.checked })}
-                className="w-5 h-5 accent-indigo-600 cursor-pointer"
-              />
-            </div>
+            <ToggleSwitch
+              title="Ativar Mensagens de Follow-up por IA"
+              description="A IA analisa conversas sem resposta recente e cria abordagens naturais para reaquecer o contato."
+              checked={config.followUpAiEnabled}
+              onChange={(val) => setConfig({ ...config, followUpAiEnabled: val })}
+            />
 
             {/* Botﾃ｣o para Editar o Prompt de Follow-up */}
             <div className="p-5 rounded-2xl bg-indigo-950/20 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1150,20 +1135,12 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
               </div>
 
               {/* Disparar fora do horﾃ｡rio comercial */}
-              <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-white block">Disparar fora do horﾃ｡rio comercial</span>
-                  <span className="text-[10px] text-slate-400">
-                    Se desativado, o envio aguardarﾃ｡ o inﾃｭcio do prﾃｳximo dia ﾃｺtil (09:00).
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={config.followUpOffHoursEnabled}
-                  onChange={(e) => setConfig({ ...config, followUpOffHoursEnabled: e.target.checked })}
-                  className="w-5 h-5 accent-indigo-600 cursor-pointer"
-                />
-              </div>
+              <ToggleSwitch
+                title="Disparar fora do horﾃ｡rio comercial"
+                description="Se desativado, o envio aguardarﾃ｡ o inﾃｭcio do prﾃｳximo dia ﾃｺtil (09:00)."
+                checked={config.followUpOffHoursEnabled}
+                onChange={(val) => setConfig({ ...config, followUpOffHoursEnabled: val })}
+              />
 
               {/* Fuso horﾃ｡rio */}
               <div className="space-y-1.5 p-4 rounded-xl bg-[#141622] border border-white/[0.06]">
@@ -1310,21 +1287,13 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
 
           {/* Configuraﾃｧﾃ｣o do ﾃ「dio */}
           <div className="p-6 rounded-2xl bg-surface-card border border-white/[0.08] space-y-6">
-            {/* Toggle Principal: Ativar ﾃ「dio */}
-            <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-white block">Ativar Respostas em ﾃ「dio com IA</span>
-                <span className="text-[11px] text-slate-400">
-                  Habilita envio de mensagens de voz sintetizadas para humanizar o atendimento.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={config.audioEnabled}
-                onChange={(e) => setConfig({ ...config, audioEnabled: e.target.checked })}
-                className="w-5 h-5 accent-indigo-600 cursor-pointer"
-              />
-            </div>
+            {/* Toggle Principal: Ativar ﾃ「dio (Modelo da Foto 3) */}
+            <ToggleSwitch
+              title="Habilitar Audio com IA"
+              description="Habilita a capacidade de usar ﾃ｡udio (nﾃ｣o altera comportamento automaticamente)"
+              checked={config.audioEnabled}
+              onChange={(val) => setConfig({ ...config, audioEnabled: val })}
+            />
 
             {/* Provedor de Voz (ElevenLabs vs Nativo) */}
             <div className="space-y-4 pt-2 border-t border-white/[0.06]">
@@ -1422,15 +1391,16 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
 
                   {/* Usar Voice ID Personalizado */}
                   <div className="pt-2 border-t border-white/[0.06] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-300">
+                    <div 
+                      onClick={() => setConfig({ ...config, useCustomVoiceId: !config.useCustomVoiceId })}
+                      className="flex items-center justify-between cursor-pointer py-1"
+                    >
+                      <span className="text-xs font-semibold text-slate-300 select-none">
                         Usar Voice ID Personalizado (Clone de Voz prﾃｳprio)
                       </span>
-                      <input
-                        type="checkbox"
+                      <InlineToggle
                         checked={config.useCustomVoiceId}
-                        onChange={(e) => setConfig({ ...config, useCustomVoiceId: e.target.checked })}
-                        className="w-4 h-4 accent-purple-600 cursor-pointer"
+                        onChange={(val) => setConfig({ ...config, useCustomVoiceId: val })}
                       />
                     </div>
 
@@ -1455,51 +1425,36 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
               </label>
 
               {/* 1. Substituir Texto por ﾃ「dio */}
-              <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-white block">Substituir Texto por ﾃ「dio</span>
-                  <span className="text-[11px] text-slate-400">
-                    Envia exclusivamente a mensagem de voz ao cliente sem enviar o texto correspondente.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={config.substituteTextWithAudio}
-                  onChange={(e) => setConfig({ ...config, substituteTextWithAudio: e.target.checked })}
-                  className="w-5 h-5 accent-indigo-600 cursor-pointer"
-                />
-              </div>
+              <ToggleSwitch
+                title="Substituir Texto por ﾃ「dio"
+                description="Envia exclusivamente a mensagem de voz ao cliente sem enviar o texto correspondente."
+                checked={config.substituteTextWithAudio}
+                onChange={(val) => setConfig({ ...config, substituteTextWithAudio: val })}
+              />
 
               {/* 2. Resposta Automﾃ｡tica com ﾃ「dio */}
-              <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-white block">Resposta Automﾃ｡tica com ﾃ「dio</span>
-                  <span className="text-[11px] text-slate-400">
-                    Sempre que o cliente enviar uma mensagem de voz, responder obrigatoriamente com ﾃ｡udio.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={config.autoReplyWithAudio}
-                  onChange={(e) => setConfig({ ...config, autoReplyWithAudio: e.target.checked })}
-                  className="w-5 h-5 accent-indigo-600 cursor-pointer"
-                />
-              </div>
+              <ToggleSwitch
+                title="Resposta Automﾃ｡tica com ﾃ「dio"
+                description="Sempre que o cliente enviar uma mensagem de voz, responder obrigatoriamente com ﾃ｡udio."
+                checked={config.autoReplyWithAudio}
+                onChange={(val) => setConfig({ ...config, autoReplyWithAudio: val })}
+              />
 
               {/* 3. ﾃ「dio Inteligente (Comprimento Mﾃｭnimo e Exemplos) */}
               <div className="p-5 rounded-2xl bg-[#141622] border border-white/[0.08] space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div 
+                  onClick={() => setConfig({ ...config, smartAudioEnabled: !config.smartAudioEnabled })}
+                  className="flex items-center justify-between cursor-pointer"
+                >
+                  <div className="select-none pr-3">
                     <span className="text-xs font-bold text-white block">ﾃ「dio Inteligente</span>
-                    <span className="text-[11px] text-slate-400">
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
                       Gera ﾃ｡udio apenas para respostas explicativas ou parﾃ｡grafos, economizando crﾃｩditos em mensagens curtas.
                     </span>
                   </div>
-                  <input
-                    type="checkbox"
+                  <InlineToggle
                     checked={config.smartAudioEnabled}
-                    onChange={(e) => setConfig({ ...config, smartAudioEnabled: e.target.checked })}
-                    className="w-5 h-5 accent-purple-600 cursor-pointer"
+                    onChange={(val) => setConfig({ ...config, smartAudioEnabled: val })}
                   />
                 </div>
 
@@ -1960,25 +1915,15 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
             )}
 
             {/* Toggle: Permitir agendamentos automﾃ｡ticos pela IA */}
-            <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-white block">
-                  Permitir que a IA faﾃｧa agendamentos automﾃ｡ticos na agenda
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  A IA pode verificar disponibilidade e criar eventos no Google Calendar diretamente pelo WhatsApp.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={config.googleCalendar?.autoScheduleEnabled || false}
-                onChange={(e) => setConfig({
-                  ...config,
-                  googleCalendar: { ...config.googleCalendar, autoScheduleEnabled: e.target.checked }
-                })}
-                className="w-5 h-5 accent-emerald-600 cursor-pointer"
-              />
-            </div>
+            <ToggleSwitch
+              title="Permitir que a IA faﾃｧa agendamentos automﾃ｡ticos na agenda"
+              description="A IA pode verificar disponibilidade e criar eventos no Google Calendar diretamente pelo WhatsApp."
+              checked={config.googleCalendar?.autoScheduleEnabled || false}
+              onChange={(val) => setConfig({
+                ...config,
+                googleCalendar: { ...config.googleCalendar, autoScheduleEnabled: val }
+              })}
+            />
 
             {/* Banner de Aviso: Base de Conhecimento */}
             <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 flex items-start gap-3">
@@ -2036,16 +1981,23 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
 
               {/* Mensagem Personalizada de Confirmaﾃｧﾃ｣o */}
               <div className="space-y-2 p-4 rounded-xl bg-[#141622] border border-white/[0.06] md:col-span-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white">Mensagem personalizada de confirmaﾃｧﾃ｣o</span>
-                  <input
-                    type="checkbox"
+                <div 
+                  onClick={() => setConfig({
+                    ...config,
+                    googleCalendar: { 
+                      ...config.googleCalendar, 
+                      customConfirmationMessageEnabled: !(config.googleCalendar?.customConfirmationMessageEnabled !== false) 
+                    }
+                  })}
+                  className="flex items-center justify-between cursor-pointer"
+                >
+                  <span className="text-xs font-bold text-white select-none">Mensagem personalizada de confirmaﾃｧﾃ｣o</span>
+                  <InlineToggle
                     checked={config.googleCalendar?.customConfirmationMessageEnabled !== false}
-                    onChange={(e) => setConfig({
+                    onChange={(val) => setConfig({
                       ...config,
-                      googleCalendar: { ...config.googleCalendar, customConfirmationMessageEnabled: e.target.checked }
+                      googleCalendar: { ...config.googleCalendar, customConfirmationMessageEnabled: val }
                     })}
-                    className="w-4 h-4 accent-emerald-500 cursor-pointer"
                   />
                 </div>
                 <input
@@ -2062,16 +2014,23 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
 
               {/* Tﾃｭtulo Personalizado do Evento */}
               <div className="space-y-2 p-4 rounded-xl bg-[#141622] border border-white/[0.06] md:col-span-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white">Tﾃｭtulo personalizado do evento</span>
-                  <input
-                    type="checkbox"
+                <div 
+                  onClick={() => setConfig({
+                    ...config,
+                    googleCalendar: { 
+                      ...config.googleCalendar, 
+                      customMeetingTitleEnabled: !(config.googleCalendar?.customMeetingTitleEnabled !== false) 
+                    }
+                  })}
+                  className="flex items-center justify-between cursor-pointer"
+                >
+                  <span className="text-xs font-bold text-white select-none">Tﾃｭtulo personalizado do evento</span>
+                  <InlineToggle
                     checked={config.googleCalendar?.customMeetingTitleEnabled !== false}
-                    onChange={(e) => setConfig({
+                    onChange={(val) => setConfig({
                       ...config,
-                      googleCalendar: { ...config.googleCalendar, customMeetingTitleEnabled: e.target.checked }
+                      googleCalendar: { ...config.googleCalendar, customMeetingTitleEnabled: val }
                     })}
-                    className="w-4 h-4 accent-emerald-500 cursor-pointer"
                   />
                 </div>
                 <input
@@ -2087,21 +2046,15 @@ Entregue somente as trﾃｪs mensagens prontas para envio, sem explicar sua estratﾃ
               </div>
 
               {/* Exigir e-mail do cliente */}
-              <div className="p-4 rounded-xl bg-[#141622] border border-white/[0.06] flex items-center justify-between md:col-span-2">
-                <div>
-                  <span className="text-xs font-bold text-white block">Exigir e-mail do cliente para agendar</span>
-                  <span className="text-[11px] text-slate-400">
-                    A IA solicitarﾃ｡ o e-mail antes de fechar a reuniﾃ｣o para enviar o convite com link do Google Meet.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
+              <div className="md:col-span-2">
+                <ToggleSwitch
+                  title="Exigir e-mail do cliente para agendar"
+                  description="A IA solicitarﾃ｡ o e-mail antes de fechar a reuniﾃ｣o para enviar o convite com link do Google Meet."
                   checked={config.googleCalendar?.requireEmailForBooking || false}
-                  onChange={(e) => setConfig({
+                  onChange={(val) => setConfig({
                     ...config,
-                    googleCalendar: { ...config.googleCalendar, requireEmailForBooking: e.target.checked }
+                    googleCalendar: { ...config.googleCalendar, requireEmailForBooking: val }
                   })}
-                  className="w-5 h-5 accent-emerald-600 cursor-pointer"
                 />
               </div>
             </div>

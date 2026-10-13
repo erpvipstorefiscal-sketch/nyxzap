@@ -28,13 +28,19 @@ import {
   ChevronRight,
   ChevronLeft,
   Sun,
-  Moon
+  Moon,
+  Cpu,
+  PhoneCall,
+  Clock,
+  Volume2,
+  Image as ImageIcon,
+  FileText
 } from 'lucide-react';
 import { UserAuth, SystemUpdate } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AdminDashboard } from './components/AdminDashboard';
 import { WhatsAppManager } from './components/WhatsAppManager';
-import { AIAgentManager } from './components/AIAgentManager';
+import { AIAgentManager, AIAgentSubTab } from './components/AIAgentManager';
 import { FlowBuilder } from './components/FlowBuilder';
 import { LiveChatManager } from './components/LiveChatManager';
 import { RenewSubscriptionScreen } from './components/RenewSubscriptionScreen';
@@ -63,7 +69,20 @@ export function App() {
   });
 
   const [activeClientTab, setActiveClientTab] = useState<'chat' | 'whatsapp' | 'flow' | 'integrations' | 'ai'>('chat');
+  const [aiSubTab, setAiSubTab] = useState<AIAgentSubTab>('config');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  const aiSubMenuItems: { id: AIAgentSubTab; label: string; icon: any }[] = [
+    { id: 'config', label: 'Modelos & IA', icon: Cpu },
+    { id: 'human_alert', label: 'Alerta Humano', icon: PhoneCall },
+    { id: 'follow_up', label: 'Follow-up IA', icon: Clock },
+    { id: 'audio', label: 'Áudio com IA', icon: Volume2 },
+    { id: 'media', label: 'Mídias da IA', icon: ImageIcon },
+    { id: 'group_broadcasts', label: 'Postagens em Grupos', icon: Radio },
+    { id: 'calendar', label: 'Google Calendar', icon: Calendar },
+    { id: 'knowledge', label: 'Base de Conhecimento', icon: FileText },
+    { id: 'playground', label: 'Playground', icon: Sparkles }
+  ];
 
   const handleSelectClientTab = (tab: 'chat' | 'whatsapp' | 'flow' | 'integrations' | 'ai') => {
     setActiveClientTab(tab);
@@ -372,23 +391,60 @@ export function App() {
                 <span>Canais & Integrações</span>
               </button>
 
-              {/* 4. AGENTE DE IA */}
-              <button
-                onClick={() => handleSelectClientTab('ai')}
-                className={`w-full px-3 py-2.5 rounded-xl transition-all flex items-center justify-between text-xs font-medium ${
-                  activeClientTab === 'ai'
-                    ? 'bg-white/[0.08] text-white border border-white/[0.1] shadow-sm'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Bot className={`w-4 h-4 ${activeClientTab === 'ai' ? 'text-indigo-400' : 'text-zinc-500'}`} />
-                  <span>Agente de IA</span>
-                </div>
-                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 uppercase">
-                  Gemini
-                </span>
-              </button>
+              {/* 4. AGENTE DE IA COM SUB-MENUS NA SIDEBAR */}
+              <div className="space-y-1">
+                <button
+                  onClick={() => handleSelectClientTab('ai')}
+                  className={`w-full px-3 py-2.5 rounded-xl transition-all flex items-center justify-between text-xs font-medium cursor-pointer ${
+                    activeClientTab === 'ai'
+                      ? 'bg-white/[0.08] text-white border border-white/[0.1] shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Bot className={`w-4 h-4 ${activeClientTab === 'ai' ? 'text-indigo-400' : 'text-zinc-500'}`} />
+                    <span className="font-semibold">Agente de IA</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 uppercase">
+                      Gemini
+                    </span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${activeClientTab === 'ai' ? 'rotate-180 text-indigo-400' : ''}`} />
+                  </div>
+                </button>
+
+                {/* Sub-menus expandidos do Agente de IA dentro da Sidebar (Foto 1) */}
+                {activeClientTab === 'ai' && (
+                  <div className="ml-3 pl-2.5 py-1 border-l border-white/[0.08] space-y-0.5 animate-fadeIn">
+                    {aiSubMenuItems.map((item) => {
+                      const SubIcon = item.icon;
+                      const isSelected = aiSubTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setActiveClientTab('ai');
+                            setAiSubTab(item.id);
+                          }}
+                          className={`w-full px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 font-semibold shadow-xs'
+                              : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <SubIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-indigo-400' : 'text-zinc-500'}`} />
+                            <span className="truncate">{item.label}</span>
+                          </div>
+                          {isSelected && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </nav>
           )}
         </div>
@@ -472,7 +528,7 @@ export function App() {
                 ? 'Fluxo' 
                 : activeClientTab === 'integrations'
                 ? 'Canais & Integrações'
-                : 'Configurações do Agente de IA'}
+                : `Agente de IA > ${aiSubMenuItems.find(m => m.id === aiSubTab)?.label || 'Modelos & IA'}`}
             </h2>
           </div>
 
@@ -534,7 +590,13 @@ export function App() {
               )}
               {activeClientTab === 'flow' && <FlowBuilder />}
               {activeClientTab === 'integrations' && <ChannelsIntegrations user={user} />}
-              {activeClientTab === 'ai' && <AIAgentManager user={user} />}
+              {activeClientTab === 'ai' && (
+                <AIAgentManager 
+                  user={user} 
+                  activeTab={aiSubTab} 
+                  onTabChange={setAiSubTab} 
+                />
+              )}
             </div>
           )}
         </main>
