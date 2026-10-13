@@ -26,7 +26,8 @@ import {
   X,
   Check,
   PanelRight,
-  ChevronDown
+  ChevronDown,
+  Maximize2
 } from 'lucide-react';
 import { ChatConversation, LeadTag, ChatMessage, WhatsAppGroup, ScheduledBroadcast } from '../types';
 import { confirmDialog, alertDialog } from './ModalConfirm';
@@ -69,6 +70,21 @@ export const LiveChatManager: React.FC = () => {
 
   const [showCrmSidebar, setShowCrmSidebar] = useState(true);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [chatMedia, setChatMedia] = useState<{ url: string; type: 'image' | 'video' | 'audio' | 'document'; fileName: string } | null>(null);
+  const [isUploadingChatMedia, setIsUploadingChatMedia] = useState(false);
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
+
+  const getMediaSrc = (url?: string) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+    if (url.startsWith('/uploads/')) return url;
+    if (url.startsWith('uploads/')) return `/${url}`;
+    if (!url.startsWith('/')) return `/uploads/${url}`;
+    return url;
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -205,11 +221,64 @@ export const LiveChatManager: React.FC = () => {
     }
   }, [activeChatId, activeChat?.followUpDate, activeChat?.followUpText, activeChat?.followUpMediaPath]);
 
+  const handleChatFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      await alertDialog({
+        title: 'Arquivo Muito Grande',
+        message: 'O arquivo não pode ultrapassar 50MB.',
+        variant: 'danger',
+        confirmText: 'Entendi'
+      });
+      return;
+    }
+
+    setIsUploadingChatMedia(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/flow/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        let mediaType: 'image' | 'video' | 'audio' | 'document' = 'document';
+        if (file.type.startsWith('image/')) mediaType = 'image';
+        else if (file.type.startsWith('video/')) mediaType = 'video';
+        else if (file.type.startsWith('audio/')) mediaType = 'audio';
+
+        setChatMedia({
+          url: data.url,
+          type: mediaType,
+          fileName: data.filename || file.name
+        });
+      } else {
+        await alertDialog({
+          title: 'Erro no Upload',
+          message: data.error || 'Falha ao enviar arquivo.',
+          variant: 'danger',
+          confirmText: 'OK'
+        });
+      }
+    } catch (err: any) {
+      console.error('Erro ao enviar mídia:', err);
+    } finally {
+      setIsUploadingChatMedia(false);
+      if (chatFileInputRef.current) chatFileInputRef.current.value = '';
+    }
+  };
+
   const handleSendMessage = async () => {
-    if (!replyText.trim() || !activeChat) return;
+    if ((!replyText.trim() && !chatMedia) || !activeChat) return;
 
     const textToSend = replyText.trim();
+    const mediaToSend = chatMedia;
     setReplyText('');
+    setChatMedia(null);
 
     try {
       // Optimistically switch to Manual Mode in UI immediately
@@ -220,7 +289,12 @@ export const LiveChatManager: React.FC = () => {
       await fetch(`/api/chats/${encodeURIComponent(activeChat.id)}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToSend })
+        body: JSON.stringify({ 
+          text: textToSend,
+          mediaUrl: mediaToSend?.url,
+          mediaType: mediaToSend?.type,
+          fileName: mediaToSend?.fileName
+        })
       });
       fetchChats();
       scrollToBottom('smooth');
@@ -1483,38 +1557,144 @@ export const LiveChatManager: React.FC = () => {
           >
             <div className="absolute inset-0 bg-gradient-to-b from-[#090A0F]/90 via-transparent to-[#090A0F]/90 pointer-events-none dark-vignette" />
             <div className="relative z-10 space-y-3.5">
-              {activeChat.messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`flex flex-col ${m.fromMe ? 'items-end' : 'items-start'} group`}
-                >
+              {activeChat.messages.map((m) => {
+                const mediaUrl = m.mediaUrl;
+                let mediaType = m.mediaType;
+                if (!mediaType && mediaUrl) {
+                  const lower = mediaUrl.toLowerCase();
+                  if (lower.match(/\.(jpg|jpeg|png|webp|gif)$/i)) mediaType = 'image';
+                  else if (lower.match(/\.(mp4|webm|mov)$/i)) mediaType = 'video';
+                  else if (lower.match(/\.(mp3|wav|ogg|opus|m4a|aac)$/i)) mediaType = 'audio';
+                  else if (lower.match(/\.(pdf|doc|docx|xls|xlsx|txt)$/i)) mediaType = 'document';
+                }
+
+                const isPlaceholderText = 
+                  m.text === '🎵 [Áudio]' || 
+                  m.text === '🎵 [Áudio enviado]' || 
+                  m.text === '🎤 [Nota de voz enviada para o lead]' ||
+                  m.text === '📷 [Foto]' || 
+                  m.text === '🖼️ [Imagem enviada]' || 
+                  m.text === '🎥 [Vídeo]' || 
+                  m.text === '🎥 [Vídeo enviado]' || 
+                  (Boolean(m.text) && m.text.startsWith('📄 [Documento:') && m.text.endsWith(']'));
+
+                const showCaptionOrText = !mediaUrl || !isPlaceholderText;
+
+                return (
                   <div
-                    className={`max-w-[65%] px-4 py-3 rounded-2xl text-[13px] leading-relaxed transition-all ${
-                      m.fromMe
-                        ? m.isAiGenerated
-                          ? 'bg-gradient-to-br from-[#181A28] to-[#121422] text-slate-100 border border-indigo-500/30 rounded-tr-xs shadow-lg shadow-indigo-950/20 chat-bubble-ai'
-                          : 'bg-gradient-to-br from-[#242A42] to-[#1B2034] text-white border border-indigo-400/20 rounded-tr-xs shadow-md chat-bubble-me'
-                        : 'bg-[#151724] text-slate-200 border border-white/[0.08] rounded-tl-xs shadow-md chat-bubble-lead'
-                    }`}
+                    key={m.id}
+                    className={`flex flex-col ${m.fromMe ? 'items-end' : 'items-start'} group`}
                   >
-                    {m.fromMe && m.isAiGenerated && (
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300 mb-1.5 flex items-center gap-1.5 border-b border-indigo-500/20 pb-1">
-                        <Sparkles className="w-3 h-3 text-indigo-400" />
-                        <span>Resposta do Agente de IA</span>
-                      </div>
-                    )}
-                    <p className="whitespace-pre-wrap selection:bg-indigo-500/30 selection:text-white font-normal">{m.text}</p>
-                    <div className="flex items-center justify-end gap-1.5 mt-1.5 pt-0.5">
-                      <span className="text-[10px] font-mono text-slate-400/80">
-                        {m.timestamp}
-                      </span>
-                      {m.fromMe && (
-                        <Check className="w-3 h-3 text-indigo-400 opacity-80" />
+                    <div
+                      className={`max-w-[75%] sm:max-w-[65%] px-4 py-3 rounded-2xl text-[13px] leading-relaxed transition-all ${
+                        m.fromMe
+                          ? m.isAiGenerated
+                            ? 'bg-gradient-to-br from-[#181A28] to-[#121422] text-slate-100 border border-indigo-500/30 rounded-tr-xs shadow-lg shadow-indigo-950/20 chat-bubble-ai'
+                            : 'bg-gradient-to-br from-[#242A42] to-[#1B2034] text-white border border-indigo-400/20 rounded-tr-xs shadow-md chat-bubble-me'
+                          : 'bg-[#151724] text-slate-200 border border-white/[0.08] rounded-tl-xs shadow-md chat-bubble-lead'
+                      }`}
+                    >
+                      {m.fromMe && m.isAiGenerated && (
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300 mb-1.5 flex items-center gap-1.5 border-b border-indigo-500/20 pb-1">
+                          <Sparkles className="w-3 h-3 text-indigo-400" />
+                          <span>Resposta do Agente de IA</span>
+                        </div>
                       )}
+
+                      {/* Mídia: Foto / Imagem */}
+                      {mediaUrl && mediaType === 'image' && (
+                        <div className="mb-2 overflow-hidden rounded-xl bg-black/30 border border-white/10 group/img relative">
+                          <img 
+                            src={getMediaSrc(mediaUrl)} 
+                            alt="Foto" 
+                            onClick={() => setLightboxImage(getMediaSrc(mediaUrl))}
+                            className="max-h-72 w-full object-cover rounded-xl cursor-pointer hover:opacity-95 transition-all hover:scale-[1.01]"
+                            loading="lazy"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setLightboxImage(getMediaSrc(mediaUrl))}
+                            className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white backdrop-blur-sm opacity-0 group-hover/img:opacity-100 transition-opacity"
+                            title="Expandir imagem"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Mídia: Áudio / Nota de Voz */}
+                      {mediaUrl && mediaType === 'audio' && (
+                        <div className="my-1.5 p-2.5 rounded-xl bg-black/25 border border-white/10 flex flex-col gap-1.5 min-w-[250px]">
+                          <div className="flex items-center justify-between text-[11px] text-emerald-400 font-medium">
+                            <span className="flex items-center gap-1.5">
+                              <Mic className="w-3.5 h-3.5" />
+                              Nota de Voz / Áudio
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">WhatsApp</span>
+                          </div>
+                          <audio 
+                            controls 
+                            src={getMediaSrc(mediaUrl)} 
+                            className="w-full h-8 outline-none"
+                            preload="metadata"
+                          />
+                        </div>
+                      )}
+
+                      {/* Mídia: Vídeo */}
+                      {mediaUrl && mediaType === 'video' && (
+                        <div className="mb-2 overflow-hidden rounded-xl bg-black/50 border border-white/10">
+                          <video 
+                            controls 
+                            src={getMediaSrc(mediaUrl)} 
+                            className="max-h-80 w-full rounded-xl bg-black"
+                            preload="metadata"
+                          />
+                        </div>
+                      )}
+
+                      {/* Mídia: Documento / PDF */}
+                      {mediaUrl && mediaType === 'document' && (
+                        <div className="my-1.5 p-2.5 rounded-xl bg-black/25 border border-white/10 flex items-center justify-between gap-3 min-w-[220px]">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0">
+                              <FileText className="w-4 h-4 text-red-400" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-white truncate">{m.fileName || 'documento.pdf'}</p>
+                              <span className="text-[10px] text-slate-400 font-mono">Documento</span>
+                            </div>
+                          </div>
+                          <a 
+                            href={getMediaSrc(mediaUrl)} 
+                            download={m.fileName || 'documento.pdf'} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="p-1.5 rounded-lg bg-indigo-600/40 hover:bg-indigo-600 text-indigo-200 hover:text-white transition-all shrink-0"
+                            title="Baixar arquivo"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Texto ou legenda */}
+                      {showCaptionOrText && m.text && (
+                        <p className="whitespace-pre-wrap selection:bg-indigo-500/30 selection:text-white font-normal">{m.text}</p>
+                      )}
+
+                      <div className="flex items-center justify-end gap-1.5 mt-1.5 pt-0.5">
+                        <span className="text-[10px] font-mono text-slate-400/80">
+                          {m.timestamp}
+                        </span>
+                        {m.fromMe && (
+                          <Check className="w-3 h-3 text-indigo-400 opacity-80" />
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
@@ -1534,25 +1714,65 @@ export const LiveChatManager: React.FC = () => {
           </div>
 
           {/* Barra de Digitação */}
-          <div className="p-3.5 border-t border-white/[0.06] bg-[#0E1017] flex items-center gap-2.5">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                placeholder="Digite uma mensagem para responder (assume atendimento humano)..."
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                className="w-full bg-[#12141F] border border-white/[0.08] hover:border-white/[0.15] rounded-xl pl-4 pr-10 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-inner"
+          <div className="p-3.5 border-t border-white/[0.06] bg-[#0E1017] flex flex-col gap-2">
+            {chatMedia && (
+              <div className="flex items-center gap-2 p-2 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-slate-200">
+                {chatMedia.type === 'image' && <ImageIcon className="w-4 h-4 text-indigo-400 shrink-0" />}
+                {chatMedia.type === 'video' && <Video className="w-4 h-4 text-purple-400 shrink-0" />}
+                {chatMedia.type === 'audio' && <Mic className="w-4 h-4 text-emerald-400 shrink-0" />}
+                {chatMedia.type === 'document' && <FileText className="w-4 h-4 text-amber-400 shrink-0" />}
+                <span className="truncate flex-1 font-mono text-[11px]">{chatMedia.fileName}</span>
+                <button
+                  type="button"
+                  onClick={() => setChatMedia(null)}
+                  className="p-1 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-all"
+                  title="Remover anexo"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            <div className="flex items-center gap-2.5">
+              <input 
+                type="file" 
+                ref={chatFileInputRef} 
+                onChange={handleChatFileUpload} 
+                className="hidden" 
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
               />
+              <button
+                type="button"
+                onClick={() => chatFileInputRef.current?.click()}
+                disabled={isUploadingChatMedia}
+                className="p-2.5 rounded-xl bg-[#12141F] hover:bg-[#181B2B] text-slate-400 hover:text-indigo-400 border border-white/[0.08] transition-all disabled:opacity-50 shrink-0"
+                title="Anexar foto, vídeo, áudio ou documento"
+              >
+                {isUploadingChatMedia ? (
+                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+                ) : (
+                  <Paperclip className="w-4 h-4" />
+                )}
+              </button>
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  placeholder="Digite uma mensagem para responder (assume atendimento humano)..."
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                  className="w-full bg-[#12141F] border border-white/[0.08] hover:border-white/[0.15] rounded-xl pl-4 pr-10 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-inner"
+                />
+              </div>
+              <button
+                onClick={handleSendMessage}
+                disabled={!replyText.trim() && !chatMedia}
+                className="p-2.5 px-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-medium rounded-xl transition-all shadow-subtle flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                title="Enviar mensagem"
+              >
+                <span>Enviar</span>
+                <Send className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <button
-              onClick={handleSendMessage}
-              className="p-2.5 px-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-medium rounded-xl transition-all shadow-subtle flex items-center justify-center gap-1.5"
-              title="Enviar mensagem"
-            >
-              <span>Enviar</span>
-              <Send className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
       ) : (
@@ -1813,6 +2033,29 @@ export const LiveChatManager: React.FC = () => {
               Salvo em tempo real no servidor.
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal de Imagem Fullscreen */}
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setLightboxImage(null)}
+        >
+          <button 
+            type="button"
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all shadow-lg"
+            title="Fechar"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img 
+            src={lightboxImage} 
+            alt="Visualização" 
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-xl shadow-2xl border border-white/10"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

@@ -144,8 +144,8 @@ const getNodeDimensions = (
       break;
     case 'cakto':
     case 'webhook':
-      defaultWidth = 270;
-      defaultHeight = 280;
+      defaultWidth = 280;
+      defaultHeight = 420;
       break;
     default:
       defaultWidth = 270;
@@ -256,7 +256,13 @@ export interface FlowSummary {
 export const FlowBuilder: React.FC = () => {
   // Multi-flow state
   const [flowsList, setFlowsList] = useState<FlowSummary[]>([]);
-  const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
+  const [activeFlowId, setActiveFlowId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('nyxzap_active_flow_id') || null;
+    } catch {
+      return null;
+    }
+  });
   const [currentFlowName, setCurrentFlowName] = useState<string>('Fluxo Principal');
   const [currentFlowDesc, setCurrentFlowDesc] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -288,6 +294,16 @@ export const FlowBuilder: React.FC = () => {
       const data = await res.json();
       if (data.success && Array.isArray(data.flows)) {
         setFlowsList(data.flows);
+        // Restaura automaticamente o fluxo que o usuário estava editando se houver
+        try {
+          const savedActiveId = localStorage.getItem('nyxzap_active_flow_id');
+          if (savedActiveId) {
+            const matched = data.flows.find((f: any) => f.id === savedActiveId);
+            if (matched) {
+              openFlowEditor(matched);
+            }
+          }
+        } catch {}
       }
     } catch (err) {
       console.error('[FlowBuilder] Erro ao buscar lista de fluxos:', err);
@@ -325,10 +341,28 @@ export const FlowBuilder: React.FC = () => {
 
   const openFlowEditor = (flow: FlowSummary) => {
     setActiveFlowId(flow.id);
+    try {
+      localStorage.setItem('nyxzap_active_flow_id', flow.id);
+    } catch {}
     setCurrentFlowName(flow.name);
     setCurrentFlowDesc(flow.description || '');
-    setNodes(Array.isArray(flow.nodes) && flow.nodes.length > 0 ? flow.nodes : INITIAL_NODES);
-    setEdges(Array.isArray(flow.edges) ? flow.edges : INITIAL_EDGES);
+    
+    // Tratamento robusto para suportar arrays ou strings JSON vindas do banco
+    let parsedNodes: FlowNode[] = [];
+    let parsedEdges: FlowEdge[] = [];
+    try {
+      parsedNodes = Array.isArray(flow.nodes) ? flow.nodes : (typeof flow.nodes === 'string' ? JSON.parse(flow.nodes) : []);
+    } catch {
+      parsedNodes = [];
+    }
+    try {
+      parsedEdges = Array.isArray(flow.edges) ? flow.edges : (typeof flow.edges === 'string' ? JSON.parse(flow.edges) : []);
+    } catch {
+      parsedEdges = [];
+    }
+
+    setNodes(parsedNodes.length > 0 ? parsedNodes : INITIAL_NODES);
+    setEdges(parsedEdges.length > 0 ? parsedEdges : INITIAL_EDGES);
     setFlowActive(flow.active !== false);
     setZoom(1.05);
     setPan({ x: 0, y: 0 });
@@ -674,16 +708,26 @@ export const FlowBuilder: React.FC = () => {
         active: flowActive
       };
 
-      // Save to local storage for quick fallback
-      localStorage.setItem(`nyxzap_flow_${flowId}_nodes`, JSON.stringify(nodes));
-      localStorage.setItem(`nyxzap_flow_${flowId}_edges`, JSON.stringify(edges));
-
-      // Post to backend database
-      await fetch('/api/flows', {
+      // 1. Salva com prioridade máxima no banco de dados PostgreSQL
+      const res = await fetch('/api/flows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+
+      // 2. Salva cópia leve de contingência no localStorage sem estourar cota de 5MB
+      try {
+        const lightNodes = nodes.map(n => {
+          if (!n.data?.fileBase64 && !n.data?.groupPhotoBase64) return n;
+          const { fileBase64, groupPhotoBase64, ...restData } = n.data;
+          return { ...n, data: restData };
+        });
+        localStorage.setItem(`nyxzap_flow_${flowId}_nodes`, JSON.stringify(lightNodes));
+        localStorage.setItem(`nyxzap_flow_${flowId}_edges`, JSON.stringify(edges));
+        localStorage.setItem('nyxzap_active_flow_id', flowId);
+      } catch (storageErr) {
+        console.warn('[LocalStorage Cache Guard]', storageErr);
+      }
 
       setSaveSuccess(true);
       fetchFlows();
@@ -1542,7 +1586,11 @@ export const FlowBuilder: React.FC = () => {
         <div className="flex items-center gap-3">
           {/* Voltar aos Fluxos */}
           <button
-            onClick={() => { setActiveFlowId(null); fetchFlows(); }}
+            onClick={() => { 
+              setActiveFlowId(null); 
+              try { localStorage.removeItem('nyxzap_active_flow_id'); } catch {}
+              fetchFlows(); 
+            }}
             className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-700/60 shadow-sm"
             title="Voltar para a listagem de fluxos"
           >
@@ -2178,6 +2226,49 @@ export const FlowBuilder: React.FC = () => {
                           </select>
                         </div>
 
+                        {/* Chave Secreta do Webhook específico */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                            <span>Chave Secreta do Webhook:</span>
+                            <span className="text-[8px] bg-amber-500/10 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/20 font-bold">
+                              Chave Única
+                            </span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Cole a chave secreta gerada (ex: c42ec707-...)"
+                            value={node.data.webhookSecret || ''}
+                            onChange={(e) => updateNodeData(node.id, { webhookSecret: e.target.value.trim() })}
+                            className="w-full bg-[#141521] border border-slate-700/80 focus:border-emerald-500 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-600 font-mono transition-colors"
+                          />
+                          <p className="text-[9px] text-slate-400 leading-tight">
+                            🔑 Cada webhook criado na Cakto gera uma chave secreta. Cole aqui para associar este fluxo a esse evento específico.
+                          </p>
+                        </div>
+
+                        {/* URL de Postback com botão de copiar */}
+                        <div className="space-y-1 bg-[#12131d] border border-slate-800 rounded-xl p-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                            URL do Webhook (Cole na Cakto):
+                          </span>
+                          <div className="flex items-center gap-1.5 bg-[#0b0c14] border border-white/5 rounded-lg px-2 py-1 text-[10px] font-mono text-emerald-400">
+                            <span className="truncate flex-1 select-all">
+                              {window.location.origin}/api/webhook/{node.data.platform || 'cakto'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(`${window.location.origin}/api/webhook/${node.data.platform || 'cakto'}`);
+                                alertDialog('URL Copiada!', `A URL foi copiada para a área de transferência:\n${window.location.origin}/api/webhook/${node.data.platform || 'cakto'}`);
+                              }}
+                              className="text-slate-400 hover:text-white p-0.5 shrink-0"
+                              title="Copiar URL"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
                         {/* Eventos selecionáveis */}
                         <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
                           <div className="flex items-center justify-between">
@@ -2289,14 +2380,21 @@ export const FlowBuilder: React.FC = () => {
                             </span>
                           </div>
 
-                          {node.data.fileName ? (
+                          {(node.data.fileName || node.data.fileUrl || node.data.fileBase64) ? (
                             <div className="bg-[#13141f] border border-violet-500/30 rounded-lg p-2 space-y-1.5">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] font-bold text-white truncate max-w-[150px]">
-                                  {node.data.fileName}
+                                  {node.data.fileName || 'Áudio carregado'}
                                 </span>
                                 <span className="text-[9px] font-mono text-slate-400">{node.data.fileSize}</span>
                               </div>
+                              {(node.data.fileBase64 || node.data.fileUrl || node.data.audioUrl) && (
+                                <audio 
+                                  src={node.data.fileBase64 || node.data.fileUrl || node.data.audioUrl} 
+                                  controls 
+                                  className="w-full h-8 mt-1" 
+                                />
+                              )}
                               <div className="flex items-center gap-2 pt-1">
                                 <button
                                   onClick={() => triggerFileUpload(node.id, '.mp3,.wav,.ogg,.opus,.m4a,.aac')}
@@ -2306,7 +2404,7 @@ export const FlowBuilder: React.FC = () => {
                                 </button>
                                 <span className="text-slate-600">•</span>
                                 <button
-                                  onClick={() => updateNodeData(node.id, { fileName: '', fileSize: '', fileUrl: '' })}
+                                  onClick={() => updateNodeData(node.id, { fileName: '', fileSize: '', fileUrl: '', fileBase64: '', audioUrl: '' })}
                                   className="text-[9px] text-rose-400 hover:text-rose-300 font-bold"
                                 >
                                   Remover
@@ -2360,13 +2458,18 @@ export const FlowBuilder: React.FC = () => {
                             </span>
                           </div>
 
-                          {node.data.fileUrl || node.data.fileName ? (
+                          {(node.data.fileUrl || node.data.fileBase64 || node.data.fileName) ? (
                             <div className="bg-[#13141f] border border-pink-500/30 rounded-lg p-2 space-y-1.5">
-                              {node.data.fileUrl && (
+                              {(node.data.fileBase64 || node.data.fileUrl) && (
                                 <img 
-                                  src={node.data.fileUrl} 
+                                  src={node.data.fileBase64 || node.data.fileUrl} 
                                   alt="Preview" 
                                   className="w-full h-24 object-cover rounded-md border border-slate-800" 
+                                  onError={(e) => {
+                                    if (node.data.fileBase64 && (e.currentTarget as HTMLImageElement).src !== node.data.fileBase64) {
+                                      (e.currentTarget as HTMLImageElement).src = node.data.fileBase64;
+                                    }
+                                  }}
                                 />
                               )}
                               <div className="flex items-center justify-between">
@@ -2421,17 +2524,17 @@ export const FlowBuilder: React.FC = () => {
                             </span>
                           </div>
 
-                          {node.data.fileName ? (
+                          {(node.data.fileName || node.data.fileUrl || node.data.fileBase64) ? (
                             <div className="bg-[#13141f] border border-rose-500/30 rounded-lg p-2 space-y-1.5">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] font-bold text-white truncate max-w-[150px]">
-                                  {node.data.fileName}
+                                  {node.data.fileName || 'Vídeo carregado'}
                                 </span>
                                 <span className="text-[9px] font-mono text-slate-400">{node.data.fileSize}</span>
                               </div>
-                              {node.data.fileUrl && (
+                              {(node.data.fileBase64 || node.data.fileUrl) && (
                                 <video 
-                                  src={node.data.fileUrl} 
+                                  src={node.data.fileBase64 || node.data.fileUrl} 
                                   controls 
                                   className="w-full h-24 object-cover rounded-md bg-black" 
                                 />
@@ -2482,23 +2585,32 @@ export const FlowBuilder: React.FC = () => {
                             </span>
                           </div>
 
-                          {node.data.fileName ? (
+                          {(node.data.fileName || node.data.fileUrl || node.data.fileBase64) ? (
                             <div className="bg-[#13141f] border border-amber-500/30 rounded-lg p-2 space-y-1.5">
                               <div className="flex items-center gap-2">
                                 <FileText className="w-6 h-6 text-amber-400 shrink-0" />
                                 <div className="truncate flex-1">
                                   <span className="text-[10px] font-bold text-white block truncate">
-                                    {node.data.fileName}
+                                    {node.data.fileName || 'documento.pdf'}
                                   </span>
-                                  <span className="text-[9px] font-mono text-slate-400">{node.data.fileSize}</span>
+                                  <span className="text-[9px] font-mono text-slate-400">{node.data.fileSize || 'PDF'}</span>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => triggerFileUpload(node.id, 'application/pdf,.pdf')}
-                                className="text-[9px] text-amber-400 hover:text-amber-300 font-bold underline"
-                              >
-                                Trocar documento PDF
-                              </button>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  onClick={() => triggerFileUpload(node.id, 'application/pdf,.pdf')}
+                                  className="text-[9px] text-amber-400 hover:text-amber-300 font-bold underline"
+                                >
+                                  Trocar documento PDF
+                                </button>
+                                <span className="text-slate-600">•</span>
+                                <button
+                                  onClick={() => updateNodeData(node.id, { fileName: '', fileSize: '', fileUrl: '', fileBase64: '', pdfUrl: '' })}
+                                  className="text-[9px] text-rose-400 hover:text-rose-300 font-bold"
+                                >
+                                  Remover
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <button

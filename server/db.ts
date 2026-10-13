@@ -399,8 +399,14 @@ export async function initDatabase() {
         timestamp VARCHAR(50) NOT NULL,
         sender_name VARCHAR(150),
         is_ai_generated BOOLEAN DEFAULT false,
+        media_url TEXT,
+        media_type VARCHAR(50),
+        file_name VARCHAR(255),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS media_url TEXT;
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(50);
+      ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS file_name VARCHAR(255);
     `);
 
     // Inserir Planos Padrão se não existirem

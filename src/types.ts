@@ -87,6 +87,9 @@ export interface ChatMessage {
   timestamp: string;
   senderName?: string;
   isAiGenerated?: boolean;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'document';
+  fileName?: string;
 }
 
 export interface ChatConversation {

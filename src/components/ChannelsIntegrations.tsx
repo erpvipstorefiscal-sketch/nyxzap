@@ -227,7 +227,6 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
   const handleSavePlatform = (platformId: string) => {
     try {
       localStorage.setItem('nyxzap_integrations_urls', JSON.stringify(customUrls));
-      localStorage.setItem('nyxzap_integrations_secrets', JSON.stringify(secretKeys));
       setSavedId(platformId);
       setTimeout(() => setSavedId(null), 2500);
     } catch (e) {
@@ -388,26 +387,14 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
                   </div>
                 </div>
 
-                {/* Bloco 2: Chave Secreta do Webhook (opcional) */}
-                <div className="space-y-1.5 pt-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
-                      <Key className="w-3.5 h-3.5 text-amber-400" />
-                      Chave Secreta do Webhook (opcional)
-                    </span>
-                    <span className="text-[9px] text-slate-400 bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06]">
-                      Gerada na Cakto
-                    </span>
+                {/* Bloco 2: Chave Secreta Agora no Flow Builder */}
+                <div className="bg-[#11131c] border border-indigo-500/20 rounded-xl p-3 space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-300">
+                    <Key className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Chave Secreta do Webhook</span>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Cole a chave secreta da plataforma (ex: c42ec707-...)"
-                    value={secretKeys[platform.id] || ''}
-                    onChange={(e) => setSecretKeys({ ...secretKeys, [platform.id]: e.target.value })}
-                    className="w-full bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
-                  />
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    ℹ️ A Cakto gera essa chave para assinatura opcional. No NyxZap a segurança já é garantida pelo seu token único na URL.
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
+                    💡 A chave secreta agora é inserida <strong>diretamente no card Webhook dentro do seu Fluxo de Automação</strong>. Assim você pode ter múltiplos webhooks separados (ex: Compra Aprovada, Abandono de Carrinho) com chaves diferentes acionando fluxos específicos!
                   </p>
                 </div>
 

@@ -10,7 +10,8 @@ import makeWASocket, {
   generateProfilePicture,
   getBinaryNodeChild,
   generateMessageIDV2,
-  S_WHATSAPP_NET
+  S_WHATSAPP_NET,
+  downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import fs from 'fs';
@@ -37,6 +38,43 @@ const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
+
+// Rota inteligente auto-heal para /uploads/:filename
+// Se o container foi recriado pelo Coolify sem volume antigo, regenera o arquivo do base64 do PostgreSQL!
+app.get('/uploads/:filename', async (req, res, next) => {
+  const filename = req.params.filename;
+  const filePath = path.join(uploadsDir, filename);
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+
+  // Tenta restaurar a partir dos fluxos salvos no PostgreSQL
+  try {
+    const flows = await pool.query('SELECT nodes FROM flow_definitions');
+    for (const row of flows.rows) {
+      const nodes = Array.isArray(row.nodes) ? row.nodes : (typeof row.nodes === 'string' ? JSON.parse(row.nodes) : []);
+      for (const node of nodes) {
+        if (!node?.data) continue;
+        const targetUrl = node.data.fileUrl || node.data.groupPhotoUrl || '';
+        const base64Data = node.data.fileBase64 || node.data.groupPhotoBase64 || '';
+        if (targetUrl.includes(filename) && base64Data && typeof base64Data === 'string' && base64Data.startsWith('data:')) {
+          const parts = base64Data.split(';base64,');
+          if (parts.length === 2) {
+            const buf = Buffer.from(parts[1], 'base64');
+            fs.writeFileSync(filePath, buf);
+            console.log(`[Upload Auto-Heal] Arquivo ${filename} regenerado do banco PostgreSQL com sucesso!`);
+            return res.sendFile(filePath);
+          }
+        }
+      }
+    }
+  } catch (healErr) {
+    console.warn('[Upload Auto-Heal Error]', healErr);
+  }
+
+  next();
+});
+
 app.use('/uploads', express.static(uploadsDir));
 
 // Multer storage for Flow media uploads
@@ -737,13 +775,30 @@ app.post('/api/webhook/cakto', async (req, res) => {
   console.log('[Cakto Webhook Received]', JSON.stringify(payload));
 
   try {
+    // Chave secreta enviada pela Cakto (body, header ou query)
+    const incomingSecret = String(
+      payload.secret || 
+      payload.token || 
+      req.headers['x-cakto-secret'] || 
+      req.headers['x-secret'] || 
+      req.query?.secret || 
+      req.query?.token || 
+      (typeof payload.data === 'object' ? payload.data?.secret : '') ||
+      ''
+    ).trim();
+
+    // Normalização dos campos caso 'data' venha como string JSON
+    let bodyData = payload.data;
+    if (typeof bodyData === 'string') {
+      try { bodyData = JSON.parse(bodyData); } catch {}
+    }
+
     // Normalização dos campos principais do webhook da Cakto
-    // Eventos comuns: order.paid, payment.approved, subscription.renewed, invoice.paid, etc.
     const eventType = payload.event || payload.type || payload.status || 'unknown';
     
     // Status do pagamento
     const paymentStatus = (
-      payload.data?.status || 
+      bodyData?.status || 
       payload.status || 
       payload.order?.status || 
       payload.payment_status || 
@@ -760,14 +815,23 @@ app.post('/api/webhook/cakto', async (req, res) => {
       eventType.includes('renewed');
 
     // Extrair dados do cliente / pagador
-    const customer = payload.data?.customer || payload.customer || payload.client || payload.order?.customer || payload.buyer || {};
-    const email = (customer.email || payload.email || payload.buyer_email || payload.data?.email || '').trim().toLowerCase();
+    const customer = bodyData?.customer || payload.customer || payload.client || payload.order?.customer || bodyData?.buyer || payload.buyer || {};
+    const email = (customer.email || payload.email || payload.buyer_email || bodyData?.email || '').trim().toLowerCase();
     const customerName = customer.name || customer.full_name || payload.name || payload.buyer_name || 'Cliente';
-    const rawCustomerPhone = customer.phone || customer.cellphone || customer.telephone || customer.mobile || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
+    let rawCustomerPhone = customer.phone || customer.cellphone || customer.telephone || customer.mobile || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
+    
+    // Se for teste e a plataforma não mandou telefone, usa telefone conectado do WhatsApp ou query para permitir teste
+    if (!rawCustomerPhone) {
+      const fallbackTestPhone = req.query?.phone || (Array.from(sessions.values()).find(s => s.phone)?.phone || '');
+      if (fallbackTestPhone) {
+        rawCustomerPhone = String(fallbackTestPhone);
+        console.log(`[Cakto Webhook] Usando telefone de contingência/teste: ${rawCustomerPhone}`);
+      }
+    }
     const customerPhone = rawCustomerPhone || '+55 11 99999-9999';
 
     // Extrair dados do produto / oferta / item
-    const items = payload.data?.items || payload.items || payload.products || [];
+    const items = bodyData?.items || payload.items || payload.products || [];
     const item = items[0] || payload.product || payload.order?.product || {};
     const rawProductName = (
       item.name || 
@@ -777,21 +841,21 @@ app.post('/api/webhook/cakto', async (req, res) => {
       payload.product?.name ||
       payload.plan_name || 
       payload.offer_title || 
-      payload.data?.product_name ||
+      bodyData?.product_name ||
       ''
     ).toLowerCase();
 
     const offerId = String(payload.offer_id || payload.checkout_id || payload.link_id || item.id || payload.product_id || '').toLowerCase();
-    const amount = parseFloat(payload.data?.amount || payload.amount || payload.order?.amount || item.price || 0) / 100 || 97.00;
+    const amount = parseFloat(bodyData?.amount || payload.amount || payload.order?.amount || item.price || 0) / 100 || 97.00;
 
-    console.log(`[Cakto Webhook] Evento: "${eventType}" | Status: "${paymentStatus}" | Lead: "${rawCustomerPhone}" (${customerName}) | Produto: "${rawProductName}"`);
+    console.log(`[Cakto Webhook] Evento: "${eventType}" | Status: "${paymentStatus}" | Secret: "${incomingSecret ? 'Sim' : 'Não'}" | Lead: "${rawCustomerPhone}" (${customerName}) | Produto: "${rawProductName}"`);
 
     // 1. DISPARAR FLUXOS VISUAIS NYXZAP (Se houver telefone do lead e fluxo configurado)
     let flowTriggerResult: any = null;
     if (rawCustomerPhone) {
       try {
-        const rawEvent = payload.event || payload.type || payload.data?.event || payload.status || paymentStatus || (isApproved ? 'compra aprovada' : 'evento');
-        flowTriggerResult = await triggerFlowForWebhookEvent('cakto', String(rawEvent), String(rawCustomerPhone), String(customerName), payload);
+        const rawEvent = payload.event || payload.type || bodyData?.event || payload.status || paymentStatus || (isApproved ? 'compra aprovada' : 'evento');
+        flowTriggerResult = await triggerFlowForWebhookEvent('cakto', String(rawEvent), String(rawCustomerPhone), String(customerName), payload, incomingSecret);
         console.log(`[Cakto Webhook] Fluxo visual acionado para ${rawCustomerPhone}:`, flowTriggerResult);
       } catch (flowErr: any) {
         console.error('[Cakto Webhook] Erro ao disparar fluxo:', flowErr);
@@ -971,14 +1035,31 @@ app.all(['/api/webhook/checkout', '/api/webhook/checkout/:platform', '/api/webho
   try {
     const rawEvent = payload.event || payload.type || payload.status || payload.trigger || req.query?.event || 'compra aprovada';
     const customer = payload.customer || payload.client || payload.buyer || payload.data?.customer || {};
-    const leadPhone = customer.phone || customer.cellphone || customer.telephone || customer.mobile || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
+    let leadPhone = customer.phone || customer.cellphone || customer.telephone || customer.mobile || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
     const leadName = customer.name || customer.full_name || payload.name || payload.buyer_name || payload.leadName || 'Cliente';
+
+    const incomingSecret = String(
+      payload.secret || 
+      payload.token || 
+      req.headers['x-cakto-secret'] || 
+      req.headers['x-secret'] || 
+      req.headers['x-webhook-secret'] || 
+      req.query?.secret || 
+      req.query?.token || 
+      (typeof payload.data === 'object' ? payload.data?.secret : '') ||
+      ''
+    ).trim();
+
+    if (!leadPhone) {
+      const fallbackPhone = req.query?.phone || (Array.from(sessions.values()).find(s => s.phone)?.phone || '');
+      if (fallbackPhone) leadPhone = String(fallbackPhone);
+    }
 
     if (!leadPhone) {
       return res.status(400).json({ error: 'Telefone do lead não identificado no payload do webhook.' });
     }
 
-    const result = await triggerFlowForWebhookEvent(platform, String(rawEvent), String(leadPhone), String(leadName), payload);
+    const result = await triggerFlowForWebhookEvent(platform, String(rawEvent), String(leadPhone), String(leadName), payload, incomingSecret);
     res.json({ success: true, message: 'Webhook processado com sucesso!', ...result });
   } catch (err: any) {
     console.error('[Webhook Checkout Error]', err);
@@ -993,6 +1074,9 @@ export interface ChatMessage {
   timestamp: string;
   senderName?: string;
   isAiGenerated?: boolean;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'document';
+  fileName?: string;
 }
 
 export interface ChatConversation {
@@ -1198,10 +1282,24 @@ async function persistChatAndMessage(chat: ChatConversation, newMsg?: ChatMessag
 
     if (newMsg) {
       await pool.query(
-        `INSERT INTO chat_messages (id, chat_id, from_me, text, timestamp, sender_name, is_ai_generated, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-         ON CONFLICT (id) DO NOTHING`,
-        [newMsg.id, chat.id, newMsg.fromMe, newMsg.text, newMsg.timestamp, newMsg.senderName || '', newMsg.isAiGenerated || false]
+        `INSERT INTO chat_messages (id, chat_id, from_me, text, timestamp, sender_name, is_ai_generated, media_url, media_type, file_name, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO UPDATE SET
+           media_url = COALESCE(EXCLUDED.media_url, chat_messages.media_url),
+           media_type = COALESCE(EXCLUDED.media_type, chat_messages.media_type),
+           file_name = COALESCE(EXCLUDED.file_name, chat_messages.file_name)`,
+        [
+          newMsg.id, 
+          chat.id, 
+          newMsg.fromMe, 
+          newMsg.text, 
+          newMsg.timestamp, 
+          newMsg.senderName || '', 
+          newMsg.isAiGenerated || false,
+          newMsg.mediaUrl || null,
+          newMsg.mediaType || null,
+          newMsg.fileName || null
+        ]
       );
     }
   } catch (err) {
@@ -1222,7 +1320,10 @@ async function loadSavedChats() {
         text: m.text,
         timestamp: m.timestamp,
         senderName: m.sender_name,
-        isAiGenerated: Boolean(m.is_ai_generated)
+        isAiGenerated: Boolean(m.is_ai_generated),
+        mediaUrl: m.media_url || undefined,
+        mediaType: m.media_type || undefined,
+        fileName: m.file_name || undefined
       }));
       liveChats.set(row.id, {
         id: row.id,
@@ -1502,6 +1603,7 @@ async function getVoipClientForSession(sessionId: string, sock: any) {
 
 function normalizeWebhookEventName(raw: string): string {
   const s = (raw || '').toLowerCase().trim();
+  if (s.includes('test') || s.includes('ping') || s.includes('simulaca') || s.includes('simulaçã')) return 'test';
   if (s.includes('pedido') || s.includes('order.created') || s.includes('order_created')) return 'pedido realizado';
   if (s.includes('boleto')) return 'boleto gerado';
   if (s.includes('pix')) return 'pix gerado';
@@ -1529,9 +1631,17 @@ async function triggerFlowForWebhookEvent(
   rawEvent: string,
   leadPhone: string,
   leadName: string = 'Cliente',
-  payload: any = {}
+  payload: any = {},
+  incomingSecret?: string
 ) {
   let cleanPhone = leadPhone.replace(/\D/g, '');
+  if (!cleanPhone || cleanPhone.length < 8) {
+    const fallbackPhone = Array.from(sessions.values()).find(s => s.phone)?.phone || '';
+    if (fallbackPhone) {
+      cleanPhone = fallbackPhone.replace(/\D/g, '');
+    }
+  }
+
   if (!cleanPhone) return { success: false, reason: 'Invalid phone' };
   if ((cleanPhone.length === 10 || cleanPhone.length === 11) && !cleanPhone.startsWith('55')) {
     cleanPhone = '55' + cleanPhone;
@@ -1539,7 +1649,7 @@ async function triggerFlowForWebhookEvent(
   const remoteJid = `${cleanPhone}@s.whatsapp.net`;
 
   const normEvent = normalizeWebhookEventName(rawEvent);
-  console.log(`[Flow Webhook] Evento: "${rawEvent}" normalizado para "${normEvent}" (Plataforma: ${platform}, Lead: ${cleanPhone})`);
+  console.log(`[Flow Webhook] Evento: "${rawEvent}" normalizado para "${normEvent}" (Plataforma: ${platform}, Lead: ${cleanPhone}, Secret: "${incomingSecret ? 'Sim' : 'Não'}")`);
 
   // Se o cliente comprou, cancela qualquer recuperação de abandono pendente
   if (normEvent === 'compra aprovada') {
@@ -1577,11 +1687,35 @@ async function triggerFlowForWebhookEvent(
   for (const flow of flowsList) {
     const webhookNode = flow.nodes.find(n => {
       if (n.type !== 'webhook' && n.type !== 'cakto') return false;
+      const nodeSecret = String(n.data?.webhookSecret || '').trim();
+      const inSecret = String(incomingSecret || '').trim();
+
+      // 1. Se este card tem chave secreta cadastrada:
+      if (nodeSecret) {
+        if (inSecret && nodeSecret.toLowerCase() === inSecret.toLowerCase()) {
+          console.log(`[Flow Webhook Match] Card '${n.title}' (${n.id}) associado via Chave Secreta Exata!`);
+          return true;
+        }
+        // Se a requisição trouxe uma chave secreta diferente da deste card, não executa este card
+        if (inSecret && nodeSecret.toLowerCase() !== inSecret.toLowerCase()) {
+          return false;
+        }
+      }
+
+      // 2. Validação da plataforma
       const nodePlatform = (n.data?.platform || '').toLowerCase().trim();
       const inPlatform = (platform || '').toLowerCase().trim();
       if (nodePlatform && nodePlatform !== 'personalizado' && inPlatform && inPlatform !== 'vendas' && inPlatform !== 'checkout' && inPlatform !== 'flow' && nodePlatform !== inPlatform) {
         return false;
       }
+
+      // 3. Se for disparo de teste da plataforma Cakto:
+      if (normEvent === 'test' || normEvent === 'ping') {
+        console.log(`[Flow Webhook Match] Disparo de Teste ativou o card '${n.title}' (${n.id})!`);
+        return true;
+      }
+
+      // 4. Validação por eventos ativos
       const activeEvents: string[] = (n.data?.activeEvents || ['Compra Aprovada', 'Pix Gerado', 'Pedido Realizado']).map((e: string) => normalizeWebhookEventName(e));
       return activeEvents.includes(normEvent) || activeEvents.some((ae: string) => normEvent.includes(ae) || ae.includes(normEvent));
     });
@@ -1985,7 +2119,7 @@ async function executeNodeAction(
             ptt: true // Nota de voz gravada oficial (microfone verde)
           });
 
-          recordFlowMessageInChat(remoteJid, `🎤 [Nota de voz enviada para o lead]`);
+          recordFlowMessageInChat(remoteJid, `🎤 [Nota de voz enviada para o lead]`, false, audioPath, 'audio', customFileName);
           console.log(`[Flow Engine] Áudio gravado enviado com sucesso para ${targetRecipient}`);
         } catch (audioSendErr: any) {
           console.error(`[Flow Engine] Falha no envio do áudio pós-chamada:`, audioSendErr);
@@ -2016,7 +2150,7 @@ async function executeNodeAction(
             mimetype,
             ptt: true // Nota de voz gravada na hora (microfone verde)
           });
-          recordFlowMessageInChat(remoteJid, '🎵 [Áudio gravado enviado]');
+          recordFlowMessageInChat(remoteJid, '🎵 [Áudio enviado]', false, audioPath, 'audio', customFileName);
           console.log(`[Flow Engine] Áudio enviado com sucesso para ${remoteJid}`);
         } catch (audioErr: any) {
           console.error(`[Flow Engine] Erro ao enviar áudio para ${remoteJid}:`, audioErr);
@@ -2040,7 +2174,7 @@ async function executeNodeAction(
           caption: caption || undefined,
           mimetype: resolved.mimeType || 'image/jpeg'
         });
-        recordFlowMessageInChat(remoteJid, `🖼️ [Imagem enviada: ${caption || 'Sem legenda'}]`);
+        recordFlowMessageInChat(remoteJid, caption || '🖼️ [Imagem enviada]', false, imgPath, 'image', customFileName);
         console.log(`[Flow Engine] Imagem enviada com sucesso para ${remoteJid}`);
       } else {
         console.error(`[Flow Engine] Arquivo de imagem não encontrado no disco/base64: ${imgPath || 'vazio'}`);
@@ -2061,7 +2195,7 @@ async function executeNodeAction(
           caption: caption || undefined,
           mimetype: resolved.mimeType || 'video/mp4'
         });
-        recordFlowMessageInChat(remoteJid, `🎥 [Vídeo enviado: ${caption || 'Sem legenda'}]`);
+        recordFlowMessageInChat(remoteJid, caption || '🎥 [Vídeo enviado]', false, vidPath, 'video', customFileName);
         console.log(`[Flow Engine] Vídeo enviado com sucesso para ${remoteJid}`);
       } else {
         console.error(`[Flow Engine] Arquivo de vídeo não encontrado no disco/base64: ${vidPath || 'vazio'}`);
@@ -2083,7 +2217,7 @@ async function executeNodeAction(
           fileName: customFileName,
           caption: caption || undefined
         });
-        recordFlowMessageInChat(remoteJid, `📄 [Documento PDF enviado: ${customFileName}${caption ? ` - ${caption}` : ''}]`);
+        recordFlowMessageInChat(remoteJid, caption || `📄 [Documento: ${customFileName}]`, false, docPath, 'document', customFileName);
         console.log(`[Flow Engine] Documento PDF enviado com sucesso para ${remoteJid}`);
       } else {
         console.error(`[Flow Engine] Arquivo PDF não encontrado no disco/base64: ${docPath || 'vazio'}`);
@@ -2458,25 +2592,51 @@ async function executeNodeAction(
 }
 
 // Record bot sent messages into liveChats & broadcast to UI in real-time
-function recordFlowMessageInChat(remoteJid: string, text: string, isAi = false) {
+function recordFlowMessageInChat(
+  remoteJid: string,
+  text: string,
+  isAi = false,
+  mediaUrl?: string,
+  mediaType?: 'image' | 'video' | 'audio' | 'document',
+  fileName?: string
+) {
   const timeStr = getBrazilTimeString();
   let chat = liveChats.get(remoteJid);
-  if (chat) {
-    const botMsg: ChatMessage = {
-      id: `bot-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      fromMe: true,
-      text,
-      timestamp: timeStr,
-      senderName: isAi ? 'IA NyxZap' : 'Fluxo NyxZap',
-      isAiGenerated: isAi
+  if (!chat) {
+    const cleanPhone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
+    chat = {
+      id: remoteJid,
+      leadPhone: `+${cleanPhone}`,
+      leadName: 'Lead ' + cleanPhone,
+      tag: 'quente',
+      internalNotes: '',
+      aiAgentActive: false,
+      botFlowActive: true,
+      unreadCount: 0,
+      lastMessage: text,
+      lastMessageTime: timeStr,
+      messages: []
     };
-    chat.messages.push(botMsg);
-    chat.lastMessage = text;
-    chat.lastMessageTime = timeStr;
     liveChats.set(remoteJid, chat);
-    persistChatAndMessage(chat, botMsg).catch(err => console.error('[Bot Msg Persist Error]', err));
-    broadcast('chat_message', { chatId: remoteJid, message: botMsg, conversation: chat });
   }
+
+  const botMsg: ChatMessage = {
+    id: `bot-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+    fromMe: true,
+    text,
+    timestamp: timeStr,
+    senderName: isAi ? 'IA NyxZap' : 'Fluxo NyxZap',
+    isAiGenerated: isAi,
+    mediaUrl,
+    mediaType,
+    fileName
+  };
+  chat.messages.push(botMsg);
+  chat.lastMessage = text;
+  chat.lastMessageTime = timeStr;
+  liveChats.set(remoteJid, chat);
+  persistChatAndMessage(chat, botMsg).catch(err => console.error('[Bot Msg Persist Error]', err));
+  broadcast('chat_message', { chatId: remoteJid, message: botMsg, conversation: chat });
 }
 
 // Broadcast to WebSocket clients
@@ -2673,6 +2833,52 @@ async function startWhatsAppSession(sessionId: string) {
         if (pushName && (chat.leadName === 'Contato WhatsApp' || !chat.leadName)) chat.leadName = pushName;
       }
 
+      // Detect incoming/outgoing media in message
+      let detectedMediaType: 'image' | 'video' | 'audio' | 'document' | undefined;
+      let detectedMediaUrl: string | undefined;
+      let detectedFileName: string | undefined;
+
+      if ((unwrapped as any)?.imageMessage) {
+        detectedMediaType = 'image';
+      } else if ((unwrapped as any)?.videoMessage) {
+        detectedMediaType = 'video';
+      } else if ((unwrapped as any)?.audioMessage) {
+        detectedMediaType = 'audio';
+      } else if ((unwrapped as any)?.documentMessage) {
+        detectedMediaType = 'document';
+        detectedFileName = (unwrapped as any).documentMessage.fileName || 'documento.pdf';
+      }
+
+      // Download incoming or external media to disk so it can be streamed/displayed in Live Chat
+      if (detectedMediaType) {
+        try {
+          const buffer = await downloadMediaMessage(
+            msg,
+            'buffer',
+            {},
+            {
+              logger,
+              reuploadRequest: sock.updateMediaMessage
+            }
+          );
+          if (buffer && buffer.length > 0) {
+            const ext = detectedMediaType === 'image' 
+              ? '.jpg' 
+              : detectedMediaType === 'video' 
+                ? '.mp4' 
+                : detectedMediaType === 'audio' 
+                  ? ((unwrapped as any)?.audioMessage?.ptt ? '.ogg' : '.mp3')
+                  : (path.extname(detectedFileName || '') || '.bin');
+            const savedName = `wa-${Date.now()}-${Math.random().toString(36).substr(2, 6)}${ext}`;
+            const targetPath = path.join(uploadsDir, savedName);
+            fs.writeFileSync(targetPath, buffer);
+            detectedMediaUrl = `/uploads/${savedName}`;
+          }
+        } catch (dlErr: any) {
+          console.warn('[Baileys Media Download Error]', dlErr?.message || dlErr);
+        }
+      }
+
       // Check if message already exists by ID or content to prevent duplicates (especially bot- or out- messages echoed by Baileys)
       let isDuplicate = false;
       if (chat.messages.some(m => m.id === msgId)) {
@@ -2685,6 +2891,8 @@ async function startWhatsAppSession(sessionId: string) {
         );
         if (botOrOut) {
           botOrOut.id = msgId;
+          if (!botOrOut.mediaUrl && detectedMediaUrl) botOrOut.mediaUrl = detectedMediaUrl;
+          if (!botOrOut.mediaType && detectedMediaType) botOrOut.mediaType = detectedMediaType;
           isDuplicate = true;
         }
       }
@@ -2696,7 +2904,10 @@ async function startWhatsAppSession(sessionId: string) {
         fromMe,
         text,
         timestamp: timeStr,
-        senderName: fromMe ? 'Atendente' : chat.leadName
+        senderName: fromMe ? 'Atendente' : chat.leadName,
+        mediaUrl: detectedMediaUrl,
+        mediaType: detectedMediaType,
+        fileName: detectedFileName
       };
 
       chat.messages.push(newMsg);
@@ -3545,7 +3756,7 @@ app.delete('/api/chats/:id', (req, res) => {
 // Send message via Baileys without local duplication
 app.post('/api/chats/:id/message', async (req, res) => {
   const { id } = req.params;
-  const { text } = req.body;
+  const { text, mediaUrl, mediaType, fileName } = req.body;
 
   const chat = liveChats.get(id);
   const session = Array.from(sessions.values()).find(s => s.status === 'connected');
@@ -3560,9 +3771,38 @@ app.post('/api/chats/:id/message', async (req, res) => {
     broadcast('chat_update', chat);
   }
 
-  if (session && session.sock && text) {
+  if (session && session.sock && (text || mediaUrl)) {
     try {
-      await session.sock.sendMessage(id, { text });
+      if (mediaUrl) {
+        const fullMediaPath = mediaUrl.startsWith('http')
+          ? mediaUrl
+          : path.join(process.cwd(), mediaUrl.replace(/^\//, ''));
+
+        if (fs.existsSync(fullMediaPath)) {
+          const buffer = fs.readFileSync(fullMediaPath);
+          if (mediaType === 'image') {
+            await session.sock.sendMessage(id, { image: buffer, caption: text || undefined });
+          } else if (mediaType === 'video') {
+            await session.sock.sendMessage(id, { video: buffer, caption: text || undefined });
+          } else if (mediaType === 'audio') {
+            await session.sock.sendMessage(id, { audio: buffer, mimetype: 'audio/mp4', ptt: true });
+            if (text) {
+              await session.sock.sendMessage(id, { text });
+            }
+          } else if (mediaType === 'document') {
+            await session.sock.sendMessage(id, {
+              document: buffer,
+              mimetype: 'application/octet-stream',
+              fileName: fileName || path.basename(fullMediaPath),
+              caption: text || undefined
+            });
+          }
+        } else if (text) {
+          await session.sock.sendMessage(id, { text });
+        }
+      } else if (text) {
+        await session.sock.sendMessage(id, { text });
+      }
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
@@ -3570,17 +3810,21 @@ app.post('/api/chats/:id/message', async (req, res) => {
   }
 
   // Fallback simulation when disconnected
-  if (chat && text) {
+  if (chat && (text || mediaUrl)) {
     const newMsg: ChatMessage = {
       id: `out-${Date.now()}`,
       fromMe: true,
-      text,
+      text: text || (mediaType === 'image' ? '📷 [Foto]' : mediaType === 'video' ? '🎥 [Vídeo]' : mediaType === 'audio' ? '🎵 [Áudio]' : '📄 [Documento]'),
       timestamp: getBrazilTimeString(),
-      isAiGenerated: false
+      isAiGenerated: false,
+      mediaUrl,
+      mediaType,
+      fileName
     };
     chat.messages.push(newMsg);
-    chat.lastMessage = text;
+    chat.lastMessage = newMsg.text;
     liveChats.set(id, chat);
+    persistChatAndMessage(chat, newMsg).catch(e => console.error('[Persist manual msg error]', e));
     broadcast('chat_message', { chatId: id, message: newMsg, conversation: chat });
   }
 

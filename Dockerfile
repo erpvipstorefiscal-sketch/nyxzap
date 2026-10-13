@@ -15,8 +15,8 @@ COPY . .
 # Build the React / Vite frontend for production
 RUN npm run build:frontend
 
-# Ensure whatsapp_auth persistent directory exists
-RUN mkdir -p /app/whatsapp_auth
+# Ensure whatsapp_auth and uploads persistent directories exist
+RUN mkdir -p /app/whatsapp_auth /app/uploads
 
 # Environment variables
 ENV NODE_ENV=production
@@ -25,8 +25,8 @@ ENV PORT=3000
 # Expose internal port
 EXPOSE 3000
 
-# Volume for persistent WhatsApp session credentials
-VOLUME ["/app/whatsapp_auth"]
+# Volumes for persistent WhatsApp session credentials and uploaded flow media
+VOLUME ["/app/whatsapp_auth", "/app/uploads"]
 
 # Start production server using tsx
 CMD ["npx", "tsx", "server/index.ts"]
