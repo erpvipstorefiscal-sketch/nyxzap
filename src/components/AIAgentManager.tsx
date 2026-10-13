@@ -138,7 +138,7 @@ export const AIAgentManager: React.FC<AIAgentManagerProps> = ({
   const [config, setConfig] = useState<AIAgentConfig>({
     provider: 'gemini',
     apiKey: '',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.8-flash',
     reasoningLevel: 'high',
     mediaResolution: 'maximo',
     webSearchEnabled: true,
@@ -623,7 +623,7 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
 
             {/* 2. Google Gemini */}
             <div
-              onClick={() => setConfig({ ...config, provider: 'gemini', model: 'gemini-2.5-flash' })}
+              onClick={() => setConfig({ ...config, provider: 'gemini', model: 'gemini-3.8-flash' })}
               className={`p-5 rounded-2xl border cursor-pointer transition-all ${
                 config.provider === 'gemini'
                   ? 'bg-surface-card border-indigo-500/80 shadow-subtle'
@@ -635,11 +635,11 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                   <Brain className="w-4 h-4 text-indigo-400" /> Google Gemini
                 </span>
                 <span className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded font-medium">
-                  Gemini 2.5
+                  Flash 3.8
                 </span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Suporte nativo a raciocínio interno profundo, pesquisa Google Grounding e alta resolução visual.
+                Modelo oficial Gemini 3, ultra-inteligente, respostas rápidas para WhatsApp e raciocínio dinâmico.
               </p>
             </div>
 
@@ -679,7 +679,7 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                   <Bot className="w-4 h-4 text-cyan-400" /> Anthropic Claude
                 </span>
                 <span className="text-[10px] bg-white/[0.05] text-zinc-300 border border-white/10 px-2 py-0.5 rounded font-mono">
-                  Claude 3.7
+                  Sonnet 5.5 / 3.7
                 </span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
@@ -703,31 +703,34 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                 >
                   {config.provider === 'nyxzapia' && (
                     <>
-                      <option value="nyxzap-ultra-v2">NyxzapIA Ultra 2.0 (Otimizado para WhatsApp - Recomendado)</option>
-                      <option value="nyxzap-fast-v1">NyxzapIA Fast 1.0 (Velocidade Extrema)</option>
+                      <option value="nyxzap-ultra-v2">NyxzapIA Ultra 3.8 (Otimizado para WhatsApp - Recomendado)</option>
+                      <option value="nyxzap-fast-v1">NyxzapIA Fast (Velocidade Extrema)</option>
                     </>
                   )}
                   {config.provider === 'gemini' && (
                     <>
-                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Mais Inteligente & Rápido - Recomendado)</option>
-                      <option value="gemini-2.0-flash">Gemini 2.0 Flash (Geração Estável)</option>
-                      <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Super Econômico)</option>
-                      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite</option>
+                      <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recomendado Oficial - Mais Rápido & Inteligente)</option>
+                      <option value="gemini-3.7-flash">Gemini 3.7 Flash (Estabilidade & Código)</option>
+                      <option value="gemini-3.5-flash">Gemini 3.5 Flash (Velocidade & Rotina)</option>
+                      <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Super Econômico)</option>
+                      <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (Raciocínio Complexo)</option>
                     </>
                   )}
                   {config.provider === 'openai' && (
                     <>
                       <option value="gpt-4o">GPT-4o (Omnimodal - Recomendado)</option>
                       <option value="gpt-4o-mini">GPT-4o Mini (Ultra Rápido & Econômico)</option>
-                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                      <option value="o3-mini">OpenAI o3-mini (Raciocínio Avançado)</option>
+                      <option value="o3-mini">OpenAI o3-mini (Raciocínio Lógico & Programação)</option>
+                      <option value="o4-mini">OpenAI o4-mini (Raciocínio Rápido Multimodal)</option>
+                      <option value="gpt-4.5-preview">GPT-4.5 Preview (Alta Nuance & Escrita Natural)</option>
                     </>
                   )}
                   {config.provider === 'claude' && (
                     <>
-                      <option value="claude-3-7-sonnet">Claude 3.7 Sonnet (Raciocínio Híbrido)</option>
-                      <option value="claude-3-5-sonnet">Claude 3.5 Sonnet (Padrão Ouro de Escrita)</option>
-                      <option value="claude-3-5-haiku">Claude 3.5 Haiku (Respostas Instantâneas)</option>
+                      <option value="claude-3-7-sonnet">Claude 3.7 Sonnet / Sonnet 5.5 (Raciocínio Híbrido - Recomendado)</option>
+                      <option value="claude-3-5-haiku">Claude 3.5 Haiku / Haiku 5.5 (Respostas Instantâneas & Baixo Custo)</option>
+                      <option value="claude-3-5-sonnet">Claude 3.5 Sonnet (Padrão Ouro de Escrita Comercial)</option>
+                      <option value="claude-3-opus">Claude 3 Opus / Opus 5.5 (Tarefas Complexas e Pesquisa)</option>
                     </>
                   )}
                 </select>

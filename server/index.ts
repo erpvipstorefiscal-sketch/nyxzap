@@ -1277,7 +1277,7 @@ const sessions: Map<string, SessionData> = new Map([
 let aiConfig: any = {
   provider: 'gemini',
   apiKey: '',
-  model: 'gemini-2.5-flash',
+  model: 'gemini-3.8-flash',
   reasoningLevel: 'high',
   mediaResolution: 'maximo',
   webSearchEnabled: true,
@@ -1441,7 +1441,7 @@ async function saveAIConfigToDB() {
       [
         aiConfig.provider || 'gemini',
         aiConfig.apiKey || '',
-        aiConfig.model || 'gemini-2.5-flash',
+        aiConfig.model || 'gemini-3.8-flash',
         aiConfig.reasoningLevel || 'high',
         aiConfig.mediaResolution || 'maximo',
         aiConfig.webSearchEnabled !== false,
@@ -1471,8 +1471,8 @@ async function loadSavedAIConfig() {
       const googleCal = typeof row.google_calendar === 'object' && row.google_calendar !== null ? row.google_calendar : {};
 
       let savedModel = row.model || aiConfig.model;
-      if (savedModel === 'gemini-3.8-flash' || savedModel === 'gemini-1.5-flash') {
-        savedModel = 'gemini-2.5-flash';
+      if (savedModel === 'gemini-2.5-flash' || savedModel === 'gemini-1.5-flash') {
+        savedModel = 'gemini-3.8-flash';
       }
 
       aiConfig = {
@@ -3381,7 +3381,7 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
       const rawKey = process.env.GEMINI_API_KEY || config.apiKey || '';
       const key = rawKey.trim();
       if (key) {
-        for (const modelToTry of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite']) {
+        for (const modelToTry of ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash']) {
           try {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToTry}:generateContent?key=${encodeURIComponent(key)}`;
             const res = await fetch(url, {
@@ -3406,7 +3406,7 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
       return `Olá! Sou a NyxzapIA, inteligência artificial integrada do NyxZap. Como posso ajudar com sua solicitação?`;
     }
 
-    // 2. Google Gemini
+    // 2. Google Gemini (Oficial Gemini 3 - https://ai.google.dev/api/models)
     if (config.provider === 'gemini') {
       const rawKey = config.apiKey || process.env.GEMINI_API_KEY || '';
       const key = rawKey.trim();
@@ -3416,9 +3416,9 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
       }
 
       // Modelos suportados na API ativa do Google
-      let requestedModel = (config.model || 'gemini-2.5-flash').trim();
-      if (requestedModel === 'gemini-3.8-flash' || requestedModel === 'gemini-1.5-flash') {
-        requestedModel = 'gemini-2.5-flash';
+      let requestedModel = (config.model || 'gemini-3.8-flash').trim();
+      if (requestedModel === 'gemini-2.5-flash' || requestedModel === 'gemini-1.5-flash') {
+        requestedModel = 'gemini-3.8-flash';
       }
 
       const callGeminiEndpoint = async (modelName: string) => {
@@ -3444,52 +3444,56 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
       console.log(`[Gemini AI] Chamando Google API com modelo ${requestedModel}...`);
       let { status, data, modelName: usedModel } = await callGeminiEndpoint(requestedModel);
 
-      // Se der erro 404 de modelo não encontrado, tenta modelos populares ou consulta ListModels dinamicamente
-      if (status === 404 || data?.error?.code === 404) {
-        console.warn(`[Gemini AI] Modelo ${requestedModel} não encontrado (404). Buscando modelos ativos via ListModels...`);
-        try {
-          const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`, {
-            headers: { 'x-goog-api-key': key }
-          });
-          const listData = await listRes.json();
-          if (Array.isArray(listData.models)) {
-            const availableModels: string[] = listData.models
-              .filter((m: any) => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
-              .map((m: any) => m.name.replace('models/', ''));
-            console.log(`[Gemini AI] Modelos suportados encontrados para esta chave (${availableModels.length}):`, availableModels);
+      // Se der erro ou modelo descontinuado/não encontrado, tenta fallback para gemini-3.8-flash ou consulta ListModels
+      if (status !== 200 || data?.error) {
+        const errMsg = data?.error?.message || '';
+        console.warn(`[Gemini AI] Modelo ${requestedModel} retornou status ${status} / erro: ${errMsg}`);
 
-            const fallbackModel = availableModels.find((m: string) => m.includes('2.5-flash')) ||
-                                  availableModels.find((m: string) => m.includes('2.0-flash')) ||
-                                  availableModels.find((m: string) => m.includes('flash')) ||
-                                  availableModels.find((m: string) => m.includes('pro')) ||
-                                  availableModels[0];
+        if (requestedModel !== 'gemini-3.8-flash') {
+          console.log('[Gemini AI] Tentando fallback para gemini-3.8-flash...');
+          const retry = await callGeminiEndpoint('gemini-3.8-flash');
+          if (retry.status === 200 && !retry.data?.error) {
+            status = retry.status;
+            data = retry.data;
+            usedModel = 'gemini-3.8-flash';
+            aiConfig.model = usedModel;
+          }
+        }
 
-            if (fallbackModel && fallbackModel !== requestedModel) {
-              console.log(`[Gemini AI] Executando fallback para o modelo disponível: ${fallbackModel}...`);
-              const retry = await callGeminiEndpoint(fallbackModel);
-              status = retry.status;
-              data = retry.data;
-              usedModel = retry.modelName;
-              aiConfig.model = usedModel;
-            }
-          } else {
-            // Se ListModels não retornar array, tenta candidatos universais em ordem
-            for (const candidate of ['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash-lite']) {
-              if (candidate !== requestedModel) {
-                console.log(`[Gemini AI] Tentando candidato fallback: ${candidate}...`);
-                const retry = await callGeminiEndpoint(candidate);
+        // Se ainda persistir erro, consulta ModelService.ListModels para descobrir modelos suportados para a chave
+        if (data?.error) {
+          try {
+            console.log('[Gemini AI] Consultando ModelService.ListModels para listar modelos liberados para esta chave...');
+            const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`, {
+              headers: { 'x-goog-api-key': key }
+            });
+            const listData = await listRes.json();
+            if (Array.isArray(listData.models)) {
+              const availableModels: string[] = listData.models
+                .filter((m: any) => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+                .map((m: any) => m.name.replace('models/', ''));
+              console.log(`[Gemini AI] Modelos suportados encontrados para esta chave (${availableModels.length}):`, availableModels);
+
+              const fallbackModel = availableModels.find((m: string) => m.includes('3.8-flash')) ||
+                                    availableModels.find((m: string) => m.includes('3.7-flash')) ||
+                                    availableModels.find((m: string) => m.includes('3.5-flash')) ||
+                                    availableModels.find((m: string) => m.includes('flash')) ||
+                                    availableModels[0];
+
+              if (fallbackModel && fallbackModel !== usedModel) {
+                console.log(`[Gemini AI] Executando fallback para o modelo disponível: ${fallbackModel}...`);
+                const retry = await callGeminiEndpoint(fallbackModel);
                 if (retry.status === 200 && !retry.data?.error) {
                   status = retry.status;
                   data = retry.data;
-                  usedModel = candidate;
+                  usedModel = retry.modelName;
                   aiConfig.model = usedModel;
-                  break;
                 }
               }
             }
+          } catch (listErr) {
+            console.error('[Gemini AI ListModels Fallback Error]', listErr);
           }
-        } catch (listErr) {
-          console.error('[Gemini AI ListModels Fallback Error]', listErr);
         }
       }
 
@@ -3506,25 +3510,34 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
       return generated;
     }
 
-    // 3. OpenAI GPT
+    // 3. OpenAI GPT (https://developers.openai.com/api/docs)
     if (config.provider === 'openai') {
       const rawKey = config.apiKey || process.env.OPENAI_API_KEY || '';
       const key = rawKey.trim();
       if (!key) return 'Por favor, insira sua chave da API da OpenAI nas configurações.';
+
+      const model = config.model || 'gpt-4o';
+      const isReasoning = model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4');
+
+      const payload: any = {
+        model,
+        messages: [
+          { role: 'system', content: config.systemPrompt || 'Você é um assistente comercial persuasivo e prestativo.' },
+          { role: 'user', content: prompt }
+        ]
+      };
+
+      if (!isReasoning) {
+        payload.temperature = config.reasoningLevel === 'high' ? 0.2 : 0.7;
+      }
+
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${key}`
         },
-        body: JSON.stringify({
-          model: config.model || 'gpt-4o',
-          messages: [
-            { role: 'system', content: config.systemPrompt || 'Você é um assistente comercial persuasivo e prestativo.' },
-            { role: 'user', content: prompt }
-          ],
-          temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.error) {
@@ -3534,11 +3547,23 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
       return data.choices?.[0]?.message?.content || 'Olá! Em que posso ajudar?';
     }
 
-    // 4. Anthropic Claude
+    // 4. Anthropic Claude (Claude Console / API)
     if (config.provider === 'claude') {
       const rawKey = config.apiKey || process.env.ANTHROPIC_API_KEY || '';
       const key = rawKey.trim();
       if (!key) return 'Por favor, insira sua chave da API da Anthropic Claude nas configurações.';
+
+      let model = config.model || 'claude-3-7-sonnet-20250219';
+      if (model === 'claude-3-7-sonnet' || model === 'sonnet-5.5' || model === 'sonnet-3.7') {
+        model = 'claude-3-7-sonnet-20250219';
+      } else if (model === 'claude-3-5-haiku' || model === 'haiku-5.5') {
+        model = 'claude-3-5-haiku-20241022';
+      } else if (model === 'claude-3-5-sonnet') {
+        model = 'claude-3-5-sonnet-20241022';
+      } else if (model === 'claude-3-opus' || model === 'opus-5.5' || model === 'fable-5.1') {
+        model = 'claude-3-opus-20240229';
+      }
+
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -3547,7 +3572,7 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: config.model || 'claude-3-5-sonnet-20241022',
+          model,
           system: config.systemPrompt || 'Você é um assistente comercial persuasivo e prestativo.',
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 1000,
@@ -4804,8 +4829,8 @@ app.get('/api/ai-config', (req, res) => {
 
 app.post('/api/ai-config', async (req, res) => {
   aiConfig = { ...aiConfig, ...req.body };
-  if (aiConfig.provider === 'gemini' && (aiConfig.model === 'gemini-3.8-flash' || aiConfig.model === 'gemini-1.5-flash')) {
-    aiConfig.model = 'gemini-2.5-flash';
+  if (aiConfig.provider === 'gemini' && (aiConfig.model === 'gemini-2.5-flash' || aiConfig.model === 'gemini-1.5-flash')) {
+    aiConfig.model = 'gemini-3.8-flash';
   }
   await saveAIConfigToDB();
 
