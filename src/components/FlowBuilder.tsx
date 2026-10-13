@@ -1961,6 +1961,7 @@ export const FlowBuilder: React.FC = () => {
                     }
                   }}
                   onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
+                  onWheel={(e) => e.stopPropagation()}
                   style={{
                     position: 'absolute',
                     left: `${node.x}px`,
@@ -2111,7 +2112,7 @@ export const FlowBuilder: React.FC = () => {
                   </div>
 
                   {/* Card Content Based on Type */}
-                  <div className="p-3.5 space-y-3 cursor-default" onMouseDown={(e) => e.stopPropagation()}>
+                  <div className="p-3.5 space-y-3 cursor-default" onMouseDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
                     {/* 1. INÍCIO CARD */}
                     {node.type === 'inicio' && (
                       <div className="space-y-3">
@@ -2645,13 +2646,62 @@ export const FlowBuilder: React.FC = () => {
                     {/* 7. WHATSAPP / MENSAGEM / SMS */}
                     {(node.type === 'sms' || node.type === 'whatsapp' || node.type === 'email' || node.type === 'resposta') && (
                       <div className="space-y-2">
-                        <textarea
-                          rows={3}
-                          value={node.data.message || ''}
-                          onChange={(e) => updateNodeData(node.id, { message: e.target.value })}
-                          placeholder="Digite a mensagem..."
-                          className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 resize-none font-sans"
-                        />
+                        <div className="space-y-1">
+                          <textarea
+                            rows={3}
+                            value={node.data.message || ''}
+                            onChange={(e) => updateNodeData(node.id, { message: e.target.value })}
+                            onWheel={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onMouseUp={(e) => {
+                              const target = e.currentTarget;
+                              if (target.offsetHeight && target.offsetHeight !== node.data.messageHeight) {
+                                updateNodeData(node.id, { messageHeight: target.offsetHeight });
+                              }
+                            }}
+                            placeholder="Digite a mensagem..."
+                            style={{
+                              height: node.data.messageHeight ? `${node.data.messageHeight}px` : undefined,
+                              minHeight: '76px',
+                              maxHeight: '650px',
+                            }}
+                            className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 resize-y font-sans overflow-y-auto leading-relaxed block"
+                          />
+
+                          {/* Barra interativa para puxar/arrastar para baixo e aumentar a altura */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              const startY = e.clientY;
+                              const initialH = node.data.messageHeight || 76;
+                              const currentZoom = zoomRef.current || 1;
+
+                              const onMouseMove = (moveEvent: MouseEvent) => {
+                                const deltaY = (moveEvent.clientY - startY) / currentZoom;
+                                const nextH = Math.max(76, Math.min(650, Math.round(initialH + deltaY)));
+                                updateNodeData(node.id, { messageHeight: nextH });
+                              };
+
+                              const onMouseUp = () => {
+                                window.removeEventListener('mousemove', onMouseMove);
+                                window.removeEventListener('mouseup', onMouseUp);
+                              };
+
+                              window.addEventListener('mousemove', onMouseMove);
+                              window.addEventListener('mouseup', onMouseUp);
+                            }}
+                            className="w-full flex items-center justify-center py-1 cursor-row-resize group select-none hover:bg-blue-500/10 rounded-md transition-all -mt-0.5"
+                            title="Clique e arraste para baixo para aumentar o campo de texto (duplo clique para restaurar)"
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              updateNodeData(node.id, { messageHeight: undefined });
+                            }}
+                          >
+                            <div className="w-10 h-1 rounded-full bg-slate-700/80 group-hover:bg-blue-400 group-hover:w-16 transition-all" />
+                          </div>
+                        </div>
+
                         <div className="flex flex-wrap gap-1">
                           {['{nome}', '{telefone}', '{empresa}', '{saudacao}'].map((v) => (
                             <button
@@ -3012,13 +3062,61 @@ export const FlowBuilder: React.FC = () => {
                                 <label className="text-[9px] font-bold text-slate-400 block">
                                   Mensagem de Boas-Vindas no Grupo (Com menção @):
                                 </label>
-                                <textarea
-                                  rows={2}
-                                  value={node.data.welcomeMessage || ''}
-                                  onChange={(e) => updateNodeData(node.id, { welcomeMessage: e.target.value })}
-                                  placeholder="Ex: Olá {nome}, seja muito bem-vindo ao grupo exclusivo!"
-                                  className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none font-sans"
-                                />
+                                <div className="space-y-1">
+                                  <textarea
+                                    rows={2}
+                                    value={node.data.welcomeMessage || ''}
+                                    onChange={(e) => updateNodeData(node.id, { welcomeMessage: e.target.value })}
+                                    onWheel={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onMouseUp={(e) => {
+                                      const target = e.currentTarget;
+                                      if (target.offsetHeight && target.offsetHeight !== node.data.welcomeHeight) {
+                                        updateNodeData(node.id, { welcomeHeight: target.offsetHeight });
+                                      }
+                                    }}
+                                    placeholder="Ex: Olá {nome}, seja muito bem-vindo ao grupo exclusivo!"
+                                    style={{
+                                      height: node.data.welcomeHeight ? `${node.data.welcomeHeight}px` : undefined,
+                                      minHeight: '60px',
+                                      maxHeight: '400px',
+                                    }}
+                                    className="w-full bg-[#1c1d29] border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-emerald-500 resize-y font-sans overflow-y-auto block"
+                                  />
+
+                                  {/* Barra interativa para puxar/arrastar para baixo e aumentar a altura */}
+                                  <div
+                                    onMouseDown={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      const startY = e.clientY;
+                                      const initialH = node.data.welcomeHeight || 60;
+                                      const currentZoom = zoomRef.current || 1;
+
+                                      const onMouseMove = (moveEvent: MouseEvent) => {
+                                        const deltaY = (moveEvent.clientY - startY) / currentZoom;
+                                        const nextH = Math.max(60, Math.min(450, Math.round(initialH + deltaY)));
+                                        updateNodeData(node.id, { welcomeHeight: nextH });
+                                      };
+
+                                      const onMouseUp = () => {
+                                        window.removeEventListener('mousemove', onMouseMove);
+                                        window.removeEventListener('mouseup', onMouseUp);
+                                      };
+
+                                      window.addEventListener('mousemove', onMouseMove);
+                                      window.addEventListener('mouseup', onMouseUp);
+                                    }}
+                                    className="w-full flex items-center justify-center py-1 cursor-row-resize group select-none hover:bg-emerald-500/10 rounded-md transition-all -mt-0.5"
+                                    title="Clique e arraste para baixo para aumentar o campo de texto (duplo clique para restaurar)"
+                                    onDoubleClick={(e) => {
+                                      e.stopPropagation();
+                                      updateNodeData(node.id, { welcomeHeight: undefined });
+                                    }}
+                                  >
+                                    <div className="w-10 h-1 rounded-full bg-slate-700/80 group-hover:bg-emerald-400 group-hover:w-16 transition-all" />
+                                  </div>
+                                </div>
                                 <p className="text-[9px] text-slate-500">
                                   Enviada diretamente no grupo marcando o lead (@telefone + nome).
                                 </p>
