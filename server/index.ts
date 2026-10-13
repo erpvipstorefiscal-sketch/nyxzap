@@ -1351,8 +1351,8 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
 
   // 3. Áudio com Agente de IA
   audioEnabled: false,
-  voiceProvider: 'elevenlabs',
-  voiceName: 'Rachel (Feminina)',
+  voiceProvider: 'native',
+  voiceName: 'Voz Nativa (PT-BR)',
   elevenlabsApiKey: '',
   useCustomVoiceId: false,
   customVoiceId: '',
@@ -3360,8 +3360,49 @@ async function startWhatsAppSession(sessionId: string) {
               console.log(`[AI Engine] Disparando IA (${aiConfig.provider}/${aiConfig.model}) para ${remoteJid}...`);
               const reply = await queryAI(text, aiConfig);
               console.log(`[AI Engine] Resposta obtida (${reply.length} chars): "${reply.slice(0, 100)}..."`);
-              await sock.sendMessage(remoteJid, { text: reply });
-              recordFlowMessageInChat(remoteJid, reply, true);
+
+              let audioSent = false;
+              if (aiConfig.audioEnabled) {
+                const shouldSendAudio = !aiConfig.smartAudioEnabled || reply.length >= (aiConfig.smartAudioMinChars || 70);
+                if (shouldSendAudio) {
+                  try {
+                    const audioBuffer = await synthesizeSpeech(reply, aiConfig);
+                    if (audioBuffer && audioBuffer.length > 0) {
+                      const audioFileName = `ai-voice-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.mp3`;
+                      const audioFilePath = path.join(uploadsDir, audioFileName);
+                      fs.writeFileSync(audioFilePath, audioBuffer);
+                      const audioUrl = `/uploads/${audioFileName}`;
+
+                      // Se não substitui texto por áudio, envia o texto primeiro
+                      if (!aiConfig.substituteTextWithAudio) {
+                        await sock.sendMessage(remoteJid, { text: reply });
+                        recordFlowMessageInChat(remoteJid, reply, true);
+                      }
+
+                      // Envia a nota de voz no WhatsApp (PTT)
+                      await sock.sendMessage(remoteJid, {
+                        audio: audioBuffer,
+                        mimetype: 'audio/mp4',
+                        ptt: true
+                      });
+                      recordFlowMessageInChat(remoteJid, '🎤 [Nota de voz enviada pela IA]', true, audioUrl, 'audio', audioFileName);
+                      audioSent = true;
+                      console.log(`[Voice Engine] Nota de voz (PTT) enviada com sucesso para ${remoteJid}!`);
+                    }
+                  } catch (audioErr: any) {
+                    console.error('[Voice Engine Error] Falha ao sintetizar/enviar nota de voz:', audioErr);
+                  }
+                }
+              }
+
+              // Se não enviou áudio ou se foi configurado para enviar texto junto
+              if (!audioSent || !aiConfig.substituteTextWithAudio) {
+                if (!audioSent) {
+                  await sock.sendMessage(remoteJid, { text: reply });
+                  recordFlowMessageInChat(remoteJid, reply, true);
+                }
+              }
+
               console.log(`[AI Engine] Resposta enviada com sucesso para ${remoteJid}!`);
             } catch (err) {
               console.error('[AI Engine Error] Erro ao responder com IA:', err);
@@ -3373,55 +3414,167 @@ async function startWhatsAppSession(sessionId: string) {
   });
 }
 
+// Helper to synthesize speech for AI responses (Native Free or ElevenLabs)
+async function synthesizeSpeech(rawText: string, config: typeof aiConfig): Promise<Buffer | null> {
+  try {
+    // Limpa texto para narração: remove markdown (*, #, _, `, ~), links URLs, e quebras excessivas
+    let cleanText = rawText
+      .replace(/[*_#`~>]/g, '')
+      .replace(/https?:\/\/\S+/gi, '')
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanText) return null;
+
+    // 1. ElevenLabs (se selecionado e com chave de API preenchida)
+    if (config.voiceProvider === 'elevenlabs' && config.elevenlabsApiKey) {
+      try {
+        const voiceId = (config.useCustomVoiceId && config.customVoiceId) 
+          ? config.customVoiceId 
+          : '21m00Tcm4TlvDq8ikWAM'; // Rachel default
+        
+        console.log(`[Voice Engine] Sintetizando via ElevenLabs (Voice ID: ${voiceId})...`);
+        const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'xi-api-key': config.elevenlabsApiKey.trim()
+          },
+          body: JSON.stringify({
+            text: cleanText,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+          })
+        });
+
+        if (elRes.ok) {
+          const elBuf = await elRes.arrayBuffer();
+          return Buffer.from(elBuf);
+        } else {
+          console.warn(`[Voice Engine] ElevenLabs retornou status ${elRes.status}. Alternando para Voz Nativa Gratuita...`);
+        }
+      } catch (elErr: any) {
+        console.warn(`[Voice Engine] Erro no ElevenLabs (${elErr.message}). Alternando para Voz Nativa Gratuita...`);
+      }
+    }
+
+    // 2. Voz Nativa Gratuita da Plataforma / VPS (100% Free, zero tokens, zero chaves)
+    console.log(`[Voice Engine] Sintetizando via Voz Nativa Gratuita (${cleanText.length} caracteres)...`);
+    
+    // Divide o texto em blocos de até 180 caracteres para fluidez total
+    const chunks: string[] = [];
+    const sentences = cleanText.match(/[^.!?\n]+[.!?\n]*/g) || [cleanText];
+    let currentChunk = '';
+    
+    for (const s of sentences) {
+      if ((currentChunk + ' ' + s).trim().length <= 180) {
+        currentChunk = (currentChunk + ' ' + s).trim();
+      } else {
+        if (currentChunk) chunks.push(currentChunk);
+        if (s.length > 180) {
+          const words = s.split(' ');
+          let subChunk = '';
+          for (const w of words) {
+            if ((subChunk + ' ' + w).trim().length <= 180) {
+              subChunk = (subChunk + ' ' + w).trim();
+            } else {
+              if (subChunk) chunks.push(subChunk);
+              subChunk = w;
+            }
+          }
+          if (subChunk) currentChunk = subChunk;
+        } else {
+          currentChunk = s.trim();
+        }
+      }
+    }
+    if (currentChunk) chunks.push(currentChunk);
+
+    const audioBuffers: Buffer[] = [];
+    for (const chunk of chunks) {
+      if (!chunk.trim()) continue;
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk.trim())}&tl=pt-BR&total=1&idx=0&textlen=${chunk.length}&client=tw-ob&prev=input`;
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      if (res.ok) {
+        const ab = await res.arrayBuffer();
+        audioBuffers.push(Buffer.from(ab));
+      }
+    }
+
+    if (audioBuffers.length > 0) {
+      const fullAudio = Buffer.concat(audioBuffers);
+      console.log(`[Voice Engine] Voz Nativa Gratuita gerada com sucesso (${fullAudio.length} bytes)!`);
+      return fullAudio;
+    }
+
+    return null;
+  } catch (err: any) {
+    console.error('[Voice Engine Error] Falha geral na síntese de voz:', err);
+    return null;
+  }
+}
+
 // Simple AI caller for Gemini, OpenAI, Claude or NyxzapIA
 async function queryAI(prompt: string, config: typeof aiConfig): Promise<string> {
   try {
     // 1. NyxzapIA (IA Própria NyxZap no plano PRO - Auto-hospedada com Ollama ou Master Key)
     if (config.provider === 'nyxzapia') {
-      const ollamaHost = (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || 'http://localhost:11434').replace(/\/$/, '');
       const selectedModel = config.model || process.env.OLLAMA_MODEL || 'llama3.2';
       const actualOllamaModel = selectedModel.includes('qwen') ? 'qwen2.5:7b' 
         : selectedModel.includes('deepseek') ? 'deepseek-r1:7b' 
         : selectedModel.includes('fast') || selectedModel.includes('1b') ? 'llama3.2:1b'
         : 'llama3.2:3b';
 
-      // 1.1 Tenta consultar o servidor Ollama (Auto-hospedado / Próprio)
-      try {
-        console.log(`[NyxzapIA / Ollama] Consultando Ollama em ${ollamaHost}/api/chat com modelo ${actualOllamaModel}...`);
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 12000); // 12s timeout
-        
-        const ollamaRes = await fetch(`${ollamaHost}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model: actualOllamaModel,
-            messages: [
-              { role: 'system', content: config.systemPrompt || 'Você é a NyxzapIA, assistente virtual inteligente e consultor de vendas via WhatsApp. Seja persuasivo e profissional.' },
-              { role: 'user', content: prompt }
-            ],
-            stream: false,
-            options: {
-              temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
-            }
-          })
-        });
-        clearTimeout(timeout);
+      // 1.1 Tenta consultar os hosts Ollama configurados (Docker / Host / Local)
+      const candidateHosts = Array.from(new Set([
+        (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || '').replace(/\/$/, ''),
+        'http://ollama:11434',
+        'http://localhost:11434',
+        'http://host.docker.internal:11434'
+      ])).filter(Boolean);
 
-        if (ollamaRes.ok) {
-          const ollamaData: any = await ollamaRes.json();
-          const reply = ollamaData?.message?.content?.trim();
-          if (reply) {
-            console.log(`[NyxzapIA / Ollama] Resposta gerada com sucesso pelo Ollama (${reply.length} caracteres)!`);
-            return reply;
+      for (const host of candidateHosts) {
+        try {
+          console.log(`[NyxzapIA / Ollama] Consultando Ollama em ${host}/api/chat com modelo ${actualOllamaModel}...`);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 12000); // 12s timeout
+          
+          const ollamaRes = await fetch(`${host}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              model: actualOllamaModel,
+              messages: [
+                { role: 'system', content: config.systemPrompt || 'Você é a NyxzapIA, assistente virtual inteligente e consultor de vendas via WhatsApp. Seja persuasivo e profissional.' },
+                { role: 'user', content: prompt }
+              ],
+              stream: false,
+              options: {
+                temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
+              }
+            })
+          });
+          clearTimeout(timeout);
+
+          if (ollamaRes.ok) {
+            const ollamaData: any = await ollamaRes.json();
+            const reply = ollamaData?.message?.content?.trim();
+            if (reply) {
+              console.log(`[NyxzapIA / Ollama] Resposta gerada com sucesso pelo Ollama em ${host} (${reply.length} caracteres)!`);
+              return reply;
+            }
           }
-        } else {
-          console.warn(`[NyxzapIA / Ollama] Ollama retornou status ${ollamaRes.status}. Tentando fallback...`);
+        } catch (ollamaErr: any) {
+          // Passa para o próximo host candidato
         }
-      } catch (ollamaErr: any) {
-        console.warn(`[NyxzapIA / Ollama] Ollama local não respondeu (${ollamaErr.message}). Prosseguindo com fallback de redundância...`);
       }
+      console.warn(`[NyxzapIA / Ollama] Nenhum host Ollama respondeu. Prosseguindo com fallback de redundância...`);
 
       // 1.2 Fallback para chave mestra do servidor (Google Gemini Master Key no .env) caso o Ollama ainda esteja sendo configurado
       const rawKey = process.env.GEMINI_API_KEY || config.apiKey || '';
@@ -5000,6 +5153,22 @@ app.post('/api/ai-test', async (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/ai-voice/preview', async (req, res) => {
+  try {
+    const textToSpeak = req.body.text || 'Olá! Sou a voz inteligente da NyxzapIA para o seu WhatsApp. Como posso ajudar você hoje?';
+    const audioBuffer = await synthesizeSpeech(textToSpeak, aiConfig);
+    if (!audioBuffer) {
+      return res.status(500).json({ success: false, error: 'Falha ao sintetizar áudio de voz.' });
+    }
+    const filename = `voice-preview-${Date.now()}.mp3`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, audioBuffer);
+    res.json({ success: true, audioUrl: `/uploads/${filename}` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

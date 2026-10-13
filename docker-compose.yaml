@@ -11,12 +11,24 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - DATABASE_URL=postgresql://nyx_user:nyx_secret_password@postgres:5432/nyxzap_db?schema=public
+      - OLLAMA_BASE_URL=http://ollama:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - nyxzap_whatsapp_sessions:/app/whatsapp_auth
       - nyxzap_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nyxzap-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - nyxzap_ollama_data:/root/.ollama
 
   postgres:
     image: postgres:16-alpine
@@ -38,3 +50,4 @@ volumes:
   nyxzap_whatsapp_sessions:
   nyxzap_uploads:
   nyxzap_postgres_data:
+  nyxzap_ollama_data:

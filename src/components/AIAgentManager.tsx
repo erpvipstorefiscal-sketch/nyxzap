@@ -209,8 +209,8 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
     followUpOffHoursEnabled: false,
     followUpTimezone: 'America/Sao_Paulo (GMT-3)',
     audioEnabled: false,
-    voiceProvider: 'elevenlabs',
-    voiceName: 'Rachel (Feminina)',
+    voiceProvider: 'native',
+    voiceName: 'Voz Nativa (PT-BR)',
     elevenlabsApiKey: '',
     useCustomVoiceId: false,
     customVoiceId: '',
@@ -268,6 +268,33 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
   const [testPrompt, setTestPrompt] = useState('Qual é a garantia do plano e como funciona o suporte?');
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ reasoning?: string; response?: string; citations?: string[] } | null>(null);
+
+  // Voice test preview state
+  const [testingVoice, setTestingVoice] = useState(false);
+  const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
+
+  const handleTestVoice = async () => {
+    setTestingVoice(true);
+    try {
+      const res = await fetch('/api/ai-voice/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'Olá! Sou a voz inteligente da NyxzapIA configurada para o atendimento via WhatsApp.'
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.audioUrl) {
+        setPreviewAudioUrl(data.audioUrl);
+        const audio = new Audio(data.audioUrl);
+        audio.play().catch(console.error);
+      }
+    } catch (err) {
+      console.error('Erro ao testar voz:', err);
+    } finally {
+      setTestingVoice(false);
+    }
+  };
 
   // Fetch initial AI config
   useEffect(() => {
@@ -1319,6 +1346,27 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div
+                  onClick={() => setConfig({ ...config, voiceProvider: 'native' })}
+                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                    config.voiceProvider === 'native'
+                      ? 'bg-emerald-950/20 border-emerald-500 shadow-subtle'
+                      : 'bg-[#141622] border-white/[0.06] hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-white flex items-center gap-2">
+                      <Mic className="w-4 h-4 text-emerald-400" /> Voz Nativa da Plataforma (VPS)
+                    </span>
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded font-bold">
+                      100% Gratuito
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Sintetizador integrado sem custos de API por mensagem e sem necessidade de chave de API externa.
+                  </p>
+                </div>
+
+                <div
                   onClick={() => setConfig({ ...config, voiceProvider: 'elevenlabs' })}
                   className={`p-4 rounded-xl border cursor-pointer transition-all ${
                     config.voiceProvider === 'elevenlabs'
@@ -1331,35 +1379,45 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                       <Volume2 className="w-4 h-4 text-purple-400" /> ElevenLabs Premium
                     </span>
                     <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-bold">
-                      Recomendado
+                      API Própria
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    Vozes ultra-realistas com respiração, entonação comercial natural e sotaque brasileiro perfeito.
-                  </p>
-                </div>
-
-                <div
-                  onClick={() => setConfig({ ...config, voiceProvider: 'native' })}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                    config.voiceProvider === 'native'
-                      ? 'bg-indigo-950/20 border-indigo-500 shadow-subtle'
-                      : 'bg-[#141622] border-white/[0.06] hover:border-white/20'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-white flex items-center gap-2">
-                      <Mic className="w-4 h-4 text-indigo-400" /> Voz Nativa da Plataforma
-                    </span>
-                    <span className="text-[10px] bg-white/[0.05] text-zinc-400 px-2 py-0.5 rounded font-mono">
-                      Gratuito
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    Sintetizador padrão integrado sem necessidade de chave de API externa.
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Vozes ultra-realistas com clonagem e entonações avançadas utilizando sua própria API Key.
                   </p>
                 </div>
               </div>
+
+              {/* Se Voz Nativa Gratuita: Demonstração e Confirmação */}
+              {config.voiceProvider === 'native' && (
+                <div className="p-4 rounded-xl bg-emerald-950/15 border border-emerald-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div>
+                      <span className="text-xs font-bold text-emerald-300 block">Voz Gratuita Ativa no VPS</span>
+                      <span className="text-[11px] text-slate-300">
+                        Respostas em áudio geradas nativamente em Português (PT-BR) sem custos de API.
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleTestVoice}
+                    disabled={testingVoice}
+                    className="px-3.5 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>{testingVoice ? 'Gerando Áudio...' : 'Ouvir Demonstração'}</span>
+                  </button>
+                </div>
+              )}
+
+              {previewAudioUrl && (
+                <div className="p-3 rounded-xl bg-[#141622] border border-white/10 flex items-center gap-3">
+                  <span className="text-xs text-slate-400 font-medium">Player da Demonstração:</span>
+                  <audio controls src={previewAudioUrl} autoPlay className="h-8 flex-1" />
+                </div>
+              )}
 
               {/* Se ElevenLabs: API Key e Seleção de Vozes */}
               {config.voiceProvider === 'elevenlabs' && (
