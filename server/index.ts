@@ -644,9 +644,46 @@ app.delete('/api/admin/subscribers/:id', async (req, res) => {
 app.post('/api/admin/subscribers/:id/renew', async (req, res) => {
   const { id } = req.params;
   try {
-    await pool.query("UPDATE users SET valid_until = '2026-12-31', status = 'active' WHERE id = $1", [id]);
-    recordTelemetry('admin_renewed_license', 'admin', id, undefined, { id });
-    res.json({ success: true, message: 'Licença renovada por mais 30 dias no banco de dados!' });
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Assinante não encontrado.' });
+    }
+    const user = userResult.rows[0];
+
+    // Determinar se o plano do cliente é anual (+365d) ou mensal (+30d)
+    const planName = (user.plan_name || '').toLowerCase();
+    const planId = (user.plan_id || '').toLowerCase();
+    const isAnnual = planName.includes('anual') || planName.includes('annual') || planId.includes('anual') || planId.includes('p3') || (Number(user.mrr_value) >= 350);
+    const daysToAdd = isAnnual ? 365 : 30;
+
+    let baseDate = new Date();
+    if (user.valid_until && typeof user.valid_until === 'string') {
+      const parts = user.valid_until.split('-');
+      if (parts.length === 3) {
+        const curValid = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        // Se a data de validade atual estiver no futuro (não expirada), prorroga a partir dela
+        if (curValid > baseDate) {
+          baseDate = curValid;
+        }
+      }
+    }
+
+    baseDate.setDate(baseDate.getDate() + daysToAdd);
+    const year = baseDate.getFullYear();
+    const month = String(baseDate.getMonth() + 1).padStart(2, '0');
+    const day = String(baseDate.getDate()).padStart(2, '0');
+    const newValidUntil = `${year}-${month}-${day}`;
+
+    await pool.query("UPDATE users SET valid_until = $1, status = 'active' WHERE id = $2", [newValidUntil, id]);
+    recordTelemetry('admin_renewed_license', 'admin', id, user.email, { id, daysToAdd, newValidUntil, isAnnual });
+
+    res.json({
+      success: true,
+      message: `Licença renovada com sucesso por +${daysToAdd} dias (${isAnnual ? 'Anual' : 'Mensal'})! Válida até ${newValidUntil}.`,
+      validUntil: newValidUntil,
+      daysAdded: daysToAdd,
+      isAnnual
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -696,20 +733,26 @@ app.get('/api/cakto/config', async (req, res) => {
         clientId: cfg.client_id,
         clientSecret: cfg.client_secret ? '••••••••' : '',
         hasSecret: !!cfg.client_secret,
+        webhookSecret: cfg.webhook_secret || '',
         checkoutLinks: cfg.checkout_links || {}
       });
     }
     res.json({
       clientId: '1tyOaWA3KmZDn87nHzJYQksvEBANLiiV7Zx1uLeo',
       hasSecret: true,
+      webhookSecret: '',
       checkoutLinks: {
-        tier_1: 'https://pay.cakto.com.br/nyxzap-extra-1',
-        tier_2: 'https://pay.cakto.com.br/nyxzap-extra-2',
-        tier_3: 'https://pay.cakto.com.br/nyxzap-extra-3',
-        tier_5: 'https://pay.cakto.com.br/nyxzap-extra-5',
-        plan_p1: 'https://pay.cakto.com.br/nyxzap-start',
-        plan_p2: 'https://pay.cakto.com.br/nyxzap-pro',
-        plan_p3: 'https://pay.cakto.com.br/nyxzap-enterprise'
+        tier_1: 'https://pay.cakto.com.br/wvzo8by_1192101',
+        tier_2: 'https://pay.cakto.com.br/s588s5h_1192102',
+        tier_3: 'https://pay.cakto.com.br/37vbpz4_1192103',
+        tier_5: 'https://pay.cakto.com.br/o887kzn_1192105',
+        plan_dinder_mensal: 'https://pay.cakto.com.br/w9d4ou9_1191931',
+        plan_dinder_anual: 'https://pay.cakto.com.br/693263v_1192152',
+        plan_pro_mensal: 'https://pay.cakto.com.br/87jcu5r_1192138',
+        plan_pro_anual: 'https://pay.cakto.com.br/3764ipv_1192156',
+        plan_p1: 'https://pay.cakto.com.br/w9d4ou9_1191931',
+        plan_p2: 'https://pay.cakto.com.br/87jcu5r_1192138',
+        plan_p3: 'https://pay.cakto.com.br/3764ipv_1192156'
       }
     });
   } catch (err: any) {
@@ -718,17 +761,18 @@ app.get('/api/cakto/config', async (req, res) => {
 });
 
 app.post('/api/cakto/config', async (req, res) => {
-  const { clientId, clientSecret, checkoutLinks } = req.body;
+  const { clientId, clientSecret, webhookSecret, checkoutLinks } = req.body;
   try {
     await pool.query(
-      `INSERT INTO cakto_config (id, client_id, client_secret, checkout_links, updated_at)
-       VALUES ('default', $1, $2, $3, CURRENT_TIMESTAMP)
+      `INSERT INTO cakto_config (id, client_id, client_secret, webhook_secret, checkout_links, updated_at)
+       VALUES ('default', $1, $2, $3, $4, CURRENT_TIMESTAMP)
        ON CONFLICT (id) DO UPDATE
        SET client_id = COALESCE($1, cakto_config.client_id),
            client_secret = CASE WHEN $2 != '' AND $2 IS NOT NULL THEN $2 ELSE cakto_config.client_secret END,
-           checkout_links = COALESCE($3, cakto_config.checkout_links),
+           webhook_secret = COALESCE($3, cakto_config.webhook_secret),
+           checkout_links = COALESCE($4, cakto_config.checkout_links),
            updated_at = CURRENT_TIMESTAMP`,
-      [clientId, clientSecret, JSON.stringify(checkoutLinks || {})]
+      [clientId, clientSecret, webhookSecret || '', JSON.stringify(checkoutLinks || {})]
     );
     res.json({ success: true, message: 'Configurações da Cakto salvas com sucesso!' });
   } catch (err: any) {
@@ -887,6 +931,25 @@ app.post(['/api/webhook/cakto', '/api/webhook/saas/cakto'], async (req, res) => 
       (rawProductName.includes('dinder') && rawProductName.includes('plano')) ||
       (rawProductName.includes('conex') && rawProductName.includes('extra') && rawProductName.includes('nyx'));
 
+    // Validação de Chave Secreta para o Webhook do SaaS (se configurada no painel SuperAdmin)
+    if (isExplicitSaasUrl) {
+      let configuredSaasSecret = '';
+      try {
+        const cfgRes = await pool.query('SELECT webhook_secret FROM cakto_config WHERE id = $1', ['default']);
+        if (cfgRes.rows.length > 0 && cfgRes.rows[0].webhook_secret) {
+          configuredSaasSecret = String(cfgRes.rows[0].webhook_secret).trim();
+        }
+      } catch {}
+
+      if (configuredSaasSecret) {
+        if (incomingSecret && incomingSecret !== configuredSaasSecret) {
+          console.warn(`[Cakto SaaS Webhook] ⚠️ Chave secreta inválida! Recebida: "${incomingSecret}", Esperada: "${configuredSaasSecret}"`);
+          return res.status(401).json({ error: 'Chave secreta do webhook inválida.' });
+        }
+        console.log(`[Cakto SaaS Webhook] ✅ Chave secreta validada com sucesso!`);
+      }
+    }
+
     if (!isApproved || !isSaaSSubscription || !email) {
       return res.json({
         success: true,
@@ -900,68 +963,106 @@ app.post(['/api/webhook/cakto', '/api/webhook/saas/cakto'], async (req, res) => 
     console.log(`[Cakto Webhook] Processando compra aprovada de assinatura para ${email} (Produto: "${rawProductName}", OfferId: "${offerId}", Valor: R$ ${amount})`);
 
     // 1. Identificar Conexões Extras de WhatsApp
-    // Slugs Cakto: nyxzap-1-numero-extra, nyxzap-2-numeros-extra, nyxzap-3-numeros-extra, nyxzap-5-numeros-extra
+    // Slugs / Ofertas Cakto:
+    // +1 Conexão: wvzo8by_1192101 (R$ 39,90/mês)
+    // +2 Conexões: s588s5h_1192102 (R$ 69,80/mês)
+    // +3 Conexões: 37vbpz4_1192103 (R$ 89,70/mês)
+    // +5 Conexões: o887kzn_1192105 (R$ 99,50/mês)
     const isExtraConnection = 
       rawProductName.includes('extra') || 
       rawProductName.includes('numero') || 
       rawProductName.includes('conex') ||
-      offerId.includes('extra');
+      offerId.includes('extra') ||
+      offerId.includes('wvzo8by') ||
+      offerId.includes('s588s5h') ||
+      offerId.includes('37vbpz4') ||
+      offerId.includes('o887kzn');
 
     if (isExtraConnection) {
       let extraCount = 1;
-      if (rawProductName.includes('5') || rawProductName.includes('cinco')) extraCount = 5;
-      else if (rawProductName.includes('3') || rawProductName.includes('tres') || rawProductName.includes('três')) extraCount = 3;
-      else if (rawProductName.includes('2') || rawProductName.includes('duas')) extraCount = 2;
+      if (rawProductName.includes('5') || rawProductName.includes('cinco') || offerId.includes('o887kzn')) extraCount = 5;
+      else if (rawProductName.includes('3') || rawProductName.includes('tres') || rawProductName.includes('três') || offerId.includes('37vbpz4')) extraCount = 3;
+      else if (rawProductName.includes('2') || rawProductName.includes('duas') || offerId.includes('s588s5h')) extraCount = 2;
 
-      // Buscar usuário existente e incrementar instâncias
+      // Buscar usuário existente e incrementar instâncias + renovar por 30 dias (mensal)
       const userRes = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1', [email]);
       if (userRes.rows.length > 0) {
         const u = userRes.rows[0];
         const newLimit = (u.instances_limit || 1) + extraCount;
+
+        // Número extra é SEMPRE mensal (+30 dias)
+        let baseDate = new Date();
+        if (u.valid_until && typeof u.valid_until === 'string') {
+          const parts = u.valid_until.split('-');
+          if (parts.length === 3) {
+            const curValid = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            if (curValid > baseDate) {
+              baseDate = curValid;
+            }
+          }
+        }
+        baseDate.setDate(baseDate.getDate() + 30);
+        const year = baseDate.getFullYear();
+        const month = String(baseDate.getMonth() + 1).padStart(2, '0');
+        const day = String(baseDate.getDate()).padStart(2, '0');
+        const newValidUntil = `${year}-${month}-${day}`;
+
         await pool.query(
-          'UPDATE users SET instances_limit = $1 WHERE id = $2',
-          [newLimit, u.id]
+          "UPDATE users SET instances_limit = $1, valid_until = $2, status = 'active' WHERE id = $3",
+          [newLimit, newValidUntil, u.id]
         );
-        recordTelemetry('cakto_webhook_extra_connections', 'cakto', u.id, email, { extraCount, newLimit, amount });
-        console.log(`[Cakto Webhook] +${extraCount} conexões extras adicionadas ao usuário ${email}. Novo limite: ${newLimit}`);
-        return res.json({ success: true, message: `Adicionadas +${extraCount} conexões extras para ${email}.` });
+        recordTelemetry('cakto_webhook_extra_connections', 'cakto', u.id, email, { extraCount, newLimit, amount, newValidUntil });
+        console.log(`[Cakto Webhook] +${extraCount} conexões extras adicionadas ao usuário ${email}. Novo limite: ${newLimit}, Validade: ${newValidUntil}`);
+        return res.json({ success: true, message: `Adicionadas +${extraCount} conexões extras e renovado por 30 dias para ${email} (válido até ${newValidUntil}).` });
       } else {
-        // Se cliente ainda não existe, cria o usuário com o limite extra
+        // Se cliente ainda não existe, cria o usuário com o limite extra e 30 dias de acesso
         const newId = 'usr-' + Date.now();
         const nextMonth = new Date();
         nextMonth.setDate(nextMonth.getDate() + 30);
+        const year = nextMonth.getFullYear();
+        const month = String(nextMonth.getMonth() + 1).padStart(2, '0');
+        const day = String(nextMonth.getDate()).padStart(2, '0');
+        const validUntilStr = `${year}-${month}-${day}`;
+
         await pool.query(
           `INSERT INTO users (id, name, email, password, role, phone, plan_id, plan_name, status, mrr_value, valid_until, instances_limit, connected_instances)
            VALUES ($1, $2, $3, '123456', 'client', $4, 'p_dinder', 'Plano Dinder', 'active', $5, $6, $7, 0)`,
-          [newId, customerName, email, customerPhone, amount, nextMonth.toISOString().split('T')[0], 1 + extraCount]
+          [newId, customerName, email, customerPhone, amount, validUntilStr, 1 + extraCount]
         );
-        recordTelemetry('cakto_webhook_new_client_extra', 'cakto', newId, email, { extraCount, amount });
-        return res.json({ success: true, message: `Cliente ${email} criado com +${extraCount} conexões extras.` });
+        recordTelemetry('cakto_webhook_new_client_extra', 'cakto', newId, email, { extraCount, amount, validUntil: validUntilStr });
+        return res.json({ success: true, message: `Cliente ${email} criado com +${extraCount} conexões extras e 30 dias de acesso (válido até ${validUntilStr}).` });
       }
     }
 
     // 2. Identificar Plano e Ciclo
-    // Slugs Cakto:
-    // - nyxzap - plano dinder (Mensal)
-    // - nyxzap - plano dinder anual (Anual)
-    // - nyxzap - plano pro + ia ilimitada (Mensal)
-    // - nyxzap - plano pro + ia ilimitada anual (Anual)
-    const isPro = 
-      rawProductName.includes('pro') || 
-      rawProductName.includes('ia') || 
-      rawProductName.includes('ilimitada') ||
-      offerId.includes('3764ipv') || 
-      offerId.includes('87jcu5r');
+    // Planos Oficiais NyxZap:
+    // 1) Nyxzap - Plano Pro + IA ilimitada Anual (R$ 597,00) -> 3764ipv_1192156
+    // 2) Nyxzap - Plano Dinder Anual (R$ 397,00) -> 693263v_1192152
+    // 3) Nyxzap - Plano Pro + IA ilimitada - mensal (R$ 147,00) -> 87jcu5r_1192138
+    // 4) Nyxzap - Plano Dinder - mensal (R$ 97,00) -> w9d4ou9_1191931
 
     const isAnnual = 
-      rawProductName.includes('anual') || 
-      amount >= 290 || 
+      offerId.includes('3764ipv') || 
+      offerId.includes('1192156') ||
       offerId.includes('693263v') || 
-      offerId.includes('3764ipv');
+      offerId.includes('1192152') ||
+      rawProductName.includes('anual') || 
+      amount >= 290;
+
+    const isPro = 
+      offerId.includes('3764ipv') || 
+      offerId.includes('1192156') ||
+      offerId.includes('87jcu5r') || 
+      offerId.includes('1192138') ||
+      rawProductName.includes('pro') || 
+      rawProductName.includes('ia') || 
+      rawProductName.includes('ilimitada');
 
     const daysToAdd = isAnnual ? 365 : 30;
-    const planId = isPro ? 'p_pro_ia' : 'p_dinder';
-    const planName = isPro ? 'Plano Pro + IA ilimitada (Recomendado)' : 'Plano Dinder';
+    const planId = isPro ? 'p_pro_ia' : (isAnnual ? 'p_dinder_anual' : 'p_dinder');
+    const planName = isPro 
+      ? (isAnnual ? 'Nyxzap - Plano Pro + IA ilimitada Anual' : 'Nyxzap - Plano Pro + IA ilimitada')
+      : (isAnnual ? 'Nyxzap - Plano Dinder Anual' : 'Nyxzap - Plano Dinder');
 
     const userRes = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1', [email]);
 
@@ -971,15 +1072,21 @@ app.post(['/api/webhook/cakto', '/api/webhook/saas/cakto'], async (req, res) => 
       let baseDate = new Date();
 
       // Se a assinatura ainda estiver ativa no futuro, prorroga a partir da data de vencimento
-      if (existingUser.valid_until) {
-        const curValid = new Date(existingUser.valid_until);
-        if (curValid > baseDate) {
-          baseDate = curValid;
+      if (existingUser.valid_until && typeof existingUser.valid_until === 'string') {
+        const parts = existingUser.valid_until.split('-');
+        if (parts.length === 3) {
+          const curValid = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+          if (curValid > baseDate) {
+            baseDate = curValid;
+          }
         }
       }
 
       baseDate.setDate(baseDate.getDate() + daysToAdd);
-      const newValidUntil = baseDate.toISOString().split('T')[0];
+      const year = baseDate.getFullYear();
+      const month = String(baseDate.getMonth() + 1).padStart(2, '0');
+      const day = String(baseDate.getDate()).padStart(2, '0');
+      const newValidUntil = `${year}-${month}-${day}`;
 
       await pool.query(
         `UPDATE users 
@@ -1000,17 +1107,20 @@ app.post(['/api/webhook/cakto', '/api/webhook/saas/cakto'], async (req, res) => 
         amount
       });
 
-      console.log(`[Cakto Webhook] Assinatura do cliente ${email} renovada com sucesso até ${newValidUntil}!`);
+      console.log(`[Cakto Webhook] Assinatura do cliente ${email} renovada com sucesso até ${newValidUntil} (+${daysToAdd} dias)!`);
       return res.json({
         success: true,
-        message: `Assinatura de ${email} renovada com sucesso até ${newValidUntil} no ${planName}.`
+        message: `Assinatura de ${email} renovada com sucesso por +${daysToAdd} dias (${isAnnual ? 'Anual' : 'Mensal'}) até ${newValidUntil} no ${planName}.`
       });
     } else {
       // Novo Assinante registrado via Cakto
       const newId = 'usr-' + Date.now();
       const expirationDate = new Date();
       expirationDate.setDate(expirationDate.getDate() + daysToAdd);
-      const validUntil = expirationDate.toISOString().split('T')[0];
+      const year = expirationDate.getFullYear();
+      const month = String(expirationDate.getMonth() + 1).padStart(2, '0');
+      const day = String(expirationDate.getDate()).padStart(2, '0');
+      const validUntil = `${year}-${month}-${day}`;
 
       await pool.query(
         `INSERT INTO users (id, name, email, password, role, phone, plan_id, plan_name, status, mrr_value, valid_until, instances_limit, connected_instances)
@@ -1021,14 +1131,15 @@ app.post(['/api/webhook/cakto', '/api/webhook/saas/cakto'], async (req, res) => 
       recordTelemetry('cakto_webhook_new_subscriber', 'cakto', newId, email, {
         planName,
         isAnnual,
+        daysToAdd,
         validUntil,
         amount
       });
 
-      console.log(`[Cakto Webhook] Novo cliente criado via Cakto: ${email} (${planName}) válido até ${validUntil}`);
+      console.log(`[Cakto Webhook] Novo cliente criado via Cakto: ${email} (${planName}) válido por +${daysToAdd} dias até ${validUntil}`);
       return res.json({
         success: true,
-        message: `Novo cliente ${email} cadastrado com sucesso no ${planName} até ${validUntil}.`
+        message: `Novo cliente ${email} cadastrado com sucesso no ${planName} (+${daysToAdd} dias até ${validUntil}).`
       });
     }
   } catch (err: any) {

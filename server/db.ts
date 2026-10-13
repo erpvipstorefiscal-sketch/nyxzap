@@ -73,14 +73,19 @@ const mockData = {
     id: 'default',
     client_id: '1tyOaWA3KmZDn87nHzJYQksvEBANLiiV7Zx1uLeo',
     client_secret: '',
+    webhook_secret: '',
     checkout_links: {
-      tier_1: 'https://pay.cakto.com.br/nyxzap-extra-1',
-      tier_2: 'https://pay.cakto.com.br/nyxzap-extra-2',
-      tier_3: 'https://pay.cakto.com.br/nyxzap-extra-3',
-      tier_5: 'https://pay.cakto.com.br/nyxzap-extra-5',
-      plan_p1: 'https://pay.cakto.com.br/nyxzap-start',
-      plan_p2: 'https://pay.cakto.com.br/nyxzap-pro',
-      plan_p3: 'https://pay.cakto.com.br/nyxzap-enterprise'
+      tier_1: 'https://pay.cakto.com.br/wvzo8by_1192101',
+      tier_2: 'https://pay.cakto.com.br/s588s5h_1192102',
+      tier_3: 'https://pay.cakto.com.br/37vbpz4_1192103',
+      tier_5: 'https://pay.cakto.com.br/o887kzn_1192105',
+      plan_dinder_mensal: 'https://pay.cakto.com.br/w9d4ou9_1191931',
+      plan_dinder_anual: 'https://pay.cakto.com.br/693263v_1192152',
+      plan_pro_mensal: 'https://pay.cakto.com.br/87jcu5r_1192138',
+      plan_pro_anual: 'https://pay.cakto.com.br/3764ipv_1192156',
+      plan_p1: 'https://pay.cakto.com.br/w9d4ou9_1191931',
+      plan_p2: 'https://pay.cakto.com.br/87jcu5r_1192138',
+      plan_p3: 'https://pay.cakto.com.br/3764ipv_1192156'
     }
   },
   flow_definitions: [] as any[]
@@ -168,7 +173,19 @@ function executeMockQuery(sql: string, params?: any[]) {
     return { rows: mockData.system_updates, rowCount: mockData.system_updates.length };
   }
 
-  if (upperSql.includes('FROM CAKTO_CONFIG')) {
+  if (upperSql.includes('CAKTO_CONFIG')) {
+    if (upperSql.includes('INSERT INTO') || upperSql.includes('UPDATE')) {
+      const [clientId, clientSecret, webhookSecret, checkoutLinks] = [params?.[0], params?.[1], params?.[2], params?.[3]];
+      if (clientId) mockData.cakto_config.client_id = clientId;
+      if (clientSecret) mockData.cakto_config.client_secret = clientSecret;
+      if (webhookSecret !== undefined && webhookSecret !== null) mockData.cakto_config.webhook_secret = webhookSecret;
+      if (checkoutLinks) {
+        try {
+          mockData.cakto_config.checkout_links = typeof checkoutLinks === 'string' ? JSON.parse(checkoutLinks) : checkoutLinks;
+        } catch {}
+      }
+      return { rows: [mockData.cakto_config], rowCount: 1 };
+    }
     return { rows: [mockData.cakto_config], rowCount: 1 };
   }
 
@@ -286,6 +303,7 @@ export async function initDatabase() {
         checkout_links JSONB DEFAULT '{}',
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE cakto_config ADD COLUMN IF NOT EXISTS webhook_secret VARCHAR(255);
     `);
 
     // 3.4 Tabela de Instâncias de WhatsApp (Persistência e Nomes Customizados)

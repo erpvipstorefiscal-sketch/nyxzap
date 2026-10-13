@@ -26,7 +26,11 @@ import {
   Check,
   X,
   Lock,
-  Globe
+  Globe,
+  Key,
+  Eye,
+  EyeOff,
+  Copy
 } from 'lucide-react';
 import { trackEvent } from '../lib/telemetry';
 import { confirmDialog, alertDialog } from './ModalConfirm';
@@ -85,14 +89,17 @@ export const AdminDashboard: React.FC = () => {
   // Cakto Configuration
   const [caktoClientId, setCaktoClientId] = useState('1tyOaWA3KmZDn87nHzJYQksvEBANLiiV7Zx1uLeo');
   const [caktoClientSecret, setCaktoClientSecret] = useState('');
-  const [caktoLinks, setCaktoLinks] = useState({
-    tier_1: 'https://pay.cakto.com.br/nyxzap-extra-1',
-    tier_2: 'https://pay.cakto.com.br/nyxzap-extra-2',
-    tier_3: 'https://pay.cakto.com.br/nyxzap-extra-3',
-    tier_5: 'https://pay.cakto.com.br/nyxzap-extra-5',
-    plan_p1: 'https://pay.cakto.com.br/nyxzap-start',
-    plan_p2: 'https://pay.cakto.com.br/nyxzap-pro',
-    plan_p3: 'https://pay.cakto.com.br/nyxzap-enterprise'
+  const [caktoWebhookSecret, setCaktoWebhookSecret] = useState('');
+  const [showCaktoWebhookSecret, setShowCaktoWebhookSecret] = useState(false);
+  const [caktoLinks, setCaktoLinks] = useState<Record<string, string>>({
+    tier_1: 'https://pay.cakto.com.br/wvzo8by_1192101',
+    tier_2: 'https://pay.cakto.com.br/s588s5h_1192102',
+    tier_3: 'https://pay.cakto.com.br/37vbpz4_1192103',
+    tier_5: 'https://pay.cakto.com.br/o887kzn_1192105',
+    plan_dinder_mensal: 'https://pay.cakto.com.br/w9d4ou9_1191931',
+    plan_dinder_anual: 'https://pay.cakto.com.br/693263v_1192152',
+    plan_pro_mensal: 'https://pay.cakto.com.br/87jcu5r_1192138',
+    plan_pro_anual: 'https://pay.cakto.com.br/3764ipv_1192156'
   });
   const [caktoSaved, setCaktoSaved] = useState(false);
 
@@ -154,7 +161,13 @@ export const AdminDashboard: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.clientId) setCaktoClientId(data.clientId);
-        if (data.checkoutLinks) setCaktoLinks(data.checkoutLinks);
+        if (data.webhookSecret) setCaktoWebhookSecret(data.webhookSecret);
+        if (data.checkoutLinks) {
+          setCaktoLinks(prev => ({
+            ...prev,
+            ...data.checkoutLinks
+          }));
+        }
       }
     } catch (err) {
       console.error('Erro ao buscar config Cakto:', err);
@@ -405,6 +418,7 @@ export const AdminDashboard: React.FC = () => {
         body: JSON.stringify({
           clientId: caktoClientId,
           clientSecret: caktoClientSecret,
+          webhookSecret: caktoWebhookSecret,
           checkoutLinks: caktoLinks
         })
       });
@@ -608,13 +622,26 @@ export const AdminDashboard: React.FC = () => {
                       </span>
                     </td>
                     <td className="p-3 text-right space-x-1.5">
-                      <button 
-                        onClick={() => handleRenewSubscriber(sub.id)}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-semibold transition-colors"
-                        title="Renovar por mais 30 dias"
-                      >
-                        +30 Dias
-                      </button>
+                      {(() => {
+                        const isSubAnnual = 
+                          sub.planName?.toLowerCase().includes('anual') || 
+                          sub.planId?.toLowerCase().includes('anual') || 
+                          sub.planId === 'p3' || 
+                          (Number(sub.mrrValue) >= 350);
+                        return (
+                          <button 
+                            onClick={() => handleRenewSubscriber(sub.id)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                              isSubAnnual 
+                                ? 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30' 
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                            }`}
+                            title={isSubAnnual ? "Renovar licença por mais 1 ano (+365 dias)" : "Renovar licença por mais 30 dias"}
+                          >
+                            {isSubAnnual ? '+365 Dias' : '+30 Dias'}
+                          </button>
+                        );
+                      })()}
                       <button
                         onClick={() => handleOpenEditClient(sub)}
                         className="p-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg transition-colors"
@@ -965,6 +992,97 @@ export const AdminDashboard: React.FC = () => {
                     placeholder="Cole a Secret se quiser atualizar"
                     value={caktoClientSecret}
                     onChange={e => setCaktoClientSecret(e.target.value)}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Bloco: Chave Secreta do Webhook Cakto (SaaS) */}
+            <div className="p-4 rounded-xl bg-[#151824] border border-indigo-500/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-2">
+                  <Key className="w-3.5 h-3.5 text-amber-400" />
+                  Chave Secreta do Webhook Cakto (SaaS NyxZap)
+                </h4>
+                <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2.5 py-0.5 rounded-full border border-indigo-500/20 font-medium">
+                  Segurança do SaaS
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Cole aqui a <strong>Chave secreta do webhook</strong> gerada no painel da Cakto (aba <em>Webhooks &gt; Configurações do Webhook</em>). Ela garante a validação dos disparos de ativação e renovação automática de assinaturas do seu SaaS.
+              </p>
+              <div className="relative">
+                <input
+                  type={showCaktoWebhookSecret ? 'text' : 'password'}
+                  placeholder="Ex: d966fb9c-8ceb-46ca-93e6-51fdef80085b"
+                  value={caktoWebhookSecret}
+                  onChange={e => setCaktoWebhookSecret(e.target.value)}
+                  className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 pr-24 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCaktoWebhookSecret(prev => !prev)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 text-[11px] flex items-center gap-1 bg-white/[0.04] px-2 py-1 rounded-lg border border-white/[0.06]"
+                >
+                  {showCaktoWebhookSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showCaktoWebhookSecret ? 'Ocultar' : 'Ver'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Bloco: Links Oficiais de Checkout dos Planos NyxZap */}
+            <div className="p-4 rounded-xl bg-[#151824] border border-slate-800 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-2">
+                <CreditCard className="w-3.5 h-3.5" />
+                Links Oficiais de Checkout dos Planos NyxZap
+              </h4>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Nyxzap - Plano Dinder - Mensal (R$ 97,00/mês)
+                  </label>
+                  <input
+                    type="text"
+                    value={caktoLinks.plan_dinder_mensal || caktoLinks.plan_p1 || ''}
+                    onChange={e => setCaktoLinks({ ...caktoLinks, plan_dinder_mensal: e.target.value, plan_p1: e.target.value })}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Nyxzap - Plano Dinder Anual (R$ 397,00/ano)
+                  </label>
+                  <input
+                    type="text"
+                    value={caktoLinks.plan_dinder_anual || ''}
+                    onChange={e => setCaktoLinks({ ...caktoLinks, plan_dinder_anual: e.target.value })}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Nyxzap - Plano Pro + IA ilimitada - Mensal (R$ 147,00/mês)
+                  </label>
+                  <input
+                    type="text"
+                    value={caktoLinks.plan_pro_mensal || caktoLinks.plan_p2 || ''}
+                    onChange={e => setCaktoLinks({ ...caktoLinks, plan_pro_mensal: e.target.value, plan_p2: e.target.value })}
+                    className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    Nyxzap - Plano Pro + IA ilimitada Anual (R$ 597,00/ano)
+                  </label>
+                  <input
+                    type="text"
+                    value={caktoLinks.plan_pro_anual || caktoLinks.plan_p3 || ''}
+                    onChange={e => setCaktoLinks({ ...caktoLinks, plan_pro_anual: e.target.value, plan_p3: e.target.value })}
                     className="w-full bg-nyx-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-purple-500"
                   />
                 </div>
