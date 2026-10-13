@@ -759,21 +759,12 @@ app.post('/api/webhook/cakto', async (req, res) => {
       eventType.includes('approved') ||
       eventType.includes('renewed');
 
-    if (!isApproved) {
-      console.log(`[Cakto Webhook] Evento ignorado (status não aprovado: ${paymentStatus || eventType})`);
-      return res.json({ received: true, ignored: true, reason: 'Payment not approved' });
-    }
-
     // Extrair dados do cliente / pagador
-    const customer = payload.data?.customer || payload.customer || payload.client || payload.order?.customer || {};
+    const customer = payload.data?.customer || payload.customer || payload.client || payload.order?.customer || payload.buyer || {};
     const email = (customer.email || payload.email || payload.buyer_email || payload.data?.email || '').trim().toLowerCase();
-    const customerName = customer.name || customer.full_name || payload.name || payload.buyer_name || 'Cliente Cakto';
-    const customerPhone = customer.phone || customer.cellphone || payload.phone || '+55 11 99999-9999';
-
-    if (!email) {
-      console.warn('[Cakto Webhook] E-mail do cliente não identificado no payload');
-      return res.status(400).json({ error: 'Customer email missing in webhook payload' });
-    }
+    const customerName = customer.name || customer.full_name || payload.name || payload.buyer_name || 'Cliente';
+    const rawCustomerPhone = customer.phone || customer.cellphone || customer.telephone || customer.mobile || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
+    const customerPhone = rawCustomerPhone || '+55 11 99999-9999';
 
     // Extrair dados do produto / oferta / item
     const items = payload.data?.items || payload.items || payload.products || [];
@@ -793,7 +784,44 @@ app.post('/api/webhook/cakto', async (req, res) => {
     const offerId = String(payload.offer_id || payload.checkout_id || payload.link_id || item.id || payload.product_id || '').toLowerCase();
     const amount = parseFloat(payload.data?.amount || payload.amount || payload.order?.amount || item.price || 0) / 100 || 97.00;
 
-    console.log(`[Cakto Webhook] Processando compra aprovada para ${email} (Produto: "${rawProductName}", OfferId: "${offerId}", Valor: R$ ${amount})`);
+    console.log(`[Cakto Webhook] Evento: "${eventType}" | Status: "${paymentStatus}" | Lead: "${rawCustomerPhone}" (${customerName}) | Produto: "${rawProductName}"`);
+
+    // 1. DISPARAR FLUXOS VISUAIS NYXZAP (Se houver telefone do lead e fluxo configurado)
+    let flowTriggerResult: any = null;
+    if (rawCustomerPhone) {
+      try {
+        const rawEvent = payload.event || payload.type || payload.data?.event || payload.status || paymentStatus || (isApproved ? 'compra aprovada' : 'evento');
+        flowTriggerResult = await triggerFlowForWebhookEvent('cakto', String(rawEvent), String(rawCustomerPhone), String(customerName), payload);
+        console.log(`[Cakto Webhook] Fluxo visual acionado para ${rawCustomerPhone}:`, flowTriggerResult);
+      } catch (flowErr: any) {
+        console.error('[Cakto Webhook] Erro ao disparar fluxo:', flowErr);
+      }
+    }
+
+    // 2. VERIFICAR SE É ASSINATURA / PLANO DO PRÓPRIO SAAS NYXZAP
+    const isSaaSSubscription = 
+      rawProductName.includes('extra') || 
+      rawProductName.includes('numero') || 
+      rawProductName.includes('conex') ||
+      rawProductName.includes('dinder') ||
+      rawProductName.includes('pro') ||
+      rawProductName.includes('nyxzap') ||
+      offerId.includes('extra') ||
+      offerId.includes('3764ipv') ||
+      offerId.includes('87jcu5r') ||
+      offerId.includes('693263v');
+
+    if (!isApproved || !isSaaSSubscription || !email) {
+      return res.json({
+        success: true,
+        message: 'Webhook Cakto recebido e processado!',
+        eventType,
+        paymentStatus,
+        flowTriggerResult
+      });
+    }
+
+    console.log(`[Cakto Webhook] Processando compra aprovada de assinatura para ${email} (Produto: "${rawProductName}", OfferId: "${offerId}", Valor: R$ ${amount})`);
 
     // 1. Identificar Conexões Extras de WhatsApp
     // Slugs Cakto: nyxzap-1-numero-extra, nyxzap-2-numeros-extra, nyxzap-3-numeros-extra, nyxzap-5-numeros-extra
@@ -935,7 +963,7 @@ app.post('/api/webhook/cakto', async (req, res) => {
 });
 
 // Endpoint para Webhook de Checkout / Plataformas de Vendas dispararem fluxos
-app.all(['/api/webhook/checkout', '/api/webhook/checkout/:platform', '/api/webhook/vendas', '/api/webhook/flow'], async (req, res) => {
+app.all(['/api/webhook/checkout', '/api/webhook/checkout/:platform', '/api/webhook/vendas', '/api/webhook/flow', '/api/webhook/:platform'], async (req, res) => {
   const platform = req.params.platform || req.body?.platform || req.query?.platform || 'vendas';
   const payload = req.body || {};
   console.log(`[Webhook Checkout Entry] (${platform})`, JSON.stringify(payload));
@@ -943,8 +971,8 @@ app.all(['/api/webhook/checkout', '/api/webhook/checkout/:platform', '/api/webho
   try {
     const rawEvent = payload.event || payload.type || payload.status || payload.trigger || req.query?.event || 'compra aprovada';
     const customer = payload.customer || payload.client || payload.buyer || payload.data?.customer || {};
-    const leadPhone = customer.phone || customer.cellphone || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
-    const leadName = customer.name || customer.full_name || payload.name || payload.leadName || 'Cliente';
+    const leadPhone = customer.phone || customer.cellphone || customer.telephone || customer.mobile || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
+    const leadName = customer.name || customer.full_name || payload.name || payload.buyer_name || payload.leadName || 'Cliente';
 
     if (!leadPhone) {
       return res.status(400).json({ error: 'Telefone do lead não identificado no payload do webhook.' });
@@ -1474,6 +1502,7 @@ async function getVoipClientForSession(sessionId: string, sock: any) {
 
 function normalizeWebhookEventName(raw: string): string {
   const s = (raw || '').toLowerCase().trim();
+  if (s.includes('pedido') || s.includes('order.created') || s.includes('order_created')) return 'pedido realizado';
   if (s.includes('boleto')) return 'boleto gerado';
   if (s.includes('pix')) return 'pix gerado';
   if (s.includes('picpay')) return 'picpay gerado';
@@ -1502,8 +1531,11 @@ async function triggerFlowForWebhookEvent(
   leadName: string = 'Cliente',
   payload: any = {}
 ) {
-  const cleanPhone = leadPhone.replace(/\D/g, '');
+  let cleanPhone = leadPhone.replace(/\D/g, '');
   if (!cleanPhone) return { success: false, reason: 'Invalid phone' };
+  if ((cleanPhone.length === 10 || cleanPhone.length === 11) && !cleanPhone.startsWith('55')) {
+    cleanPhone = '55' + cleanPhone;
+  }
   const remoteJid = `${cleanPhone}@s.whatsapp.net`;
 
   const normEvent = normalizeWebhookEventName(rawEvent);
@@ -1542,7 +1574,11 @@ async function triggerFlowForWebhookEvent(
   for (const flow of flowsList) {
     const webhookNode = flow.nodes.find(n => {
       if (n.type !== 'webhook' && n.type !== 'cakto') return false;
-      const activeEvents: string[] = (n.data?.activeEvents || ['Compra Aprovada', 'Pix Gerado']).map((e: string) => normalizeWebhookEventName(e));
+      const nodePlatform = (n.data?.platform || '').toLowerCase().trim();
+      if (nodePlatform && nodePlatform !== 'personalizado' && platform && nodePlatform !== platform.toLowerCase().trim()) {
+        return false;
+      }
+      const activeEvents: string[] = (n.data?.activeEvents || ['Compra Aprovada', 'Pix Gerado', 'Pedido Realizado']).map((e: string) => normalizeWebhookEventName(e));
       return activeEvents.includes(normEvent) || activeEvents.some((ae: string) => normEvent.includes(ae) || ae.includes(normEvent));
     });
 

@@ -14,7 +14,9 @@ import {
   Zap,
   RefreshCw,
   Globe,
-  Settings
+  Settings,
+  Key,
+  HelpCircle
 } from 'lucide-react';
 import { UserAuth } from '../types';
 
@@ -165,6 +167,35 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
     }
   });
 
+  // Saved webhook secret keys (ex: Cakto, Kiwify, Hotmart)
+  const [secretKeys, setSecretKeys] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('nyxzap_integrations_secrets');
+      const parsedSecrets: Record<string, string> = saved ? JSON.parse(saved) : {};
+
+      // Auto-migração: se o usuário colou a chave secreta (não-URL) no campo de customUrls, move para secretKeys
+      const savedUrls = localStorage.getItem('nyxzap_integrations_urls');
+      if (savedUrls) {
+        const parsedUrls: Record<string, string> = JSON.parse(savedUrls);
+        let updated = false;
+        for (const [key, val] of Object.entries(parsedUrls)) {
+          if (typeof val === 'string' && val.trim() && !val.trim().toLowerCase().startsWith('http') && !parsedSecrets[key]) {
+            parsedSecrets[key] = val.trim();
+            parsedUrls[key] = '';
+            updated = true;
+          }
+        }
+        if (updated) {
+          localStorage.setItem('nyxzap_integrations_urls', JSON.stringify(parsedUrls));
+          localStorage.setItem('nyxzap_integrations_secrets', JSON.stringify(parsedSecrets));
+        }
+      }
+      return parsedSecrets;
+    } catch {
+      return {};
+    }
+  });
+
   // Show/Hide token states
   const [showTokens, setShowTokens] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -193,9 +224,10 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
     setTimeout(() => setCopiedId(null), 2500);
   };
 
-  const handleSaveCustomUrl = (platformId: string) => {
+  const handleSavePlatform = (platformId: string) => {
     try {
       localStorage.setItem('nyxzap_integrations_urls', JSON.stringify(customUrls));
+      localStorage.setItem('nyxzap_integrations_secrets', JSON.stringify(secretKeys));
       setSavedId(platformId);
       setTimeout(() => setSavedId(null), 2500);
     } catch (e) {
@@ -311,17 +343,21 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
                   </div>
                 </div>
 
-                {/* Bloco URL de Postback */}
+                {/* Bloco 1: URL de Postback */}
                 <div className="space-y-1.5 pt-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-slate-300">
+                    <span className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-indigo-400" />
                       Sua URL de Postback (cole na plataforma)
+                    </span>
+                    <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full font-medium border border-indigo-500/20">
+                      Obrigatório
                     </span>
                   </div>
 
                   <div className="flex items-center gap-1.5 text-[10px] text-amber-400/90">
                     <ShieldAlert className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span>Mantenha esta URL confidencial para proteger seus funis.</span>
+                    <span>Cole esta URL no campo "URL" da sua integração na Cakto / plataforma.</span>
                   </div>
 
                   <div className="flex items-center gap-1.5 bg-[#0B0D14] border border-white/[0.06] rounded-xl p-1.5 px-3">
@@ -347,34 +383,68 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
                       }`}
                     >
                       {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span className="text-[11px]">{isCopied ? 'Copiado!' : 'Copiar'}</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Bloco URL do Webhook Opcional */}
-                <div className="space-y-1 pt-1">
-                  <span className="text-[11px] font-medium text-slate-400">
-                    URL do Webhook de Retorno (opcional)
-                  </span>
+                {/* Bloco 2: Chave Secreta do Webhook (opcional) */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-amber-400" />
+                      Chave Secreta do Webhook (opcional)
+                    </span>
+                    <span className="text-[9px] text-slate-400 bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06]">
+                      Gerada na Cakto
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Cole a chave secreta da plataforma (ex: c42ec707-...)"
+                    value={secretKeys[platform.id] || ''}
+                    onChange={(e) => setSecretKeys({ ...secretKeys, [platform.id]: e.target.value })}
+                    className="w-full bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+                  />
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    ℹ️ A Cakto gera essa chave para assinatura opcional. No NyxZap a segurança já é garantida pelo seu token único na URL.
+                  </p>
+                </div>
+
+                {/* Bloco 3: Webhook de Retorno / Repasse Externo (opcional) */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                      Webhook de Retorno / Repasse Externo (opcional)
+                    </span>
+                    <span className="text-[9px] text-slate-500">
+                      Para outro CRM/n8n
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
-                      placeholder="https://..."
+                      placeholder="https://seu-crm.com/api/webhook..."
                       value={customUrls[platform.id] || ''}
                       onChange={(e) => setCustomUrls({ ...customUrls, [platform.id]: e.target.value })}
                       className="flex-1 bg-[#0B0D14] border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
                     />
                     <button
-                      onClick={() => handleSaveCustomUrl(platform.id)}
-                      className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
+                      onClick={() => handleSavePlatform(platform.id)}
+                      className={`px-4 py-2 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
                         isSaved 
                           ? 'bg-emerald-600 text-white' 
                           : 'bg-indigo-600 hover:bg-indigo-500 text-white'
                       }`}
                     >
-                      {isSaved ? 'Salvo!' : 'Salvar'}
+                      {isSaved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+                      <span>{isSaved ? 'Salvo!' : 'Salvar'}</span>
                     </button>
                   </div>
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    Preencha este campo apenas se quiser enviar uma cópia do webhook para um CRM externo ou planilha.
+                  </p>
                 </div>
               </div>
             );

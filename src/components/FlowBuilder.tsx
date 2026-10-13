@@ -2188,6 +2188,7 @@ export const FlowBuilder: React.FC = () => {
                           
                           <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
                             {[
+                              'Pedido Realizado',
                               'Boleto Gerado',
                               'Pix Gerado',
                               'Compra Aprovada',
