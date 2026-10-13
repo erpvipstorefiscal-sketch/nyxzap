@@ -769,21 +769,28 @@ app.post('/api/cakto/checkout-url', async (req, res) => {
   }
 });
 
-// Cakto Webhook Handler - Confirmações de Assinaturas, Renovações e Conexões Extras
-app.post('/api/webhook/cakto', async (req, res) => {
+// Cakto Webhook Handler - Confirmações de Assinaturas, Renovações e Conexões Extras (SaaS NyxZap & Fluxos)
+app.post(['/api/webhook/cakto', '/api/webhook/saas/cakto'], async (req, res) => {
   const payload = req.body || {};
-  console.log('[Cakto Webhook Received]', JSON.stringify(payload));
+  console.log(`[Cakto Webhook Received] (${req.path})`, JSON.stringify(payload));
 
   try {
     // Chave secreta enviada pela Cakto (body, header ou query)
+    // Ignora tokens de usuário do tipo 'usr_...' para não corromper a chave secreta do webhook
+    const rawQueryToken = req.query?.token ? String(req.query.token).trim() : '';
+    const safeQueryToken = rawQueryToken.startsWith('usr_') ? '' : rawQueryToken;
+
     const incomingSecret = String(
       payload.secret || 
       payload.token || 
+      payload.webhook_secret ||
       req.headers['x-cakto-secret'] || 
       req.headers['x-secret'] || 
+      req.headers['x-webhook-secret'] || 
       req.query?.secret || 
-      req.query?.token || 
-      (typeof payload.data === 'object' ? payload.data?.secret : '') ||
+      req.query?.webhook_secret || 
+      safeQueryToken || 
+      (typeof payload.data === 'object' ? (payload.data?.secret || payload.data?.webhook_secret) : '') ||
       ''
     ).trim();
 
@@ -863,17 +870,22 @@ app.post('/api/webhook/cakto', async (req, res) => {
     }
 
     // 2. VERIFICAR SE É ASSINATURA / PLANO DO PRÓPRIO SAAS NYXZAP
-    const isSaaSSubscription = 
-      rawProductName.includes('extra') || 
-      rawProductName.includes('numero') || 
-      rawProductName.includes('conex') ||
-      rawProductName.includes('dinder') ||
-      rawProductName.includes('pro') ||
-      rawProductName.includes('nyxzap') ||
-      offerId.includes('extra') ||
-      offerId.includes('3764ipv') ||
-      offerId.includes('87jcu5r') ||
+    // Importante: Apenas processa como venda da licença do software NyxZap se:
+    // a) Foi chamado pelo endpoint específico do SaaS (/api/webhook/saas/cakto), OU
+    // b) O produto/oferta contém explicitamente 'nyxzap' ou IDs oficiais das ofertas do SaaS NyxZap.
+    // Isso evita 100% de conflito com produtos próprios dos clientes (ex: cursos ou mentorias dos usuários)
+    const isExplicitSaasUrl = req.path.includes('/saas');
+    const isOfficialNyxZapOffer = 
+      offerId.includes('3764ipv') || 
+      offerId.includes('87jcu5r') || 
       offerId.includes('693263v');
+
+    const isSaaSSubscription = 
+      isExplicitSaasUrl ||
+      isOfficialNyxZapOffer ||
+      rawProductName.includes('nyxzap') ||
+      (rawProductName.includes('dinder') && rawProductName.includes('plano')) ||
+      (rawProductName.includes('conex') && rawProductName.includes('extra') && rawProductName.includes('nyx'));
 
     if (!isApproved || !isSaaSSubscription || !email) {
       return res.json({
@@ -1027,7 +1039,7 @@ app.post('/api/webhook/cakto', async (req, res) => {
 });
 
 // Endpoint para Webhook de Checkout / Plataformas de Vendas dispararem fluxos
-app.all(['/api/webhook/checkout', '/api/webhook/checkout/:platform', '/api/webhook/vendas', '/api/webhook/flow', '/api/webhook/:platform'], async (req, res) => {
+app.all(['/api/webhook/checkout', '/api/webhook/checkout/:platform', '/api/webhook/vendas', '/api/webhook/vendas/:platform', '/api/webhook/flow', '/api/webhook/flow/:platform', '/api/webhook/:platform'], async (req, res) => {
   const platform = req.params.platform || req.body?.platform || req.query?.platform || 'vendas';
   const payload = req.body || {};
   console.log(`[Webhook Checkout Entry] (${platform})`, JSON.stringify(payload));
@@ -1038,15 +1050,21 @@ app.all(['/api/webhook/checkout', '/api/webhook/checkout/:platform', '/api/webho
     let leadPhone = customer.phone || customer.cellphone || customer.telephone || customer.mobile || payload.phone || payload.cellphone || payload.tel || payload.telefone || '';
     const leadName = customer.name || customer.full_name || payload.name || payload.buyer_name || payload.leadName || 'Cliente';
 
+    // Ignora tokens de usuário do tipo 'usr_...' para não corromper a chave secreta do webhook
+    const rawQueryToken = req.query?.token ? String(req.query.token).trim() : '';
+    const safeQueryToken = rawQueryToken.startsWith('usr_') ? '' : rawQueryToken;
+
     const incomingSecret = String(
       payload.secret || 
       payload.token || 
+      payload.webhook_secret ||
       req.headers['x-cakto-secret'] || 
       req.headers['x-secret'] || 
       req.headers['x-webhook-secret'] || 
       req.query?.secret || 
-      req.query?.token || 
-      (typeof payload.data === 'object' ? payload.data?.secret : '') ||
+      req.query?.webhook_secret || 
+      safeQueryToken || 
+      (typeof payload.data === 'object' ? (payload.data?.secret || payload.data?.webhook_secret) : '') ||
       ''
     ).trim();
 
@@ -1690,7 +1708,19 @@ async function triggerFlowForWebhookEvent(
       const nodeSecret = String(n.data?.webhookSecret || '').trim();
       const inSecret = String(incomingSecret || '').trim();
 
-      // 1. Se este card tem chave secreta cadastrada:
+      // 1. Se for disparo de teste da plataforma (ex: botão 'Testar Webhook' da Cakto ou outra plataforma):
+      if (normEvent === 'test' || normEvent === 'ping') {
+        if (nodeSecret && inSecret && nodeSecret.toLowerCase() === inSecret.toLowerCase()) {
+          console.log(`[Flow Webhook Match] Disparo de Teste com chave secreta correspondente ativou o card '${n.title}' (${n.id})!`);
+          return true;
+        }
+        if (!inSecret || !nodeSecret || nodeSecret.toLowerCase() === inSecret.toLowerCase()) {
+          console.log(`[Flow Webhook Match] Disparo de Teste ativou o card '${n.title}' (${n.id})!`);
+          return true;
+        }
+      }
+
+      // 2. Se este card tem chave secreta cadastrada:
       if (nodeSecret) {
         if (inSecret && nodeSecret.toLowerCase() === inSecret.toLowerCase()) {
           console.log(`[Flow Webhook Match] Card '${n.title}' (${n.id}) associado via Chave Secreta Exata!`);
@@ -1702,17 +1732,11 @@ async function triggerFlowForWebhookEvent(
         }
       }
 
-      // 2. Validação da plataforma
+      // 3. Validação da plataforma
       const nodePlatform = (n.data?.platform || '').toLowerCase().trim();
       const inPlatform = (platform || '').toLowerCase().trim();
       if (nodePlatform && nodePlatform !== 'personalizado' && inPlatform && inPlatform !== 'vendas' && inPlatform !== 'checkout' && inPlatform !== 'flow' && nodePlatform !== inPlatform) {
         return false;
-      }
-
-      // 3. Se for disparo de teste da plataforma Cakto:
-      if (normEvent === 'test' || normEvent === 'ping') {
-        console.log(`[Flow Webhook Match] Disparo de Teste ativou o card '${n.title}' (${n.id})!`);
-        return true;
       }
 
       // 4. Validação por eventos ativos

@@ -913,22 +913,22 @@ export const AdminDashboard: React.FC = () => {
           <div className="p-4 rounded-2xl bg-purple-950/20 border border-purple-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 block mb-1">
-                URL Oficial do Webhook Cakto (Copie e cole na Cakto)
+                URL Oficial do Webhook Cakto para Licenças SaaS do NyxZap
               </span>
               <code className="text-xs font-mono font-bold text-white bg-black/40 px-3 py-1.5 rounded-lg border border-slate-800 block select-all">
-                https://zap.nyxzap.com.br/api/webhook/cakto
+                https://zap.nyxzap.com.br/api/webhook/saas/cakto
               </code>
               <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-                Eventos escutados: <strong>Compra Aprovada (order.paid)</strong>, <strong>Assinatura Renovada</strong> e <strong>Conexões Extras</strong>. O NyxZap ativará e renovará o cliente no banco de dados automaticamente.
+                Esta URL é <strong>exclusiva para liberar e renovar assinaturas e conexões extras do próprio SaaS NyxZap</strong>. (Os funis dos seus clientes usam os webhooks da aba <em>Fluxos</em> / <em>Canais & Integrações</em>).
               </p>
             </div>
             <button
               type="button"
               onClick={async () => {
-                await navigator.clipboard.writeText('https://zap.nyxzap.com.br/api/webhook/cakto');
+                await navigator.clipboard.writeText('https://zap.nyxzap.com.br/api/webhook/saas/cakto');
                 await alertDialog({
                   title: 'URL Copiada!',
-                  message: 'A URL oficial do Webhook Cakto foi copiada com sucesso para sua área de transferência.',
+                  message: 'A URL do Webhook SaaS Cakto foi copiada com sucesso para sua área de transferência.',
                   variant: 'success',
                   confirmText: 'OK'
                 });
@@ -936,7 +936,7 @@ export const AdminDashboard: React.FC = () => {
               className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shrink-0 flex items-center justify-center gap-1.5"
             >
               <Check className="w-3.5 h-3.5" />
-              <span>Copiar URL do Webhook</span>
+              <span>Copiar URL do Webhook SaaS</span>
             </button>
           </div>
 

@@ -2242,14 +2242,14 @@ export const FlowBuilder: React.FC = () => {
                             className="w-full bg-[#141521] border border-slate-700/80 focus:border-emerald-500 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-600 font-mono transition-colors"
                           />
                           <p className="text-[9px] text-slate-400 leading-tight">
-                            🔑 Cada webhook criado na Cakto gera uma chave secreta. Cole aqui para associar este fluxo a esse evento específico.
+                            🔑 Cole aqui a chave secreta gerada na plataforma para associar este fluxo a esse webhook específico.
                           </p>
                         </div>
 
                         {/* URL de Postback com botão de copiar */}
                         <div className="space-y-1 bg-[#12131d] border border-slate-800 rounded-xl p-2">
                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                            URL do Webhook (Cole na Cakto):
+                            URL do Webhook (Cole na plataforma de vendas):
                           </span>
                           <div className="flex items-center gap-1.5 bg-[#0b0c14] border border-white/5 rounded-lg px-2 py-1 text-[10px] font-mono text-emerald-400">
                             <span className="truncate flex-1 select-all">
@@ -2258,8 +2258,9 @@ export const FlowBuilder: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => {
-                                navigator.clipboard.writeText(`${window.location.origin}/api/webhook/${node.data.platform || 'cakto'}`);
-                                alertDialog('URL Copiada!', `A URL foi copiada para a área de transferência:\n${window.location.origin}/api/webhook/${node.data.platform || 'cakto'}`);
+                                const targetUrl = `${window.location.origin}/api/webhook/${node.data.platform || 'cakto'}`;
+                                navigator.clipboard.writeText(targetUrl);
+                                alertDialog('URL Copiada!', `A URL do Webhook foi copiada com sucesso:\n${targetUrl}\n\nCole esta URL na configuração de webhook da sua plataforma de vendas.`);
                               }}
                               className="text-slate-400 hover:text-white p-0.5 shrink-0"
                               title="Copiar URL"

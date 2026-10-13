@@ -211,10 +211,9 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
   const [smtpSender, setSmtpSender] = useState('Atendimento NyxZap <contato@nyxzap.com.br>');
 
   const baseUrl = window.location.origin;
-  const userToken = user.id ? `usr_${user.id.substring(0, 8)}` : 'usr_default';
 
   const getPostbackUrl = (platformId: string) => {
-    return `${baseUrl}/api/webhook/${platformId}?token=${userToken}`;
+    return `${baseUrl}/api/webhook/${platformId}`;
   };
 
   const handleCopy = (platformId: string) => {
@@ -356,7 +355,7 @@ export const ChannelsIntegrations: React.FC<Props> = ({ user }) => {
 
                   <div className="flex items-center gap-1.5 text-[10px] text-amber-400/90">
                     <ShieldAlert className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span>Cole esta URL no campo "URL" da sua integração na Cakto / plataforma.</span>
+                    <span>Cole esta URL no campo "URL do Webhook" da sua integração na {platform.name}.</span>
                   </div>
 
                   <div className="flex items-center gap-1.5 bg-[#0B0D14] border border-white/[0.06] rounded-xl p-1.5 px-3">
