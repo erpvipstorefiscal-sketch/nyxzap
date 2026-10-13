@@ -3376,8 +3376,54 @@ async function startWhatsAppSession(sessionId: string) {
 // Simple AI caller for Gemini, OpenAI, Claude or NyxzapIA
 async function queryAI(prompt: string, config: typeof aiConfig): Promise<string> {
   try {
-    // 1. NyxzapIA (IA Própria NyxZap no plano PRO - Sem necessidade de API do cliente)
+    // 1. NyxzapIA (IA Própria NyxZap no plano PRO - Auto-hospedada com Ollama ou Master Key)
     if (config.provider === 'nyxzapia') {
+      const ollamaHost = (process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST || 'http://localhost:11434').replace(/\/$/, '');
+      const selectedModel = config.model || process.env.OLLAMA_MODEL || 'llama3.2';
+      const actualOllamaModel = selectedModel.includes('qwen') ? 'qwen2.5:7b' 
+        : selectedModel.includes('deepseek') ? 'deepseek-r1:7b' 
+        : selectedModel.includes('fast') || selectedModel.includes('1b') ? 'llama3.2:1b'
+        : 'llama3.2:3b';
+
+      // 1.1 Tenta consultar o servidor Ollama (Auto-hospedado / Próprio)
+      try {
+        console.log(`[NyxzapIA / Ollama] Consultando Ollama em ${ollamaHost}/api/chat com modelo ${actualOllamaModel}...`);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000); // 12s timeout
+        
+        const ollamaRes = await fetch(`${ollamaHost}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: actualOllamaModel,
+            messages: [
+              { role: 'system', content: config.systemPrompt || 'Você é a NyxzapIA, assistente virtual inteligente e consultor de vendas via WhatsApp. Seja persuasivo e profissional.' },
+              { role: 'user', content: prompt }
+            ],
+            stream: false,
+            options: {
+              temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
+            }
+          })
+        });
+        clearTimeout(timeout);
+
+        if (ollamaRes.ok) {
+          const ollamaData: any = await ollamaRes.json();
+          const reply = ollamaData?.message?.content?.trim();
+          if (reply) {
+            console.log(`[NyxzapIA / Ollama] Resposta gerada com sucesso pelo Ollama (${reply.length} caracteres)!`);
+            return reply;
+          }
+        } else {
+          console.warn(`[NyxzapIA / Ollama] Ollama retornou status ${ollamaRes.status}. Tentando fallback...`);
+        }
+      } catch (ollamaErr: any) {
+        console.warn(`[NyxzapIA / Ollama] Ollama local não respondeu (${ollamaErr.message}). Prosseguindo com fallback de redundância...`);
+      }
+
+      // 1.2 Fallback para chave mestra do servidor (Google Gemini Master Key no .env) caso o Ollama ainda esteja sendo configurado
       const rawKey = process.env.GEMINI_API_KEY || config.apiKey || '';
       const key = rawKey.trim();
       if (key) {
@@ -3403,6 +3449,7 @@ async function queryAI(prompt: string, config: typeof aiConfig): Promise<string>
           }
         }
       }
+
       return `Olá! Sou a NyxzapIA, inteligência artificial integrada do NyxZap. Como posso ajudar com sua solicitação?`;
     }
 

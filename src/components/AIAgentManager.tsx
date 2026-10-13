@@ -584,11 +584,11 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
         <div className="space-y-6">
           {/* Provider Selection Cards (4 Options) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* 1. NyxzapIA (Proprietary AI) */}
+            {/* 1. NyxzapIA (Proprietary Self-Hosted AI) */}
             <div
               onClick={() => {
                 if (isProUser) {
-                  setConfig({ ...config, provider: 'nyxzapia', model: 'nyxzap-ultra-v2' });
+                  setConfig({ ...config, provider: 'nyxzapia', model: 'llama3.2:3b' });
                 }
               }}
               className={`p-5 rounded-2xl border transition-all relative overflow-hidden ${
@@ -612,7 +612,7 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                 )}
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                IA nativa sem necessidade de conectar chave de API. Respostas ultra-rápidas para WhatsApp comercial.
+                IA 100% nativa e autônoma, hospedada em servidor próprio (Ollama). Respostas ilimitadas sem custos de API por mensagem.
               </p>
               {!isProUser && (
                 <div className="mt-3 pt-3 border-t border-white/[0.06] text-[10px] text-amber-400 font-medium">
@@ -703,8 +703,10 @@ Entregue somente as três mensagens prontas para envio, sem explicar sua estrat�
                 >
                   {config.provider === 'nyxzapia' && (
                     <>
-                      <option value="nyxzap-ultra-v2">NyxzapIA Ultra 3.8 (Otimizado para WhatsApp - Recomendado)</option>
-                      <option value="nyxzap-fast-v1">NyxzapIA Fast (Velocidade Extrema)</option>
+                      <option value="llama3.2:3b">NyxzapIA Ultra (Llama 3.2 3B - Rápido, Leve & Fluido - Recomendado)</option>
+                      <option value="qwen2.5:7b">NyxzapIA Pro (Qwen 2.5 7B - Especialista em Vendas & Negociação)</option>
+                      <option value="llama3.2:1b">NyxzapIA Fast (Llama 3.2 1B - Velocidade Extrema)</option>
+                      <option value="deepseek-r1:7b">NyxzapIA DeepThink (DeepSeek R1 7B - Raciocínio Profundo)</option>
                     </>
                   )}
                   {config.provider === 'gemini' && (
