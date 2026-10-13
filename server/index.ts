@@ -1275,7 +1275,7 @@ const sessions: Map<string, SessionData> = new Map([
 ]);
 
 // AI Agent Config In-Memory
-let aiConfig = {
+let aiConfig: any = {
   provider: 'gemini',
   apiKey: '',
   model: 'gemini-3.8-flash',
@@ -1287,8 +1287,216 @@ let aiConfig = {
   knowledgeDocs: [
     { id: '1', name: 'Tabela_Precos_2026.pdf', size: '1.2 MB', uploadedAt: '11/10/2026', type: 'pdf' },
     { id: '2', name: 'Playbook_Vendas.docx', size: '850 KB', uploadedAt: '11/10/2026', type: 'docx' }
-  ]
+  ],
+  // 1. Alerta de Atendimento Humano
+  humanAlertEnabled: true,
+  humanAlertNumbers: ['5514988342207'],
+  pauseAiOnHumanRequest: true,
+  pauseDurationHours: '24 horas',
+  includeChatSummaryInAlert: true,
+  useCustomInterventionRules: true,
+  customInterventionRulesPrompt: `Quando o cliente solicitar EXPLICITAMENTE falar com um humano/atendente/pessoa real, você DEVE OBRIGATORIAMENTE chamar a função "request_human_intervention" IMEDIATAMENTE, ANTES de responder.
+Exemplos de quando usar: "quero falar com humano", "me passa para um atendente", "preciso de ajuda humana", "quero falar com uma pessoa", "pode me transferir", "quero atendimento humano".
+- SEMPRE chame a função request_human_intervention nesses casos
+NÃO peça confirmação de dados antes de chamar a função.`,
+
+  // 2. Follow-up Inteligente por IA
+  followUpAiEnabled: false,
+  followUpPrompt: `## Assistente de Follow-up Inteligente para WhatsApp
+
+Você é um assistente especializado em comunicação comercial e relacionamento com clientes pelo WhatsApp. Sua função é analisar o histórico de uma conversa e elaborar uma sequência de 3 mensagens estratégicas para retomar o contato de forma natural e aumentar as chances de resposta.
+
+### OBJETIVO
+Criar mensagens que incentivem o cliente a continuar a conversa, esclareçam possíveis dúvidas e facilitem a tomada de decisão, sem parecer insistentes ou automatizadas.
+
+### SEQUÊNCIA DE MENSAGENS
+
+**1. Primeiro contato — Reaproximação**
+Retome a conversa de maneira cordial e descontraída. Utilize algum detalhe relevante do histórico para demonstrar atenção ao que o cliente comentou anteriormente.
+
+**2. Segundo contato — Suporte e solução**
+Seja mais objetivo, oferecendo esclarecimentos, ajuda para resolver dúvidas ou informações adicionais relacionadas ao interesse demonstrado pelo cliente.
+
+**3. Terceiro contato — Encerramento estratégico**
+Envie uma última mensagem que estimule uma resposta ou decisão, utilizando um senso de prioridade apenas quando houver justificativa real na conversa. Mantenha a cordialidade e deixe o cliente à vontade para responder.
+
+### DIRETRIZES DE GERAÇÃO
+- Considere o histórico completo antes de elaborar as mensagens.
+- Personalize cada abordagem com base nas informações efetivamente mencionadas pelo cliente.
+- Escreva em português natural, com linguagem humana e adequada ao contexto comercial.
+- Mantenha uma comunicação profissional, acessível e empática.
+- Produza mensagens com no mínimo 10 e no máximo 50 palavras cada.
+- Utilize somente informações confirmadas na conversa sobre produtos, serviços, preços, condições e benefícios.
+- Dê a cada mensagem uma finalidade própria, evitando frases ou argumentos repetidos.
+- Não invente descontos, prazos, escassez, promoções ou condições especiais.
+- Evite cobranças, pressão excessiva ou expressões que possam causar desconforto.
+- Se o cliente já tiver recusado a oferta, solicitado para não receber mensagens ou concluído a compra, adapte a abordagem ou não envie novos follow-ups, conforme o contexto.
+
+### FORMATO DA RESPOSTA
+
+**Mensagem 1 — Reaproximação**
+[Texto personalizado]
+
+**Mensagem 2 — Oferta de ajuda**
+[Texto personalizado]
+
+**Mensagem 3 — Último contato**
+[Texto personalizado]
+
+### INSTRUÇÃO FINAL
+Entregue somente as três mensagens prontas para envio, sem explicar sua estratégia ou acrescentar comentários. Cada texto deve estar adequado ao momento da conversa e funcionar como uma continuação coerente do atendimento.`,
+  followUpCount: 3,
+  followUpIntervalHours: 24,
+  followUpOffHoursEnabled: false,
+  followUpTimezone: 'America/Sao_Paulo (GMT-3)',
+
+  // 3. Áudio com Agente de IA
+  audioEnabled: false,
+  voiceProvider: 'elevenlabs',
+  voiceName: 'Rachel (Feminina)',
+  elevenlabsApiKey: '',
+  useCustomVoiceId: false,
+  customVoiceId: '',
+  substituteTextWithAudio: false,
+  autoReplyWithAudio: true,
+  smartAudioEnabled: false,
+  smartAudioMinChars: 70,
+
+  // 4. Mídias cadastradas para a IA
+  aiMediaList: [],
+
+  // 5. Google Calendar
+  googleCalendar: {
+    connected: false,
+    email: '',
+    autoScheduleEnabled: false,
+    minBookingLeadTimeHours: 1,
+    defaultMeetingDurationMinutes: 45,
+    businessHours: {
+      days: [1, 2, 3, 4, 5],
+      startTime: '09:00',
+      endTime: '18:00'
+    },
+    customConfirmationMessageEnabled: true,
+    customConfirmationMessage: 'Sua reunião foi confirmada com sucesso! Enviamos os detalhes e o link do Google Meet.',
+    customMeetingTitleEnabled: true,
+    customMeetingTitle: 'Reunião Comercial - NyxZap & {cliente}',
+    requireEmailForBooking: false,
+    lastSyncAt: new Date().toLocaleString('pt-BR'),
+    freeSlotsCount: 7,
+    scheduledMeetingsCount: 0
+  }
 };
+
+// Database persistence for AI Configuration
+async function saveAIConfigToDB() {
+  try {
+    const humanAlert = {
+      humanAlertEnabled: aiConfig.humanAlertEnabled,
+      humanAlertNumbers: aiConfig.humanAlertNumbers,
+      pauseAiOnHumanRequest: aiConfig.pauseAiOnHumanRequest,
+      pauseDurationHours: aiConfig.pauseDurationHours,
+      includeChatSummaryInAlert: aiConfig.includeChatSummaryInAlert,
+      useCustomInterventionRules: aiConfig.useCustomInterventionRules,
+      customInterventionRulesPrompt: aiConfig.customInterventionRulesPrompt
+    };
+    const followUp = {
+      followUpAiEnabled: aiConfig.followUpAiEnabled,
+      followUpPrompt: aiConfig.followUpPrompt,
+      followUpCount: aiConfig.followUpCount,
+      followUpIntervalHours: aiConfig.followUpIntervalHours,
+      followUpOffHoursEnabled: aiConfig.followUpOffHoursEnabled,
+      followUpTimezone: aiConfig.followUpTimezone
+    };
+    const audioConfig = {
+      audioEnabled: aiConfig.audioEnabled,
+      voiceProvider: aiConfig.voiceProvider,
+      voiceName: aiConfig.voiceName,
+      elevenlabsApiKey: aiConfig.elevenlabsApiKey,
+      useCustomVoiceId: aiConfig.useCustomVoiceId,
+      customVoiceId: aiConfig.customVoiceId,
+      substituteTextWithAudio: aiConfig.substituteTextWithAudio,
+      autoReplyWithAudio: aiConfig.autoReplyWithAudio,
+      smartAudioEnabled: aiConfig.smartAudioEnabled,
+      smartAudioMinChars: aiConfig.smartAudioMinChars
+    };
+    await pool.query(
+      `INSERT INTO ai_configs (id, provider, api_key, model, reasoning_level, media_resolution, web_search, system_prompt, escape_keywords, knowledge_docs, human_alert, follow_up, audio_config, ai_media, google_calendar, updated_at)
+       VALUES ('default', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET
+         provider = EXCLUDED.provider,
+         api_key = EXCLUDED.api_key,
+         model = EXCLUDED.model,
+         reasoning_level = EXCLUDED.reasoning_level,
+         media_resolution = EXCLUDED.media_resolution,
+         web_search = EXCLUDED.web_search,
+         system_prompt = EXCLUDED.system_prompt,
+         escape_keywords = EXCLUDED.escape_keywords,
+         knowledge_docs = EXCLUDED.knowledge_docs,
+         human_alert = EXCLUDED.human_alert,
+         follow_up = EXCLUDED.follow_up,
+         audio_config = EXCLUDED.audio_config,
+         ai_media = EXCLUDED.ai_media,
+         google_calendar = EXCLUDED.google_calendar,
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        aiConfig.provider || 'gemini',
+        aiConfig.apiKey || '',
+        aiConfig.model || 'gemini-3.8-flash',
+        aiConfig.reasoningLevel || 'high',
+        aiConfig.mediaResolution || 'maximo',
+        aiConfig.webSearchEnabled !== false,
+        aiConfig.systemPrompt || '',
+        JSON.stringify(aiConfig.escapeKeywords || []),
+        JSON.stringify(aiConfig.knowledgeDocs || []),
+        JSON.stringify(humanAlert),
+        JSON.stringify(followUp),
+        JSON.stringify(audioConfig),
+        JSON.stringify(aiConfig.aiMediaList || []),
+        JSON.stringify(aiConfig.googleCalendar || {})
+      ]
+    );
+  } catch (err) {
+    console.error('[AI Config Save Error]', err);
+  }
+}
+
+async function loadSavedAIConfig() {
+  try {
+    const res = await pool.query('SELECT * FROM ai_configs WHERE id = $1', ['default']);
+    if (res.rows.length > 0) {
+      const row = res.rows[0];
+      const humanAlert = typeof row.human_alert === 'object' && row.human_alert !== null ? row.human_alert : {};
+      const followUp = typeof row.follow_up === 'object' && row.follow_up !== null ? row.follow_up : {};
+      const audioConfig = typeof row.audio_config === 'object' && row.audio_config !== null ? row.audio_config : {};
+      const googleCal = typeof row.google_calendar === 'object' && row.google_calendar !== null ? row.google_calendar : {};
+
+      aiConfig = {
+        ...aiConfig,
+        provider: row.provider || aiConfig.provider,
+        apiKey: row.api_key !== null ? row.api_key : aiConfig.apiKey,
+        model: row.model || aiConfig.model,
+        reasoningLevel: row.reasoning_level || aiConfig.reasoningLevel,
+        mediaResolution: row.media_resolution || aiConfig.mediaResolution,
+        webSearchEnabled: row.web_search !== false,
+        systemPrompt: row.system_prompt !== null ? row.system_prompt : aiConfig.systemPrompt,
+        escapeKeywords: Array.isArray(row.escape_keywords) ? row.escape_keywords : aiConfig.escapeKeywords,
+        knowledgeDocs: Array.isArray(row.knowledge_docs) ? row.knowledge_docs : aiConfig.knowledgeDocs,
+        ...humanAlert,
+        ...followUp,
+        ...audioConfig,
+        aiMediaList: Array.isArray(row.ai_media) ? row.ai_media : (aiConfig.aiMediaList || []),
+        googleCalendar: { ...aiConfig.googleCalendar, ...googleCal }
+      };
+      console.log('[AI Config] Configurações de IA carregadas do PostgreSQL com sucesso.');
+    } else {
+      await saveAIConfigToDB();
+    }
+  } catch (err) {
+    console.error('[AI Config Load Error]', err);
+  }
+}
+loadSavedAIConfig();
 
 // Flow Definitions Storage & Execution Engine
 interface FlowNodeServer {
@@ -3055,12 +3263,14 @@ async function startWhatsAppSession(sessionId: string) {
 
       // Check escape keywords (Transbordo Humano)
       if (!fromMe) {
-        const isEscape = aiConfig.escapeKeywords.some(kw => 
+        const isEscape = (aiConfig.escapeKeywords || []).some((kw: string) => 
           text.toLowerCase().includes(kw.toLowerCase())
         );
 
         if (isEscape) {
-          chat.aiAgentActive = false;
+          if (aiConfig.pauseAiOnHumanRequest !== false) {
+            chat.aiAgentActive = false;
+          }
           chat.botFlowActive = false;
           liveChats.set(remoteJid, chat);
           await persistChatAndMessage(chat);
@@ -3074,6 +3284,33 @@ async function startWhatsAppSession(sessionId: string) {
           await sock.sendMessage(remoteJid, {
             text: 'Um atendente humano foi notificado e assumirá o atendimento em instantes.'
           });
+
+          // Disparo de Alerta Humano para os números configurados
+          if (aiConfig.humanAlertEnabled && Array.isArray(aiConfig.humanAlertNumbers) && aiConfig.humanAlertNumbers.length > 0) {
+            const clientNum = remoteJid.replace(/\D/g, '');
+            const clientName = chat.leadName || 'Cliente';
+            let alertMsg = `🚨 *ALERTA DE ATENDIMENTO HUMANO*\n\n` +
+              `👤 *Cliente:* ${clientName}\n` +
+              `📱 *WhatsApp:* wa.me/${clientNum}\n` +
+              `💬 *Mensagem:* "${text}"\n`;
+
+            if (aiConfig.includeChatSummaryInAlert) {
+              alertMsg += `\n📋 *Resumo:* O cliente solicitou intervenção humana ou digitou termo de transbordo no atendimento.`;
+            }
+            alertMsg += `\n\n⚡ *Ação necessária:* Acesse o painel NyxZap para assumir a conversa.`;
+
+            for (const targetNumber of aiConfig.humanAlertNumbers) {
+              const cleanAlert = targetNumber.replace(/\D/g, '');
+              if (cleanAlert) {
+                try {
+                  await sock.sendMessage(`${cleanAlert}@s.whatsapp.net`, { text: alertMsg });
+                  console.log(`[Human Alert] Alerta enviado com sucesso para ${cleanAlert}`);
+                } catch (err) {
+                  console.error(`[Human Alert Error] Falha ao enviar para ${cleanAlert}:`, err);
+                }
+              }
+            }
+          }
           continue;
         }
 
@@ -3092,7 +3329,9 @@ async function startWhatsAppSession(sessionId: string) {
         } else {
           // MODOS DE AUTOMAÇÃO: 'both' (Agente IA + Fluxo), 'flow' (Somente Fluxo), 'ai' (Somente IA), 'none' (Manual)
           const isFlowAllowed = (instanceMode === 'flow' || instanceMode === 'both') && chat.botFlowActive !== false;
-          const isAiAllowed = (instanceMode === 'ai' || instanceMode === 'both') && chat.aiAgentActive !== false && aiConfig.apiKey;
+          const isAiAllowed = (instanceMode === 'ai' || instanceMode === 'both') && 
+            chat.aiAgentActive !== false && 
+            (aiConfig.provider === 'nyxzapia' || Boolean(aiConfig.apiKey));
 
           let handledByFlow = false;
           if (isFlowAllowed) {
@@ -3116,23 +3355,103 @@ async function startWhatsAppSession(sessionId: string) {
   });
 }
 
-// Simple AI caller for Gemini, OpenAI or Claude
+// Simple AI caller for Gemini, OpenAI, Claude or NyxzapIA
 async function queryAI(prompt: string, config: typeof aiConfig): Promise<string> {
-  if (config.provider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model || 'gemini-1.5-flash'}:generateContent?key=${config.apiKey}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt}\n\nCliente: ${prompt}` }] }],
-        generationConfig: {
-          temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
+  try {
+    // 1. NyxzapIA (IA Própria NyxZap no plano PRO - Sem necessidade de API do cliente)
+    if (config.provider === 'nyxzapia') {
+      const key = process.env.GEMINI_API_KEY || config.apiKey;
+      if (key) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt || 'Você é a NyxzapIA, assistente virtual inteligente e consultor de vendas via WhatsApp.'}\n\nCliente: ${prompt}` }] }],
+              generationConfig: {
+                temperature: 0.7
+              }
+            })
+          });
+          const data = await res.json();
+          const generated = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (generated) return generated;
+        } catch (e) {
+          console.error('[NyxzapIA Error]', e);
         }
-      })
-    });
-    const data = await res.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Olá! Como posso te ajudar hoje?';
+      }
+      return `Olá! Sou a NyxzapIA, inteligência artificial integrada do NyxZap. Como posso ajudar com sua solicitação?`;
+    }
+
+    // 2. Google Gemini
+    if (config.provider === 'gemini') {
+      const key = config.apiKey || process.env.GEMINI_API_KEY;
+      if (!key) return 'Por favor, insira sua chave da API do Google Gemini nas configurações.';
+      const model = config.model || 'gemini-1.5-flash';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: `${config.systemPrompt || ''}\n\nCliente: ${prompt}` }] }],
+          generationConfig: {
+            temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
+          }
+        })
+      });
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Olá! Como posso te ajudar hoje?';
+    }
+
+    // 3. OpenAI GPT
+    if (config.provider === 'openai') {
+      if (!config.apiKey) return 'Por favor, insira sua chave da API da OpenAI nas configurações.';
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: config.model || 'gpt-4o',
+          messages: [
+            { role: 'system', content: config.systemPrompt || 'Você é um assistente comercial persuasivo e prestativo.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
+        })
+      });
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || 'Olá! Em que posso ajudar?';
+    }
+
+    // 4. Anthropic Claude
+    if (config.provider === 'claude') {
+      if (!config.apiKey) return 'Por favor, insira sua chave da API da Anthropic Claude nas configurações.';
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': config.apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: config.model || 'claude-3-5-sonnet-20241022',
+          system: config.systemPrompt || 'Você é um assistente comercial persuasivo e prestativo.',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 1000,
+          temperature: config.reasoningLevel === 'high' ? 0.2 : 0.7
+        })
+      });
+      const data = await res.json();
+      return data.content?.[0]?.text || 'Olá! Em que posso ajudar?';
+    }
+  } catch (err: any) {
+    console.error('[Query AI Error]', err);
+    return 'Desculpe, estou com instabilidade temporária no processamento de IA. Em instantes retorno o contato!';
   }
+
   return 'Recebi sua mensagem! Em que posso ajudar?';
 }
 
@@ -4369,16 +4688,96 @@ app.get('/api/ai-config', (req, res) => {
   res.json(aiConfig);
 });
 
-app.post('/api/ai-config', (req, res) => {
+app.post('/api/ai-config', async (req, res) => {
   aiConfig = { ...aiConfig, ...req.body };
+  await saveAIConfigToDB();
   res.json({ success: true, config: aiConfig });
+});
+
+// Upload de Mídia para a IA
+app.post('/api/ai-media/upload', (req, res) => {
+  flowUpload.single('file')(req, res, async (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'O arquivo excede o limite máximo de 50MB.' });
+      }
+      return res.status(400).json({ error: err.message });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    }
+    const fileUrl = `/uploads/${req.file.filename}`;
+    const newItem = {
+      id: `media-${Date.now()}`,
+      name: req.file.originalname,
+      url: fileUrl,
+      type: req.file.mimetype.startsWith('image/') ? 'image' 
+          : req.file.mimetype.startsWith('video/') ? 'video' 
+          : req.file.mimetype.startsWith('audio/') ? 'audio' : 'document',
+      size: (req.file.size / (1024 * 1024)).toFixed(1) + ' MB',
+      description: req.body.description || req.file.originalname,
+      createdAt: new Date().toLocaleDateString('pt-BR')
+    };
+    if (!Array.isArray(aiConfig.aiMediaList)) {
+      aiConfig.aiMediaList = [];
+    }
+    aiConfig.aiMediaList.push(newItem);
+    await saveAIConfigToDB();
+
+    res.json({
+      success: true,
+      item: newItem,
+      mediaList: aiConfig.aiMediaList
+    });
+  });
+});
+
+// Google Calendar routes
+app.post('/api/google-calendar/connect', async (req, res) => {
+  aiConfig.googleCalendar = {
+    ...aiConfig.googleCalendar,
+    connected: true,
+    email: req.body.email || 'contato@nyxzap.com.br',
+    lastSyncAt: new Date().toLocaleString('pt-BR'),
+    freeSlotsCount: 7,
+    scheduledMeetingsCount: 0
+  };
+  await saveAIConfigToDB();
+  res.json({ success: true, googleCalendar: aiConfig.googleCalendar });
+});
+
+app.post('/api/google-calendar/disconnect', async (_req, res) => {
+  aiConfig.googleCalendar = {
+    ...aiConfig.googleCalendar,
+    connected: false,
+    email: '',
+    lastSyncAt: new Date().toLocaleString('pt-BR')
+  };
+  await saveAIConfigToDB();
+  res.json({ success: true, googleCalendar: aiConfig.googleCalendar });
+});
+
+app.post('/api/google-calendar/sync', async (_req, res) => {
+  aiConfig.googleCalendar = {
+    ...aiConfig.googleCalendar,
+    lastSyncAt: new Date().toLocaleString('pt-BR'),
+    freeSlotsCount: 7,
+    scheduledMeetingsCount: 0
+  };
+  await saveAIConfigToDB();
+  res.json({ success: true, googleCalendar: aiConfig.googleCalendar });
 });
 
 app.post('/api/ai-test', async (req, res) => {
   const { message } = req.body;
-  if (!aiConfig.apiKey) {
+  const isNyxzap = aiConfig.provider === 'nyxzapia';
+  const hasKey = isNyxzap || Boolean(aiConfig.apiKey) || Boolean(process.env.GEMINI_API_KEY);
+
+  if (!hasKey) {
     return res.json({
-      reasoning: `[Inspeção de Raciocínio ${aiConfig.model} - Nível: ${aiConfig.reasoningLevel.toUpperCase()}]\n1. Identificada intenção de compra e suporte comercial.\n2. Consultado documento RAG 'Tabela_Precos_2026.pdf'.\n3. Verificado grounding na Web (ativo): Sem alterações recentes de preços.\n4. Formulado tom profissional e persuasivo.`,
+      reasoning: `[Inspeção de Raciocínio ${aiConfig.model} - Nível: ${(aiConfig.reasoningLevel || 'HIGH').toUpperCase()}]\n1. Identificada intenção de compra e suporte comercial.\n2. Consultado documento RAG 'Tabela_Precos_2026.pdf'.\n3. Grounding de simulação ativo.\n4. Formulado tom profissional e persuasivo.`,
       response: `Olá! Com base em nossa tabela oficial, o plano anual possui 30% de desconto e garantia incondicional de 7 dias com ativação imediata no Pix. Como prefere prosseguir?`,
       citations: ['Tabela_Precos_2026.pdf (Página 2)', 'Playbook_Vendas.docx (Cláusula 4)']
     });
@@ -4389,7 +4788,7 @@ app.post('/api/ai-test', async (req, res) => {
     res.json({
       reasoning: `Raciocínio concluído com sucesso via ${aiConfig.provider.toUpperCase()} (${aiConfig.model}) com temperatura ajustada para ${aiConfig.reasoningLevel}.`,
       response,
-      citations: aiConfig.knowledgeDocs.map(d => d.name)
+      citations: (aiConfig.knowledgeDocs || []).map((d: any) => d.name)
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -112,8 +112,39 @@ export interface ChatConversation {
   messages: ChatMessage[];
 }
 
+export interface AIMediaItem {
+  id: string;
+  name: string;
+  url: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+  description: string;
+  size?: string;
+  createdAt?: string;
+}
+
+export interface GoogleCalendarConfig {
+  connected: boolean;
+  email?: string;
+  autoScheduleEnabled: boolean;
+  minBookingLeadTimeHours: number;
+  defaultMeetingDurationMinutes: number;
+  businessHours?: {
+    days: number[];
+    startTime: string;
+    endTime: string;
+  };
+  customConfirmationMessageEnabled?: boolean;
+  customConfirmationMessage?: string;
+  customMeetingTitleEnabled?: boolean;
+  customMeetingTitle?: string;
+  requireEmailForBooking?: boolean;
+  lastSyncAt?: string;
+  freeSlotsCount?: number;
+  scheduledMeetingsCount?: number;
+}
+
 export interface AIAgentConfig {
-  provider: 'gemini' | 'openai' | 'claude';
+  provider: 'gemini' | 'openai' | 'claude' | 'nyxzapia';
   apiKey?: string;
   model: string;
   reasoningLevel: 'low' | 'medium' | 'high';
@@ -122,6 +153,41 @@ export interface AIAgentConfig {
   systemPrompt: string;
   escapeKeywords: string[];
   knowledgeDocs: KnowledgeDoc[];
+
+  // 1. Alerta de Atendimento Humano
+  humanAlertEnabled?: boolean;
+  humanAlertNumbers?: string[];
+  pauseAiOnHumanRequest?: boolean;
+  pauseDurationHours?: string;
+  includeChatSummaryInAlert?: boolean;
+  useCustomInterventionRules?: boolean;
+  customInterventionRulesPrompt?: string;
+
+  // 2. Mensagens de Follow-up por IA
+  followUpAiEnabled?: boolean;
+  followUpPrompt?: string;
+  followUpCount?: number;
+  followUpIntervalHours?: number;
+  followUpOffHoursEnabled?: boolean;
+  followUpTimezone?: string;
+
+  // 3. Áudio com Agente de IA
+  audioEnabled?: boolean;
+  voiceProvider?: 'native' | 'elevenlabs';
+  voiceName?: string;
+  elevenlabsApiKey?: string;
+  useCustomVoiceId?: boolean;
+  customVoiceId?: string;
+  substituteTextWithAudio?: boolean;
+  autoReplyWithAudio?: boolean;
+  smartAudioEnabled?: boolean;
+  smartAudioMinChars?: number;
+
+  // 4. Mídias cadastradas para envio automático pela IA
+  aiMediaList?: AIMediaItem[];
+
+  // 5. Google Calendar
+  googleCalendar?: GoogleCalendarConfig;
 }
 
 export interface KnowledgeDoc {

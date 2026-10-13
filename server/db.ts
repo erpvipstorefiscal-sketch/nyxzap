@@ -336,6 +336,11 @@ export async function initDatabase() {
         knowledge_docs JSONB DEFAULT '[]',
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS human_alert JSONB DEFAULT '{}';
+      ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS follow_up JSONB DEFAULT '{}';
+      ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS audio_config JSONB DEFAULT '{}';
+      ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS ai_media JSONB DEFAULT '[]';
+      ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS google_calendar JSONB DEFAULT '{}';
     `);
 
     // 4.1 Tabela de Definições de Fluxos Visuais (Flow Builder)

@@ -534,7 +534,7 @@ export function App() {
               )}
               {activeClientTab === 'flow' && <FlowBuilder />}
               {activeClientTab === 'integrations' && <ChannelsIntegrations user={user} />}
-              {activeClientTab === 'ai' && <AIAgentManager />}
+              {activeClientTab === 'ai' && <AIAgentManager user={user} />}
             </div>
           )}
         </main>
