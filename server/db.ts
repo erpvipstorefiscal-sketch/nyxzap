@@ -196,14 +196,35 @@ let dbOffline = false;
 
 export const pool = {
   async query(text: string, params?: any[]) {
+    // If previously marked offline, test if PostgreSQL is back
     if (dbOffline) {
-      return executeMockQuery(text, params);
+      try {
+        const res = await rawPool.query(text, params);
+        dbOffline = false;
+        console.log('[PostgreSQL] Conexão restaurada com sucesso!');
+        return res;
+      } catch (err: any) {
+        if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.message?.includes('Connection terminated') || err.message?.includes('timeout')) {
+          return executeMockQuery(text, params);
+        }
+        // If PostgreSQL is answering but with a SQL error, it's NOT offline!
+        dbOffline = false;
+        throw err;
+      }
     }
+
     try {
       return await rawPool.query(text, params);
     } catch (err: any) {
-      dbOffline = true;
-      return executeMockQuery(text, params);
+      // Only fallback to mock if PostgreSQL server is genuinely unreachable (e.g. local dev without Docker)
+      if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.message?.includes('Connection terminated') || err.message?.includes('timeout')) {
+        console.warn('[PostgreSQL Offline - Fallback Local Dev]', err.message);
+        dbOffline = true;
+        return executeMockQuery(text, params);
+      }
+      // Real SQL error: log and rethrow, DO NOT disable PostgreSQL for other queries!
+      console.error('[PostgreSQL Query Error]', err.message);
+      throw err;
     }
   },
   async connect() {
@@ -336,6 +357,8 @@ export async function initDatabase() {
         knowledge_docs JSONB DEFAULT '[]',
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS web_search BOOLEAN DEFAULT true;
+      ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS web_search_enabled BOOLEAN DEFAULT true;
       ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS human_alert JSONB DEFAULT '{}';
       ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS follow_up JSONB DEFAULT '{}';
       ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS audio_config JSONB DEFAULT '{}';

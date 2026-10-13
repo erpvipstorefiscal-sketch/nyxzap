@@ -167,24 +167,25 @@ async function recordTelemetry(eventName: string, tabName: string, userId?: stri
   }
 }
 
-// Auth endpoint backed by PostgreSQL with Rate Limiting & 5-Attempt Lockout
+// Auth endpoint backed by PostgreSQL with Rate Limiting
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password, role } = req.body;
+  const { email, password } = req.body;
   const clientIp = getClientIp(req);
   const now = Date.now();
+  const normEmail = (email || '').trim().toLowerCase();
+  const attemptKey = `${normEmail || 'empty'}:${clientIp}`;
 
-  // Check if IP is currently locked
-  const attempt = loginAttempts.get(clientIp);
+  // Check if this specific email/IP is currently locked
+  const attempt = loginAttempts.get(attemptKey) || loginAttempts.get(clientIp);
   if (attempt && attempt.lockedUntil > now) {
     const minutesLeft = Math.ceil((attempt.lockedUntil - now) / 60000);
-    recordTelemetry('login_blocked_ip', 'login', undefined, email, { ip: clientIp, minutesLeft }, clientIp);
+    recordTelemetry('login_blocked_ip', 'login', undefined, normEmail, { ip: clientIp, minutesLeft }, clientIp);
     return res.status(429).json({
-      error: `Segurança: Muitas tentativas incorretas consecutivas. Seu IP foi bloqueado por 15 minutos (${minutesLeft} min restantes).`
+      error: `Segurança: Muitas tentativas incorretas consecutivas. Aguarde ${minutesLeft} minuto(s) antes de tentar novamente.`
     });
   }
 
   // Fast-path instant dev/demo users
-  const normEmail = (email || '').trim().toLowerCase();
   if (normEmail === 'admin@admin' || normEmail === 'admin' || normEmail === 'admin@nyxzap.com') {
     return res.json({
       id: 'usr-admin',
@@ -212,42 +213,40 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email?.trim()]);
+    const result = await pool.query('SELECT * FROM users WHERE LOWER(TRIM(email)) = $1', [normEmail]);
     if (result.rows.length === 0) {
       // Record failed attempt
       const current = attempt ? attempt.count + 1 : 1;
       const lockedUntil = current >= 5 ? now + 15 * 60 * 1000 : 0;
-      loginAttempts.set(clientIp, { count: current, lockedUntil });
-      recordTelemetry('login_failed_user_not_found', 'login', undefined, email, { count: current }, clientIp);
+      loginAttempts.set(attemptKey, { count: current, lockedUntil });
+      recordTelemetry('login_failed_user_not_found', 'login', undefined, normEmail, { count: current }, clientIp);
       
       if (current >= 5) {
         return res.status(429).json({
-          error: 'Limite de 5 tentativas atingido. Seu IP foi bloqueado por 15 minutos por medidas de segurança.'
+          error: 'Limite de 5 tentativas atingido. Esta conta foi temporariamente bloqueada por 15 minutos.'
         });
       }
-      return res.status(401).json({ error: `Usuário não encontrado. (${5 - current} tentativas restantes)` });
+      return res.status(401).json({ error: `E-mail ou senha inválidos. (${5 - current} tentativas restantes)` });
     }
 
     const user = result.rows[0];
-    if (user.password !== password) {
+    const passwordMatches = user.password === password || user.password === (password || '').trim();
+    if (!passwordMatches) {
       const current = attempt ? attempt.count + 1 : 1;
       const lockedUntil = current >= 5 ? now + 15 * 60 * 1000 : 0;
-      loginAttempts.set(clientIp, { count: current, lockedUntil });
-      recordTelemetry('login_failed_wrong_password', 'login', user.id, email, { count: current }, clientIp);
+      loginAttempts.set(attemptKey, { count: current, lockedUntil });
+      recordTelemetry('login_failed_wrong_password', 'login', user.id, normEmail, { count: current }, clientIp);
 
       if (current >= 5) {
         return res.status(429).json({
-          error: 'Limite de 5 tentativas incorretas atingido. Seu IP foi bloqueado por 15 minutos.'
+          error: 'Limite de 5 tentativas incorretas atingido. Esta conta foi temporariamente bloqueada por 15 minutos.'
         });
       }
-      return res.status(401).json({ error: `Senha incorreta. (${5 - current} tentativas restantes antes do bloqueio)` });
+      return res.status(401).json({ error: `E-mail ou senha inválidos. (${5 - current} tentativas restantes)` });
     }
 
-    if (role && user.role !== role) {
-      return res.status(403).json({ error: `Acesso negado. Esta conta não possui perfil de ${role}.` });
-    }
-
-    // Success -> Clear failed attempts for this IP
+    // Success -> Clear failed attempts for this email/IP
+    loginAttempts.delete(attemptKey);
     loginAttempts.delete(clientIp);
     recordTelemetry('login_success', 'login', user.id, user.email, { role: user.role }, clientIp);
 
@@ -255,10 +254,10 @@ app.post('/api/auth/login', async (req, res) => {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
-      planName: user.plan_name,
-      validUntil: user.valid_until,
-      instancesLimit: user.instances_limit,
+      role: user.role || 'client',
+      planName: user.plan_name || 'Plano Pro',
+      validUntil: user.valid_until || '2030-12-31',
+      instancesLimit: user.instances_limit || 1,
       token: 'jwt-token-' + user.id
     });
   } catch (err: any) {
@@ -1421,7 +1420,7 @@ async function saveAIConfigToDB() {
       smartAudioMinChars: aiConfig.smartAudioMinChars
     };
     await pool.query(
-      `INSERT INTO ai_configs (id, provider, api_key, model, reasoning_level, media_resolution, web_search, system_prompt, escape_keywords, knowledge_docs, human_alert, follow_up, audio_config, ai_media, google_calendar, updated_at)
+      `INSERT INTO ai_configs (id, provider, api_key, model, reasoning_level, media_resolution, web_search_enabled, system_prompt, escape_keywords, knowledge_docs, human_alert, follow_up, audio_config, ai_media, google_calendar, updated_at)
        VALUES ('default', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
        ON CONFLICT (id) DO UPDATE SET
          provider = EXCLUDED.provider,
@@ -1429,7 +1428,7 @@ async function saveAIConfigToDB() {
          model = EXCLUDED.model,
          reasoning_level = EXCLUDED.reasoning_level,
          media_resolution = EXCLUDED.media_resolution,
-         web_search = EXCLUDED.web_search,
+         web_search_enabled = EXCLUDED.web_search_enabled,
          system_prompt = EXCLUDED.system_prompt,
          escape_keywords = EXCLUDED.escape_keywords,
          knowledge_docs = EXCLUDED.knowledge_docs,

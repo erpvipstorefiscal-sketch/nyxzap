@@ -24,11 +24,11 @@ interface AuthScreenProps {
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
-  // Detect if accessing through painel.nyxzap.com.br or /admin route
+  // Detect if accessing explicitly through /admin route or admin. subdomain
   const isPainelAdmin = typeof window !== 'undefined' && (
-    window.location.hostname.includes('painel.') || 
+    window.location.hostname.startsWith('admin.') || 
     window.location.pathname.startsWith('/admin') ||
-    window.location.search.includes('admin')
+    window.location.search.includes('admin=true')
   );
 
   // View modes: 'login' | 'register'
@@ -106,8 +106,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: email.trim(),
-          password,
-          role: isPainelAdmin ? 'admin' : 'client'
+          password
         })
       });
 
